@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **New battle commands** (NEW SCREENS): in single battles FIGHT, POKéMON, BAG and RUN are
+  round buttons under the field, beside "What will ... do?", and FIGHT opens a card with
+  your Pokémon's moves, their types and PP, and the chosen move's power, accuracy and
+  kind. Left and right choose a command, up and down a move, A confirms and B goes back.
+  Double, link, Safari Zone and Bug-Catching Contest battles keep the usual buttons.
 - **Your own font and button pictures** for the menus and the HUD: a font file (.otf or
   .ttf) in `assets/fonts` and button pictures in `assets/buttons` (named like the Switch's
   `icon_key_a_00.png`) are used when they are there. TEXT and BUTTON PICTURES in the
