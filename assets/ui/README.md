@@ -62,4 +62,4 @@ You need Python 3 and Playwright with Chromium installed, because the PNGs are r
 
 ## Not in this folder
 
-The Pokémon, item and type icons come from PokéSprite (msikma/pokesprite) and live in `build/pokesprite/`. Those images are © Nintendo / Creatures / GAME FREAK; see `SOURCE.txt` there. Text uses the game's own HGSS font, which is in `build/hud-font/`. Both stay under `build/`, which is gitignored.
+The Pokémon and item icons and the game's font are read from the player's own ROM when the game starts (`frontend/romart.h`, `frontend/hud.h`); nothing of the game is shipped. A font of the player's own can replace the letters (`assets/fonts`, not part of the project).
