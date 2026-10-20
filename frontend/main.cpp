@@ -4130,6 +4130,9 @@ int main(int argc, char** argv)
             // After the menu: no more presses, only waiting for the world (or the new game).
             if ((bootSawMenu && !mainMenu && (bootMode == BOOT_NEW || fieldActive())) || bootFrames > 60 * 120)
             {
+                // The loading picture stays a little longer: while the world fades in, the game's
+                // own menu screen showed for a moment, as if it had been opened.
+                if (bootMode == BOOT_CONTINUE) resumeCoverUntil = frame + 45;
                 bootMode = BOOT_NONE;
                 speed = 1;
             }
@@ -4389,6 +4392,17 @@ int main(int argc, char** argv)
         }
         else if (gameSave.Busy())
             touching = false; // (its buttons are already in keys)
+        // Behind the title and start screens the game boots on its own: its logos and opening
+        // movie are passed with A, silently, so that its title music (or the song in its
+        // place) starts at once. Never on the title screen itself, where A would go on.
+        bool silentBoot = false;
+        if (startOpen && bootMode == BOOT_NONE && !appRunning("TitleScreen") && !appRunning("MainMenu") && !fieldActive())
+        {
+            static uint32_t pulse = 0;
+            if (++pulse % 12 < 3) keys |= 1u << KEY_A;
+            silentBoot = true;
+            speed = 8; // the logos before the opening movie take seconds and cannot be skipped
+        }
         if (ref)
         {
             TraceLog.clear();
@@ -4822,7 +4836,23 @@ int main(int argc, char** argv)
                     effects |= (SongPlayer::EffectChannels >> i & 1) != 0;
                 }
             songs.Update(cfg.newSongs && !opt.lockstep, seq, busy, effects, jingle, frame);
-            melonDS::ssr_SpuHearMute = songs.Mute();
+            melonDS::ssr_SpuHearMute = silentBoot ? 0xFFFF : songs.Mute();
+            // Faster than normal (fast forward, a boot passed behind the loading picture), only
+            // the first emulated frame's sound is kept, which is far shorter than the time that
+            // goes by; songs go on at their own pace, so the sound sent is as long as that time
+            // (the game's part padded with silence). Otherwise they stuttered and slowed down.
+            static uint64_t fastAt = 0;
+            if (speed > 1 && got > 0 && !opt.headless)
+            {
+                const uint64_t at = SDL_GetPerformanceCounter(), freq = SDL_GetPerformanceFrequency();
+                const int room = std::min<int>(4800, (int)audioBuf.size() / 2);
+                const int n = fastAt ? std::clamp((int)((at - fastAt) * 48000 / freq), got, room) : got;
+                std::fill(audioBuf.begin() + got * 2, audioBuf.begin() + n * 2, (int16_t)0);
+                got = n;
+                fastAt = at;
+            }
+            else
+                fastAt = 0;
             if (got > 0) songs.Mix(audioBuf.data(), got);
         }
         if (audio && got > 0)
@@ -5288,7 +5318,10 @@ int main(int argc, char** argv)
                     if (!logo.px.empty())
                     {
                         const float lh = lw * logo.h / logo.w;
-                        Blit(canvas, logo, 0, 0, (float)logo.w, (float)logo.h, lx - lw / 2, ly - lh / 2, lw, lh);
+                        // Faded in with the video's own fade from white (its first second).
+                        const float fade = std::clamp(((SDL_GetTicks() - titleSince) / 1000.0f - 0.2f) / 0.9f, 0.0f, 1.0f);
+                        Blit(canvas, logo, 0, 0, (float)logo.w, (float)logo.h, lx - lw / 2, ly - lh / 2, lw, lh, true,
+                            (uint32_t)(255 * fade) << 24 | 0xFFFFFF);
                     }
                 }
                 else

@@ -4,7 +4,10 @@
 
 - A **title screen** before the start screen when there is a video in
   `assets/animations/intro.mpg`: it plays in a loop with the logo on it, and A (or + or
-  Enter) goes on to the start screen. The game's title music plays meanwhile.
+  Enter) goes on to the start screen. The game's title music (or your song for it) starts
+  after about a second, the logo fades in with the video.
+- Songs no longer stutter and slow down while the game loads after Continue (or with fast
+  forward), and the game's menu no longer flashes up as the world appears after Continue.
 - **New battle commands** (NEW SCREENS): in single battles FIGHT, POKéMON, BAG and RUN are
   round buttons under the field, beside "What will ... do?", and FIGHT opens a card with
   your Pokémon's moves, their types and PP, and the chosen move's power, accuracy and
