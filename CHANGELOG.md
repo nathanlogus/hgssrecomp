@@ -11,6 +11,12 @@
   after about a second, the logo fades in with the video.
 - Songs no longer stutter and slow down while the game loads after Continue (or with fast
   forward), and the game's menu no longer flashes up as the world appears after Continue.
+- A **new Pokédex** (NEW SCREENS): the front page with Seen and Caught and which Pokédex
+  is shown (Johto or National), then the list page by page, five across and three down as
+  in the game, with a Poké Ball on the ones you caught, faded pictures for the ones only
+  seen and dashes for the rest, and a card for the one under the cursor: its number, name,
+  kind, types, height, weight and Pokédex entry. The game's own buttons work as always; the
+  area map, size, forms and search still show the game's own screens.
 - **New battle commands** (NEW SCREENS): in single battles FIGHT, POKéMON, BAG and RUN are
   round buttons under the field, beside "What will ... do?", and FIGHT opens a card with
   your Pokémon's moves, their types and PP, and the chosen move's power, accuracy and

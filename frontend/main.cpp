@@ -55,6 +55,7 @@
 #include "hudbattle.h"
 #include "hudbag.h"
 #include "hudparty.h"
+#include "huddex.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -2938,7 +2939,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, and the battle commands.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, and the battle commands.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -5287,6 +5288,45 @@ int main(int argc, char** argv)
                 overlayUsed = true;
             }
         }
+        // The Pokedex redrawn (huddex.h): its front page and its list, mirrored from the game's
+        // application; its details and search are the game's own picture.
+        static int dexShown = 0; // what was drawn the frame before: 0 nothing, 1 the front page, 2 the list
+        int dexNow = 0;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Pokedex"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "Pokedex"))
+                {
+                    static uint32_t dexAt = 0;
+                    HudDex::View dv;
+                    if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                            HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown, dv))
+                    {
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y), y = PadGlyph(cfg.byLabel ? PAD_Y : PAD_X);
+                        if (dv.list)
+                        {
+                            std::vector<HudHint> hints = { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Page" }, { { "buttons/button_dpad" }, "Choose" } };
+                            if (dv.places[dv.pos].species) hints.push_back({ { a }, "Details" });
+                            hints.push_back({ { x }, "Cry" });
+                            hints.push_back({ { y }, "Search" });
+                            hints.push_back({ { b }, "Close" });
+                            HudDex::DrawList(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), dv, hints);
+                        }
+                        else
+                        {
+                            std::vector<HudHint> hints;
+                            if (dv.canSwitch) hints.push_back({ { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Pok\xC3\xA9" "dex" });
+                            hints.push_back({ { a }, "Open" });
+                            hints.push_back({ { y }, "Search" });
+                            hints.push_back({ { b }, "Close" });
+                            HudDex::DrawFront(canvas, ui, sprites, font, romArt, dv, hints);
+                        }
+                        dexNow = dv.list ? 2 : 1;
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        dexShown = dexNow;
         if (spritesOk && (bootMode != BOOT_NONE || frame < resumeCoverUntil) && !menu.open && screen == SCR_NONE)
         {
             HudOnline::LoadingScreen(canvas, ui, sprites, font, logo.px.empty() ? nullptr : &logo, "POK\xC3\xA9MON",
