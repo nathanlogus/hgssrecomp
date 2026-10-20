@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **FRAME RATE: UNLIMITED** in the Game tab: on screens faster than 60 Hz the world is
+  drawn as many times a second as your computer manages (in between the game's own
+  pictures), while the game keeps its normal speed.
 - The **+ button** (Start) opens and closes the pause menu while you walk around; in the
   game's own screens it is still the game's Start. Guide works as before.
 - The pause menu and the online screens no longer stop the game: the world stays live

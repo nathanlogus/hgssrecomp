@@ -60,6 +60,15 @@ struct WideState
     // (60 fps). For drawing things over the picture with the camera it was drawn with.
     u64 FlushCount = 0, FrontFlush = 0;
     bool FrontInterp = false;
+    float FrontT = 1;         // how far from the flush before to FrontFlush (1: that flush itself)
+    // Pictures between the game's frames (WideDrawBetween): keeps what drawing them needs.
+    bool Between = false;
 };
 extern WideState Wide;
+class GPU;
+// Draws the world again at fraction `s` (0 to 1) of the way from the picture in Front to
+// the one shown at the next frame, and puts it in Front: for showing more pictures than the
+// game makes, between its frames. False when there is nothing to draw between (the next
+// picture is the same, or the two do not pair up).
+bool WideDrawBetween(GPU& gpu, float s);
 }

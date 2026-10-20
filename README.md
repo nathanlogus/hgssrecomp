@@ -386,6 +386,16 @@ instead drew models halfway towards a neighbour that had just left the picture
 update on a steady 30 fps cadence, when polygons cannot be matched between
 frames, and while the game captures the 3D image.
 
+**Frame rate: Unlimited** (Game tab) goes further for screens faster than 60 Hz:
+while the frontend waits for the game's next frame, it draws the widescreen world
+again at later moments between the two pictures (the same pairing, any fraction
+instead of halfway) and shows each one, as many as there is time for. The game
+still runs 60 frames a second; a picture is only started when it can be finished a
+millisecond before the next frame is due. Text boxes, menus and name tags still
+change 60 times a second, and the glow of night effects is that of the game's own
+frame. `SSR_FPS_LOG=1` prints the pictures shown each second, and
+`SSR_BETWEEN_SHOTS=n` saves n pictures between the frames of each screenshot.
+
 ## Performance
 
 `SSR_PERF=1` prints, every 300 frames, the average time spent per frame in

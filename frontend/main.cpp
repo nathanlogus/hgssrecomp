@@ -1013,6 +1013,7 @@ struct Settings
     bool byLabel = true;
     int padMap[8] = { -1, -1, -1, -1, -1, -1, -1, -1 }; // controller button per DS button (RemapKeys); -1 by label/position
     bool fps60 = true;
+    bool fpsUnlimited = false; // more pictures than the game makes: as many as there is time for
     // Right stick as a touch cursor, right trigger as the press, and the stick clicks that
     // switch screens. Off unless asked for: brushing the stick put the bottom screen up.
     bool padTouch = false;
@@ -1073,6 +1074,7 @@ struct Settings
                 }
             }
             else if (k == "fps60") fps60 = v == "1";
+            else if (k == "fps_unlimited") fpsUnlimited = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "void_fill") voidFill = v == "1";
@@ -1110,6 +1112,7 @@ struct Settings
         f << "pad_map=";
         for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
+        f << "fps_unlimited=" << (fpsUnlimited ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
         f << "aspect=" << (aspect ? AspectRatios[aspect].name : "fill") << "\n";
@@ -2427,12 +2430,13 @@ int main(int argc, char** argv)
             return;
         }
         shownView = cur;
-        if (melonDS::Wide.FrontInterp && prev.flush + 1 == cur.flush && prev.camera.valid)
+        const double t = melonDS::Wide.FrontT;
+        if (t < 1 && prev.flush + 1 == cur.flush && prev.camera.valid)
         {
-            shownView.camera = WorldBlocks::Lerp(prev.camera, cur.camera, 0.5);
+            shownView.camera = WorldBlocks::Lerp(prev.camera, cur.camera, t);
             for (int i = 0; i < 5; i++)
                 if (cur.on[i] && prev.on[i])
-                    for (int k = 0; k < 3; k++) shownView.pos[i][k] = (prev.pos[i][k] + cur.pos[i][k]) / 2;
+                    for (int k = 0; k < 3; k++) shownView.pos[i][k] = prev.pos[i][k] + (cur.pos[i][k] - prev.pos[i][k]) * t;
         }
         worldBlocks.Shown = shownView.camera;
     };
@@ -2582,7 +2586,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2686,6 +2690,8 @@ int main(int argc, char** argv)
         add(T_RESUME, M_RESUME, "Back to the game", "", "Close this menu and carry on playing.");
 
         add(T_GAME, M_FPS60, "60 fps", onOff(cfg.fps60), "Draws a picture between each two of the game's, so the world moves at 60 frames a second.");
+        add(T_GAME, M_FPSMAX, "Frame rate", cfg.fpsUnlimited ? "Unlimited" : "60",
+            "Unlimited: as many pictures of the world as your computer can draw, for screens faster than 60 Hz. The game runs at its normal speed either way.");
         add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
         add(T_GAME, M_STARTSCREEN, "Start screen", onOff(cfg.startScreen), "Shows the start screen (play, online, settings) when the game starts.");
         add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
@@ -3512,6 +3518,9 @@ int main(int argc, char** argv)
                 focus.mode = (focus.mode + (dir < 0 ? 2 : 1)) % 3;
                 focus.manualFlip = false;
                 break;
+            case M_FPSMAX:
+                cfg.fpsUnlimited = !cfg.fpsUnlimited;
+                break;
             case M_FPS60:
                 cfg.fps60 = !cfg.fps60;
                 nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
@@ -3784,6 +3793,7 @@ int main(int argc, char** argv)
             const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 &&
                 (fieldActive() || menuReturn > 0 || scene.edgeFill);
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
+            melonDS::Wide.Between = cfg.fpsUnlimited && !opt.headless;
             melonDS::Wide.ViewWidth = view.width;
             melonDS::Wide.Zoom = (fieldActive() || menuReturn > 0) && !scene.edgeFill ? cfg.zoom / 100.0f : 1;
             melonDS::Wide.Width = ww;
@@ -3792,6 +3802,10 @@ int main(int argc, char** argv)
         }
         // Filled in after the frame has run: the renderer hands over its picture then.
         WideImage wideImage;
+        // Set while a picture between the game's frames is composed (Frame rate: Unlimited):
+        // the blur and the night effects of the frame's own picture are used again then, as
+        // building them takes most of the time there is (they are soft enough not to show it).
+        bool composingBetween = false;
         auto takeWideImage = [&]() {
             wideImage = WideImage();
             // A battle on a wide view: the screen widened (battlewide.h) instead of the bars.
@@ -3832,7 +3846,7 @@ int main(int argc, char** argv)
                 }
                 if (cfg.blur)
                 {
-                    focusBlur.Build(wideImage.pixels, wideImage.w, wideImage.h, cfg.blur);
+                    if (!composingBetween) focusBlur.Build(wideImage.pixels, wideImage.w, wideImage.h, cfg.blur);
                     wideImage.blur = &focusBlur;
                 }
                 if (cfg.nightFx && worldBlocks.Outdoors(*nds))
@@ -3843,11 +3857,14 @@ int main(int argc, char** argv)
                     const float strength = NightStrength(hour, minute);
                     if (strength > 0)
                     {
-                        fireflies.clear();
-                        worldBlocks.Fireflies(*nds, frame / 60.0f, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, fireflies);
-                        lamps.clear();
-                        worldBlocks.Lights(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, lamps);
-                        nightFx.Build(wideImage.pixels, wideImage.w, wideImage.h, strength, fireflies, lamps);
+                        if (!composingBetween)
+                        {
+                            fireflies.clear();
+                            worldBlocks.Fireflies(*nds, frame / 60.0f, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, fireflies);
+                            lamps.clear();
+                            worldBlocks.Lights(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, lamps);
+                            nightFx.Build(wideImage.pixels, wideImage.w, wideImage.h, strength, fireflies, lamps);
+                        }
                         wideImage.fx = &nightFx;
                     }
                 }
@@ -4816,101 +4833,110 @@ int main(int argc, char** argv)
 
         if (!opt.headless && top && bot)
         {
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            if (merged)
-            {
-                // The graphics card puts the pieces together (gpucompose.h). SSR_CPU_COMPOSE=1
-                // uses the compositor of the headless tests instead, for comparing the two.
-                takeWideImage();
-                if (!cpuCompose)
+            // Puts the picture on the screen; `extra`: again, with the world drawn at a later
+            // moment between the game's frames (Frame rate: Unlimited).
+            auto drawFrame = [&](bool extra) {
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_RenderClear(renderer);
+                if (merged)
                 {
-                    if (!gpuCompose) gpuCompose = new GpuCompositor(renderer);
-                    const SDL_Rect area = { mergedX, 0, mergedW, outH };
-                    SDL_RenderSetViewport(renderer, &area);
-                    gpuCompose->Draw(scene, screenImages, mergedW, outH, cfg.smooth, &wideImage);
-                    SDL_RenderSetViewport(renderer, nullptr);
-                    perfMark(3);
+                    // The graphics card puts the pieces together (gpucompose.h). SSR_CPU_COMPOSE=1
+                    // uses the compositor of the headless tests instead, for comparing the two.
+                    takeWideImage();
+                    if (!cpuCompose)
+                    {
+                        if (!gpuCompose) gpuCompose = new GpuCompositor(renderer);
+                        const SDL_Rect area = { mergedX, 0, mergedW, outH };
+                        SDL_RenderSetViewport(renderer, &area);
+                        gpuCompose->Draw(scene, screenImages, mergedW, outH, cfg.smooth, &wideImage);
+                        SDL_RenderSetViewport(renderer, nullptr);
+                        perfMark(3);
+                    }
+                    else
+                    {
+                        int cw = mergedW, ch = outH;
+                        if (cfg.smooth && outH > 768)
+                        {
+                            cw = mergedW * 768 / outH;
+                            ch = 768;
+                        }
+                        MergedCompose(scene, screenImages, cw, ch, mergedImage, cfg.smooth, &wideImage);
+                        perfMark(3);
+                        if (!mergedTex || mergedTexW != cw || mergedTexH != ch)
+                        {
+                            if (mergedTex) SDL_DestroyTexture(mergedTex);
+                            mergedTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, cw, ch);
+                            mergedTexW = cw;
+                            mergedTexH = ch;
+                        }
+                        SDL_SetTextureScaleMode(mergedTex, cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+                        SDL_UpdateTexture(mergedTex, nullptr, mergedImage.data(), cw * 4);
+                        const SDL_Rect area = { mergedX, 0, mergedW, outH };
+                        SDL_RenderCopy(renderer, mergedTex, nullptr, &area);
+                    }
+                    // The bars beside a view held to a narrower shape (clearing ignores the area).
+                    if (mergedX > 0)
+                    {
+                        const SDL_Rect bars[2] = { { 0, 0, mergedX, outH }, { mergedX + mergedW, 0, outW - mergedX - mergedW, outH } };
+                        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+                        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                        SDL_RenderFillRects(renderer, bars, 2);
+                    }
                 }
                 else
                 {
-                    int cw = mergedW, ch = outH;
-                    if (cfg.smooth && outH > 768)
+                    SDL_UpdateTexture(tex[0], nullptr, top, 256 * 4);
+                    SDL_UpdateTexture(tex[1], nullptr, bot, 256 * 4);
+                    int first = LayoutDrawFirst(layout);
+                    for (int n = 0; n < 2; n++)
                     {
-                        cw = mergedW * 768 / outH;
-                        ch = 768;
+                        int i = n == 0 ? first : 1 - first;
+                        if (rects[i].w > 0) SDL_RenderCopy(renderer, tex[i], nullptr, &rects[i]);
                     }
-                    MergedCompose(scene, screenImages, cw, ch, mergedImage, cfg.smooth, &wideImage);
-                    perfMark(3);
-                    if (!mergedTex || mergedTexW != cw || mergedTexH != ch)
+                }
+                if (overlayUsed)
+                {
+                    if (!overlayTex || overlayTexW != outW || overlayTexH != outH)
                     {
-                        if (mergedTex) SDL_DestroyTexture(mergedTex);
-                        mergedTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, cw, ch);
-                        mergedTexW = cw;
-                        mergedTexH = ch;
+                        if (overlayTex) SDL_DestroyTexture(overlayTex);
+                        overlayTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
+                        SDL_SetTextureBlendMode(overlayTex, SDL_BLENDMODE_BLEND);
+                        overlayTexW = outW;
+                        overlayTexH = outH;
                     }
-                    SDL_SetTextureScaleMode(mergedTex, cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
-                    SDL_UpdateTexture(mergedTex, nullptr, mergedImage.data(), cw * 4);
-                    const SDL_Rect area = { mergedX, 0, mergedW, outH };
-                    SDL_RenderCopy(renderer, mergedTex, nullptr, &area);
+                    if (canvas.Dirty())
+                    {
+                        const SDL_Rect dr = { canvas.x0d, canvas.y0d, canvas.x1d - canvas.x0d, canvas.y1d - canvas.y0d };
+                        SDL_UpdateTexture(overlayTex, &dr, canvas.px.data() + (size_t)dr.y * outW + dr.x, outW * 4);
+                        SDL_RenderCopy(renderer, overlayTex, &dr, &dr);
+                    }
                 }
-                // The bars beside a view held to a narrower shape (clearing ignores the area).
-                if (mergedX > 0)
+                // In a window, screenshots are read back from the renderer: exactly what is shown.
+                // (The pictures between the game's frames as _01, _02 and so on.)
+                static int between = 0;
+                between = extra ? between + 1 : 0;
+                if (wantShot)
                 {
-                    const SDL_Rect bars[2] = { { 0, 0, mergedX, outH }, { mergedX + mergedW, 0, outW - mergedX - mergedW, outH } };
-                    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-                    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                    SDL_RenderFillRects(renderer, bars, 2);
+                    std::vector<uint32_t> back((size_t)outW * outH);
+                    if (SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, back.data(), outW * 4) == 0)
+                    {
+                        char name[64];
+                        if (extra) snprintf(name, sizeof(name), "/window_%06u_%02d.png", frame, between);
+                        else snprintf(name, sizeof(name), "/window_%06u.png", frame);
+                        WritePNG(opt.shotDir + name, back.data(), outW, outH);
+                    }
                 }
-            }
-            else
-            {
-                SDL_UpdateTexture(tex[0], nullptr, top, 256 * 4);
-                SDL_UpdateTexture(tex[1], nullptr, bot, 256 * 4);
-                int first = LayoutDrawFirst(layout);
-                for (int n = 0; n < 2; n++)
+                if (touchPadUsed && touchPad.visible)
                 {
-                    int i = n == 0 ? first : 1 - first;
-                    if (rects[i].w > 0) SDL_RenderCopy(renderer, tex[i], nullptr, &rects[i]);
+                    // Lit by what the fingers hold (by label, as drawn).
+                    bool held[PAD_COUNT] = {};
+                    bool menuHeld = false;
+                    touchPad.Apply(held, menuHeld);
+                    touchPad.Draw(renderer, held, menuHeld);
                 }
-            }
-            if (overlayUsed)
-            {
-                if (!overlayTex || overlayTexW != outW || overlayTexH != outH)
-                {
-                    if (overlayTex) SDL_DestroyTexture(overlayTex);
-                    overlayTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
-                    SDL_SetTextureBlendMode(overlayTex, SDL_BLENDMODE_BLEND);
-                    overlayTexW = outW;
-                    overlayTexH = outH;
-                }
-                if (canvas.Dirty())
-                {
-                    const SDL_Rect dr = { canvas.x0d, canvas.y0d, canvas.x1d - canvas.x0d, canvas.y1d - canvas.y0d };
-                    SDL_UpdateTexture(overlayTex, &dr, canvas.px.data() + (size_t)dr.y * outW + dr.x, outW * 4);
-                    SDL_RenderCopy(renderer, overlayTex, &dr, &dr);
-                }
-            }
-            // In a window, screenshots are read back from the renderer: exactly what is shown.
-            if (wantShot)
-            {
-                std::vector<uint32_t> back((size_t)outW * outH);
-                if (SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, back.data(), outW * 4) == 0)
-                {
-                    char name[64];
-                    snprintf(name, sizeof(name), "/window_%06u.png", frame);
-                    WritePNG(opt.shotDir + name, back.data(), outW, outH);
-                }
-            }
-            if (touchPadUsed && touchPad.visible)
-            {
-                // Lit by what the fingers hold (by label, as drawn).
-                bool held[PAD_COUNT] = {};
-                bool menuHeld = false;
-                touchPad.Apply(held, menuHeld);
-                touchPad.Draw(renderer, held, menuHeld);
-            }
-            SDL_RenderPresent(renderer);
+                SDL_RenderPresent(renderer);
+            };
+            drawFrame(false);
             perfMark(4);
             // Frames shown in the last whole second, for the FPS counter.
             presented++;
@@ -4918,12 +4944,53 @@ int main(int argc, char** argv)
             if (ms - fpsSince >= 1000)
             {
                 shownFps = (int)(presented * 1000 / (ms - fpsSince));
+                static const bool fpsLog = getenv("SSR_FPS_LOG") != nullptr;
+                if (fpsLog) fprintf(stderr, "[fps] %d pictures a second, game frame %u\n", shownFps, frame);
                 presented = 0;
                 fpsSince = ms;
             }
 
             nextTick += (uint64_t)(frameTime * perfFreq);
             uint64_t now = SDL_GetPerformanceCounter();
+            // For tests: SSR_BETWEEN_SHOTS=n draws n of them on frames with a screenshot,
+            // however long that takes (saving one leaves no time for any).
+            static const int forceShots = getenv("SSR_BETWEEN_SHOTS") ? atoi(getenv("SSR_BETWEEN_SHOTS")) : 0;
+            int forced = wantShot ? forceShots : 0;
+            if (cfg.fpsUnlimited && merged && melonDS::Wide.Owner && (now < nextTick || forced))
+            {
+                // Frame rate Unlimited: until the game's next frame is due, the world is drawn
+                // again at later moments between this picture and the next and shown, as often
+                // as there is time for. The game itself keeps to its own pace.
+                const uint64_t from = now, span = (uint64_t)(frameTime * perfFreq);
+                // What one costs (an average, kept from frame to frame, that drifts down while
+                // none fits so that a slow one does not stop them for good) and a millisecond to
+                // spare: the game's next frame must not start late.
+                static uint64_t cost = 0;
+                const uint64_t spare = perfFreq / 1000;
+                for (;;)
+                {
+                    const uint64_t t0 = SDL_GetPerformanceCounter();
+                    float at;
+                    if (forced > 0)
+                        at = (float)(forceShots - forced-- + 1) / (forceShots + 1); // evenly spaced
+                    else if (t0 + cost + spare >= nextTick)
+                    {
+                        cost -= cost / 32;
+                        break;
+                    }
+                    else
+                        at = (float)((double)(t0 + cost - from) / span); // where it is when it is on the screen
+                    if (!melonDS::WideDrawBetween(nds->GPU, at)) break;
+                    updateShownView();
+                    composingBetween = true;
+                    drawFrame(true);
+                    composingBetween = false;
+                    presented++;
+                    const uint64_t took = SDL_GetPerformanceCounter() - t0;
+                    cost = cost ? (cost * 3 + took) / 4 : took;
+                }
+                now = SDL_GetPerformanceCounter();
+            }
             if (now < nextTick)
             {
                 // Sleep for most of the wait and spin for the last part of a millisecond:
