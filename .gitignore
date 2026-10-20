@@ -33,3 +33,5 @@ assets/songs/
 assets/autosave.gif
 assets/fonts/
 assets/buttons/
+# Claude Code's worktrees for parallel work.
+.claude/
