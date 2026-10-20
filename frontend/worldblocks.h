@@ -222,13 +222,14 @@ public:
         return Place(viewWidth, zoom, x, y, z, u, v);
     }
 
-    // A person's frame as a picture (for the HUD), or false. Needs the overworld running.
-    bool SpriteImage(melonDS::NDS& nds, uint16_t sprite, int facing, Image& out)
+    // A person's frame (`frame` 0-3 of the walk) as a picture (for the HUD), or false. Needs
+    // the overworld running.
+    bool SpriteImage(melonDS::NDS& nds, uint16_t sprite, int facing, Image& out, int frame = 0)
     {
         Ram = nds.MainRAM;
         RamMask = nds.MainRAMMask;
         if (Sprites.empty() || !InRam(Read32(FieldSystemPtr)) || Read16(SpriteGfx) != 1) return false;
-        return TextureImage(GetSpriteTexture(sprite, facing & 3), out);
+        return TextureImage(GetSpriteTexture(sprite, facing & 3, frame & 3), out);
     }
 
     // The same from the ROM alone (before the game runs): the sprite whose textures are

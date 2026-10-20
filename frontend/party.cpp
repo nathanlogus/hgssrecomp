@@ -129,6 +129,14 @@ std::deque<PartyEvent> Events;
 std::string MyName = "Trainer";
 int MyPartner = 0; // species shown with this player (0 none)
 int MyColour = 0, MyState = 0, MyMap = -1, SentState = -1, SentMap = -2;
+// Friends: this player's id, their friends' ids, and which of those the server last said
+// were online.
+std::string MyId;
+std::vector<std::string> FriendIds;
+std::map<std::string, PartyFriendOnline> FriendsOn;
+u32 LastPresence = 0;
+std::vector<u8> SentBattle; // the last T message, and when
+u32 LastBattle = 0;
 const uint8_t* RomData = nullptr;
 size_t RomSize = 0;
 // This player's save data in memory: their trainer name and ID find it; the Pokedex is
@@ -362,6 +370,8 @@ void SendHello()
     std::vector<u8> b = { (u8)(MyColour >= 0 ? MyColour : Me & 3), (u8)MyPartner, (u8)(MyPartner >> 8) };
     b.insert(b.end(), MyName.begin(), MyName.end());
     Send('N', b);
+    if (MyId.size() == 16) Send('U', std::vector<u8>(MyId.begin(), MyId.end()));
+    LastPresence = 0; // and the friends again, at once
 }
 
 void Message(char kind, const u8* p, size_t n)
@@ -464,6 +474,53 @@ void Message(char kind, const u8* p, size_t n)
             w.facing = p[18] & 3;
             w.sprite = n >= 21 ? RomGet16(p + 19) : 0;
             w.at = Ms();
+        }
+        break;
+    case 'U': // a player's id: player, id (16)
+        if (n >= 17 && p[0] < 4) Peers[p[0]].uid.assign((const char*)p + 1, 16);
+        break;
+    case 'Z': // a friend request or its answer: player, PartyFriend
+        if (n >= 2 && p[0] < 4 && Peers[p[0]].present && !Peers[p[0]].uid.empty())
+            Events.push_back({ PartyEvent::Friend, p[0], p[1] });
+        break;
+    case 'T': // a player's battle: player, flags (1 choosing, 2 link), turn, species (u16), HP %, the other side's
+        if (n >= 9 && p[0] < 4 && p[0] != Me)
+        {
+            PartyBattle& b = Peers[p[0]].battle;
+            const bool choosing = p[1] & 1;
+            if (choosing && (!b.choosing || b.turn != p[2])) b.choosingAt = Ms();
+            b.choosing = choosing;
+            b.link = p[1] & 2;
+            b.turn = p[2];
+            b.species = RomGet16(p + 3);
+            b.hp = p[5];
+            b.foeSpecies = RomGet16(p + 6);
+            b.foeHp = p[8];
+            b.at = Ms();
+        }
+        break;
+    case 'y': // the friends online: (id, players, most, code length, code)...
+    {
+        FriendsOn.clear();
+        size_t at = 0;
+        while (at + 19 <= n && at + 19 + p[at + 18] <= n)
+        {
+            PartyFriendOnline& f = FriendsOn[std::string((const char*)p + at, 16)];
+            f.count = p[at + 16];
+            f.max = p[at + 17];
+            f.code.assign((const char*)p + at + 19, p[at + 18]);
+            at += 19 + p[at + 18];
+        }
+        break;
+    }
+    case 'g': // a friend's invite to their session: id, code length, code, name
+        if (n >= 17 && 17 + (size_t)p[16] <= n)
+        {
+            PartyEvent e = { PartyEvent::SessionInvite, -1 };
+            e.from.assign((const char*)p, 16);
+            e.text.assign((const char*)p + 17, p[16]);
+            e.name.assign((const char*)p + 17 + p[16], std::min<size_t>(n - 17 - p[16], 20));
+            Events.push_back(e);
         }
         break;
     case 'V': // an invite or its answer: player, PartyInvite
@@ -1191,6 +1248,16 @@ void Party_Process(int state, int map)
                 LastPing = now;
             }
             if (Sock != NoSocket) SendWalk(now, state, now - LastWalk >= 100);
+            // The friends' presence, every few seconds (the list also tells the server who
+            // may see this player online).
+            if (Sock != NoSocket && MyId.size() == 16 && (!LastPresence || now - LastPresence >= 3000))
+            {
+                std::vector<u8> ids;
+                for (const std::string& id : FriendIds)
+                    if (id.size() == 16 && ids.size() < 64 * 16) ids.insert(ids.end(), id.begin(), id.end());
+                Send('Y', ids);
+                LastPresence = now;
+            }
             if (Sock != NoSocket && (now - LastStatus >= 2000 || state != SentState || map != SentMap))
             {
                 const int r = std::max(0, std::min(65535, Rtt));
@@ -1336,6 +1403,7 @@ void Party_Leave()
     Me = -1;
     Code.clear();
     Rtt = -1;
+    FriendsOn.clear();
     for (PartyPeer& q : Peers) q = PartyPeer();
     // The hook stays: the game's wireless code goes on believing in its (now empty) party,
     // as if every other console had been switched off.
@@ -1374,6 +1442,44 @@ PartyCard Party_MyCard()
     c.hours = RomGet16(p + 0x22);
     c.minutes = p[0x24];
     return c;
+}
+
+void Party_SendFriend(int player, int kind)
+{
+    if (Link == PartyLink::Online && player >= 0 && player < 4 && player != Me) Send('Z', { (u8)player, (u8)kind });
+}
+
+void Party_SetId(const std::string& id)
+{
+    MyId = id;
+}
+
+void Party_SetFriends(const std::vector<std::string>& ids)
+{
+    FriendIds = ids;
+    LastPresence = 0;
+}
+
+const std::map<std::string, PartyFriendOnline>& Party_FriendsOnline()
+{
+    return FriendsOn;
+}
+
+void Party_InviteFriend(const std::string& id)
+{
+    if (Link == PartyLink::Online && id.size() == 16) Send('G', std::vector<u8>(id.begin(), id.end()));
+}
+
+void Party_SetBattle(const PartyBattle& b)
+{
+    if (Link != PartyLink::Online || Me < 0) return;
+    const std::vector<u8> m = { (u8)((b.choosing ? 1 : 0) | (b.link ? 2 : 0)), (u8)std::min(255, b.turn), (u8)b.species, (u8)(b.species >> 8),
+        (u8)b.hp, (u8)b.foeSpecies, (u8)(b.foeSpecies >> 8), (u8)b.foeHp };
+    const u32 now = Ms();
+    if (m == SentBattle && now - LastBattle < 2000) return;
+    SentBattle = m;
+    LastBattle = now;
+    Send('T', m);
 }
 
 void Party_SendInvite(int player, int invite)

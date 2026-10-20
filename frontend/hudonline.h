@@ -473,8 +473,8 @@ inline void FriendsPanel(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f,
     }
     float ry = y + 24 + 72 + 12;
     if (rows.empty())
-        HudText(c, ui, f, wd / 2, ry + 30, 32, m.tab == 0 ? "No one else is here yet: share your code" : "Players you meet in a session show up here",
-            HudColour::Muted, 1);
+        HudText(c, ui, f, wd / 2, ry + 30, 32, m.tab == 0 ? "No one else is here yet: share your code"
+            : m.tab == 1 ? "Add the players you meet in a session as friends" : "No friend requests", HudColour::Muted, 1);
     for (int k = 0; k < (int)rows.size(); k++)
     {
         const FriendRow& r = rows[k];
@@ -518,8 +518,10 @@ inline void InviteCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
     HudPanel(c, ui, sp, "panels/dialogue_box", x, y, w, h);
     HudSprite(c, ui, sp, RingOf(from.colour), x + 26, y + 26, 76, 76);
     HudText(c, ui, f, x + 64, y + 48, 32, Initials(from.name), HudColour::Ink, 1);
-    HudText(c, ui, f, x + 120, y + 26, 48, from.name + (invite == PI_TRADE ? " wants to trade!" : " wants to battle!"), HudColour::Ink);
-    HudText(c, ui, f, x + 120, y + 76, 32, invite == PI_TRADE ? "In the Union Room" : "In the Colosseum", HudColour::Muted);
+    HudText(c, ui, f, x + 120, y + 26, 48, from.name + (invite == PI_SESSION ? " invites you!" : invite == PI_TRADE ? " wants to trade!" : " wants to battle!"),
+        HudColour::Ink);
+    HudText(c, ui, f, x + 120, y + 76, 32, invite == PI_SESSION ? "To play in their session" : invite == PI_TRADE ? "In the Union Room" : "In the Colosseum",
+        HudColour::Muted);
     float ry = y + 24 + 90 + 16;
     for (int k = 0; k < (int)rows.size(); k++)
     {
@@ -537,8 +539,10 @@ inline void InviteCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
     DrawHintBar(c, ui, sp, f, hints);
 }
 
-// The link battle's banner (08-battle): this player VS the others, in white at the top.
-inline void VsBanner(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const PartyPeer& me, const std::vector<PartyPeer>& them)
+// The link battle's banner (08-battle): this player VS the others, in white at the top, and
+// under it `note` (the turn timer), if any.
+inline void VsBanner(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const PartyPeer& me, const std::vector<PartyPeer>& them,
+    const std::string& note = "")
 {
     if (them.empty()) return;
     std::vector<float> widths;
@@ -564,6 +568,34 @@ inline void VsBanner(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, con
     {
         draw(p);
         px += 8;
+    }
+    if (note.empty()) return;
+    const float nw = HudTextWidth(ui, f, 32, note) + 92;
+    HudPanel(c, ui, sp, "panels/toast", wd / 2 - nw / 2, y + h + 8, nw, 56);
+    HudSprite(c, ui, sp, "icons/icon_clock", wd / 2 - nw / 2 + 20, y + h + 16, 40, 40);
+    HudText(c, ui, f, wd / 2 - nw / 2 + 70, y + h + 20, 32, note, HudColour::Ink);
+}
+
+// Watching another player's battle: who, against whom, both Pokemon with their HP and the
+// turn, in a card under the session badge. `foe`: the other trainer's name, or empty.
+inline void SpectatorCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x, float y, const PartyPeer& who,
+    const std::string& foe, const IconFn& icon)
+{
+    const PartyBattle& b = who.battle;
+    const float w = 620, h = 66 + 2 * 76 + 20;
+    TitledCard(c, ui, sp, f, x, y, w, h, who.name + (foe.empty() ? " is battling" : " VS " + foe), "Turn " + std::to_string(b.turn));
+    for (int k = 0; k < 2; k++)
+    {
+        const int species = k ? b.foeSpecies : b.species, hp = std::clamp(k ? b.foeHp : b.hp, 0, 100);
+        const float ry = y + 66 + 10 + 76 * k;
+        if (icon) HudPixelArt(c, ui, icon(species), x + 20, ry, 64, 64);
+        HudText(c, ui, f, x + 100, ry + 14, 32, Party_SpeciesName(species), hp ? HudColour::Ink : HudColour::Muted);
+        const float bx = x + 330, bw = 180;
+        HudSprite(c, ui, sp, "bars/bar_frame", bx, ry + 20, bw, 22);
+        if (hp)
+            HudSprite(c, ui, sp, hp > 50 ? "bars/fill_teal" : hp > 25 ? "bars/fill_yellow" : "bars/fill_red", bx + 6, ry + 24,
+                std::max(16.0f, (bw - 12) * hp / 100.0f), 14);
+        HudText(c, ui, f, x + w - 24, ry + 14, 32, std::to_string(hp) + "%", hp > 25 ? HudColour::Ink : HudColour::Danger, 2);
     }
 }
 

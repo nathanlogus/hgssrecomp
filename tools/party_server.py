@@ -8,6 +8,11 @@ and the data the joined games exchange. Around that, what the HUD shows: each pl
 name and colour, where they are, the round trip to the server, and events (a catch, a
 badge). Nothing is stored; a party is gone when its last player leaves.
 
+Friends: each game has a stable random player id (U). The server keeps, in memory only,
+which ids are connected and in which party, and each player's list of friends' ids (Y).
+A player sees a friend as online (and their party's code, to join it) only when both
+have each other on their lists, and can invite them to their own party (G).
+
 A player hosts a party and gets a code (SSR-XXXX) for the others to join with, or joins
 a party by name (`--party-code union`), which is made when the first player arrives.
 
@@ -25,12 +30,20 @@ Messages, both ways: u16 length (little-endian), then a kind letter and its cont
     E kind u16 arg     an event (1 caught a Pokemon: species; 2 earned a badge: count)
     Q t                ping: answered with q t
     M max              the host changes the number of players
+    U id               this player's id (16 letters, sent after joining)
+    Y id id ...        this player's friends (ids): answered with y
+    G id               invite that friend to this party
+    Z player kind      a friend request to a player here (1 ask, 2 yes, 3 no)
+    O ... | W emote | T battle   where the trainer is, emotes, a battle's state: passed on
     B beacon | b | C parent commtype | A child aid | R child | D data | L   (the game's link)
   from the server:
     I player | F (full) | K code (the party's code, after H or J)
     N player flags colour u16 partner name   (flags: 1 host)
     j player | l player    (joined, left)
     S player state u16 map badges [u16 rtt] | E player kind u16 arg | q t | M max
+    U player id | Z player kind | O/W/T player ...
+    y (id count max codelen code)...   the friends online who have this player as a friend too
+    g id codelen code name             an invite from that friend to their party
     B player beacon | b player | C child commtype | A aid | R | D player data | X child | P
 """
 import argparse
@@ -51,6 +64,8 @@ class Player:
         self.children = set()
         self.hello = None     # colour, partner, name (the N message without player and flags)
         self.status = None    # the S message's contents
+        self.uid = None       # the player's id (U), if sent
+        self.friends = set()  # their friends' ids (Y)
 
 
 class Party:
@@ -65,6 +80,7 @@ class Relay:
     def __init__(self, lag):
         self.lag = lag / 1000.0
         self.parties = {}
+        self.online = {}      # player id -> Player
 
     def send(self, to, kind, body=b''):
         msg = struct.pack('<H', 1 + len(body)) + kind.encode() + body
@@ -151,10 +167,37 @@ class Relay:
             q = p.party.slots[body[0]]
             if q and q is not p:
                 self.send(q, 'V', bytes([p.slot, body[1]]))
-        elif kind in 'OW' and len(body) >= 1:
-            # Where a trainer is on the overworld, and emotes: to the others as they are.
+        elif kind in 'OWT' and len(body) >= 1:
+            # Where a trainer is on the overworld, emotes and battles: to the others as they are.
             for q in self.others(p):
                 self.send(q, kind, bytes([p.slot]) + body[:40])
+        elif kind == 'Z' and len(body) >= 2 and body[0] < MAX_PLAYERS:
+            q = p.party.slots[body[0]]
+            if q and q is not p:
+                self.send(q, 'Z', bytes([p.slot, body[1]]))
+        elif kind == 'U' and len(body) >= 16:
+            if self.online.get(p.uid) is p:
+                del self.online[p.uid]
+            p.uid = body[:16].decode('ascii', 'replace')
+            self.online[p.uid] = p
+            for q in self.others(p):
+                self.send(q, 'U', bytes([p.slot]) + body[:16])
+        elif kind == 'Y':
+            p.friends = {body[i:i + 16].decode('ascii', 'replace') for i in range(0, min(len(body), 64 * 16) - 15, 16)}  # 64 at most
+            out = b''
+            for uid in sorted(p.friends):
+                q = self.mutual(p, uid)
+                if q:
+                    code = q.party.name.encode()[:40]
+                    used = sum(1 for r in q.party.slots if r)
+                    out += uid.encode() + bytes([used, q.party.max, len(code)]) + code
+            self.send(p, 'y', out)
+        elif kind == 'G' and len(body) >= 16:
+            q = self.mutual(p, body[:16].decode('ascii', 'replace'))
+            if q:
+                code = p.party.name.encode()[:40]
+                name = p.hello[3:] if p.hello else b''
+                self.send(q, 'g', p.uid.encode() + bytes([len(code)]) + code + name)
         elif kind == 'E' and len(body) >= 3:
             for q in self.others(p):
                 self.send(q, 'E', bytes([p.slot]) + body[:3])
@@ -165,6 +208,11 @@ class Relay:
             for q in p.party.slots:
                 if q:
                     self.send(q, 'M', bytes([p.party.max]))
+
+    def mutual(self, p, uid):
+        """The connected player with that id, if they and p have each other as friends."""
+        q = self.online.get(uid)
+        return q if q and q is not p and p.uid and p.uid in q.friends and uid in p.friends else None
 
     def enter(self, kind, body, writer):
         """A J or H message from a new connection: its Player, or None if it was turned away."""
@@ -200,6 +248,8 @@ class Relay:
                 self.send(p, 'N', self.hello_of(q))
             if q.status is not None:
                 self.send(p, 'S', bytes([q.slot]) + q.status)
+            if q.uid is not None:
+                self.send(p, 'U', bytes([q.slot]) + q.uid.encode())
             self.send(q, 'j', bytes([slot]))
         print(f'player {slot + 1} joined party {party.name!r}', flush=True)
         return p
@@ -231,6 +281,8 @@ class Relay:
                     self.send(q, 'b', bytes([p.slot]))
                     self.send(q, 'l', bytes([p.slot]))
                 party.slots[p.slot] = None
+                if self.online.get(p.uid) is p:
+                    del self.online[p.uid]
                 if not any(party.slots):
                     del self.parties[party.name]
                 print(f'player {p.slot + 1} left party {party.name!r}', flush=True)

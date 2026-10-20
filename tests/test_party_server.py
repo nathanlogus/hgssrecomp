@@ -1,4 +1,5 @@
-"""tools/party_server.py: hosting with a code, joining, profiles, status, events, ping, leaving."""
+"""tools/party_server.py: hosting with a code, joining, profiles, status, events, ping, leaving,
+player ids, friends' presence and invites, friend requests."""
 from pathlib import Path
 import asyncio
 import struct
@@ -33,13 +34,17 @@ class PartyServerTests(unittest.IsolatedAsyncioTestCase):
         self.relay = party_server.Relay(0)
         self.server = await asyncio.start_server(self.relay.serve, '127.0.0.1', 0)
         self.port = self.server.sockets[0].getsockname()[1]
+        self.clients = []
 
     async def asyncTearDown(self):
+        for c in self.clients:
+            c.writer.close()
         self.server.close()
         await self.server.wait_closed()
 
     async def connect(self):
-        return Client(*await asyncio.open_connection('127.0.0.1', self.port))
+        self.clients.append(Client(*await asyncio.open_connection('127.0.0.1', self.port)))
+        return self.clients[-1]
 
     async def test_host_join_by_code_and_events(self):
         host = await self.connect()
@@ -88,6 +93,61 @@ class PartyServerTests(unittest.IsolatedAsyncioTestCase):
         b.send('J', b'union')
         self.assertEqual(await b.until('I'), bytes([0]))
         self.assertEqual((await b.until('K')).decode(), 'union')
+
+    async def test_presence_needs_both_friends_and_invites_reach_other_parties(self):
+        a_id, b_id, c_id = b'A' * 16, b'B' * 16, b'C' * 16
+        a = await self.connect()
+        a.send('H', bytes([4]))
+        code_a = (await a.until('K')).decode()
+        a.send('N', bytes([0, 0, 0]) + b'Alice')
+        a.send('U', a_id)
+        b = await self.connect()
+        b.send('H', bytes([2]))
+        code_b = (await b.until('K')).decode()
+        b.send('U', b_id)
+
+        # Only Alice lists Bob: she does not see him yet.
+        a.send('Y', b_id)
+        self.assertEqual(await a.until('y'), b'')
+        b.send('Y', a_id)
+        self.assertEqual(await b.until('y'), a_id + bytes([1, 4, len(code_a)]) + code_a.encode())
+        a.send('Y', b_id)
+        self.assertEqual(await a.until('y'), b_id + bytes([1, 2, len(code_b)]) + code_b.encode())
+
+        # Alice invites Bob to her party; a stranger's invite goes nowhere.
+        c = await self.connect()
+        c.send('J', b'elsewhere')
+        c.send('U', c_id)
+        c.send('Y', b_id)
+        await c.until('y')
+        c.send('G', b_id)
+        a.send('G', b_id)
+        self.assertEqual(await b.until('g'), a_id + bytes([len(code_a)]) + code_a.encode() + b'Alice')
+
+        # Bob joins Alice: his id reaches her party; a friend request and its answer.
+        b.writer.close()
+        b = await self.connect()
+        b.send('J', code_a.encode())
+        self.assertEqual(await b.until('U'), bytes([0]) + a_id)
+        b.send('U', b_id)
+        self.assertEqual(await a.until('U'), bytes([1]) + b_id)
+        b.send('Z', bytes([0, 1]))
+        self.assertEqual(await a.until('Z'), bytes([1, 1]))
+        a.send('Z', bytes([1, 2]))
+        self.assertEqual(await b.until('Z'), bytes([0, 2]))
+        b.send('T', bytes([1, 3]))
+        self.assertEqual(await a.until('T'), bytes([1, 1, 3]))
+
+        # Gone: offline to Alice.
+        b.send('Y', a_id)
+        await b.until('y')
+        a.send('Y', b_id)
+        self.assertEqual(len(await a.until('y')), 16 + 3 + len(code_a))
+        b.writer.close()
+        await a.until('l')
+        a.send('Y', b_id)
+        self.assertEqual(await a.until('y'), b'')
+        self.assertNotIn(b_id.decode(), self.relay.online)
 
 
 if __name__ == '__main__':
