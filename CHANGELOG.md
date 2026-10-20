@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The **+ button** (Start) opens and closes the pause menu while you walk around; in the
+  game's own screens it is still the game's Start. Guide works as before.
+- The pause menu and the online screens no longer stop the game: the world stays live
+  behind them (dimmed), its music keeps playing, and display changes such as WORLD ZOOM
+  show at once. Your buttons go to the menu meanwhile, not to the game.
 - Name tags, emotes, arrows, lamp glow and fireflies no longer shake or slide over
   the world while it moves: they are placed with the camera of the picture on the
   screen (also the 60 fps in-between pictures), not the game's newest.

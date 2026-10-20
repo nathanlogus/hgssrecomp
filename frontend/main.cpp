@@ -2478,6 +2478,12 @@ int main(int argc, char** argv)
         memcpy(&v, nds->MainRAM + (a & nds->MainRAMMask), 4);
         return v;
     };
+    // The player walking about with nothing of the game open: no X menu, text box or event
+    // (the player's map object paused, flag 0x40, while someone talks or a script runs).
+    auto fieldIdle = [&]() {
+        const uint32_t fs = readRam(0x021D4158), obj = readRam(readRam(fs + 0x40) + 0x30);
+        return fieldActive() && !probeActive(probeStartMenu) && fs && obj && !(readRam(fs + 0xD0) >> 16 & 0x40) && !(readRam(obj) & 0x40);
+    };
     // sFieldSysPtr -> location (map id) and playerAvatar -> mapObject -> current tile.
     auto playerPos = [&](int& map, int& x, int& z) {
         uint32_t fs = readRam(0x021D4158), loc = readRam(fs + 0x20), obj = readRam(readRam(fs + 0x40) + 0x30);
@@ -3295,6 +3301,10 @@ int main(int argc, char** argv)
         auto pressed = [&](int b) { return ps.btn[b] && !prevPad.btn[b]; };
         bool comboMenu = ps.btn[PAD_START] && ps.btn[PAD_BACK];
         if (pressed(PAD_GUIDE) || (comboMenu && !prevComboMenu)) toggleMenu = true;
+        // + (Start) opens and closes it too on the overworld, when nothing of the game is open
+        // (the game does not use Start there); anywhere else it stays the game's Start.
+        if (pressed(PAD_START) && !ps.btn[PAD_BACK] && !startOpen && remapping < 0 && screen == SCR_NONE && (menu.open || fieldIdle()))
+            toggleMenu = true;
         prevComboMenu = comboMenu;
 
         MenuInput heldNow;
@@ -3683,9 +3693,13 @@ int main(int argc, char** argv)
         for (int i = 0; i < PAD_COUNT; i++) anyHeld |= ps.btn[i];
         if (swallowMenuButtons && !anyHeld) swallowMenuButtons = false;
 
-        bool paused = menu.open || screen != SCR_NONE || startOpen;
+        // With the pause menu or a screen of the HUD open the game keeps running, with no
+        // buttons or touches for it: its music plays on and changes to the view show at once.
+        // Only the start screen holds it (it has not started yet).
+        const bool uiOpen = menu.open || screen != SCR_NONE || startOpen;
+        const bool paused = startOpen;
         int speed = 1;
-        if (!paused && !swallowMenuButtons)
+        if (!uiOpen && !swallowMenuButtons)
         {
             keys |= PadKeys(ps, cfg.byLabel, cfg.padMap);
             if (cfg.padTouch)
@@ -3702,7 +3716,7 @@ int main(int argc, char** argv)
         {
             static uint32_t wheelPrev = 0;
             const uint32_t dpad = keys & ((1u << KEY_UP) | (1u << KEY_LEFT) | (1u << KEY_RIGHT) | (1u << KEY_DOWN));
-            emoteWheel = !paused && Party_Link() == PartyLink::Online && fieldActive() && (keys & (1u << KEY_R));
+            emoteWheel = !uiOpen && Party_Link() == PartyLink::Online && fieldActive() && (keys & (1u << KEY_R));
             if (emoteWheel)
             {
                 const uint32_t down = dpad & ~wheelPrev;
@@ -3714,7 +3728,7 @@ int main(int argc, char** argv)
             }
             wheelPrev = emoteWheel ? dpad : 0;
         }
-        if (!paused && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
+        if (!uiOpen && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
         if (bootMode != BOOT_NONE && !paused)
         {
             // Past the intro (see bootMode): the player's own presses wait meanwhile.
@@ -3868,7 +3882,7 @@ int main(int argc, char** argv)
                 last = now;
             }
         };
-        if (!paused)
+        if (!uiOpen)
         {
             if (!opt.headless && mouseDown)
             {
@@ -3915,7 +3929,7 @@ int main(int argc, char** argv)
             static uint32_t prevStripKeys = 0;
             static int stripTouch = 0, stripTouchX = 0, stripTouchY = 0;
             const bool cmd = merged && !strcmp(scene.name, "battle-cmd"), moves = merged && !strcmp(scene.name, "battle-moves");
-            if (!paused && (cmd || moves))
+            if (!uiOpen && (cmd || moves))
             {
                 if (stripKind != scene.name)
                 {
@@ -3957,7 +3971,7 @@ int main(int argc, char** argv)
             }
             else
                 stripKind.clear();
-            if (!paused && stripTouch > 0)
+            if (!uiOpen && stripTouch > 0)
             {
                 touching = true;
                 touchX = stripTouchX;
@@ -3966,6 +3980,12 @@ int main(int argc, char** argv)
             }
         }
 
+        if (uiOpen && bootMode == BOOT_NONE)
+        {
+            // The buttons are the menu's (scripted test input and the keyboard too).
+            keys = 0;
+            touching = false;
+        }
         if (ref && !paused)
         {
             TraceLog.clear();
@@ -4002,7 +4022,7 @@ int main(int argc, char** argv)
         {
             int pmap = -1, px = 0, pz = 0;
             if (!playerPos(pmap, px, pz)) pmap = -1;
-            const int pstate = paused ? PS_MENU : sectionActive("OVY_12") && !fieldActive() ? PS_BATTLE
+            const int pstate = uiOpen ? PS_MENU : sectionActive("OVY_12") && !fieldActive() ? PS_BATTLE
                 : pmap == 2 || pmap == 4 || pmap == 5 ? PS_LINK : PS_FIELD;
             Party_Process(pstate, pmap);
             // The others' trainers: on this map, or anywhere outdoors (the outdoors is one map
@@ -4432,7 +4452,7 @@ int main(int argc, char** argv)
         const SDL_Rect cursorRect = merged
             ? SDL_Rect { (int)view.originX, (int)view.originY, (int)(256 * view.unit), (int)(192 * view.unit) }
             : rects[1];
-        if (frame < cursorShownUntil && cursorRect.w > 0 && !paused)
+        if (frame < cursorShownUntil && cursorRect.w > 0 && !uiOpen)
         {
             int cx = cursorRect.x + (int)(cursorX * cursorRect.w / 256);
             int cy = cursorRect.y + (int)(cursorY * cursorRect.h / 192);

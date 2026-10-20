@@ -203,7 +203,7 @@ Everything can be done from a controller:
 | A / B / X / Y | the buttons with those labels | X / Z / S / A |
 | L / R | shoulders | Q / W |
 | Start / Select | Start / Back | Enter / Right Shift |
-| Pause menu | Guide, or Start + Select together | Esc |
+| Pause menu | + (Start) while walking around, Guide, or Start + Select together | Esc |
 | Touch screen | off by default; with "Stick touch cursor" on in the pause menu: right stick moves a cursor, right trigger presses | mouse, or I J K L and Space |
 | Fast forward (4x) | hold left trigger | hold Left Shift |
 | Swap the large screen | click right stick (only with "Stick touch cursor" on) | F1 |
