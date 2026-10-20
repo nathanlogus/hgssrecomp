@@ -31,3 +31,5 @@ __pycache__/
 # The player's own songs and pictures for the frontend: not part of the project.
 assets/songs/
 assets/autosave.gif
+assets/fonts/
+assets/buttons/

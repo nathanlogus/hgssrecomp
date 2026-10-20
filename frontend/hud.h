@@ -14,6 +14,7 @@
 #include <zlib.h>
 #include "ndsrom.h"
 #include "ui.h"
+#include "thirdparty/stb_truetype.h"
 
 // A picture: ARGB, straight (not premultiplied) alpha.
 struct Image
@@ -225,8 +226,26 @@ public:
     // The @2x pictures: for a UI drawn larger than the design size (Ui::s above 1).
     bool HiRes = false;
 
+    // A picture of the player's in place of the set's sprite `name` (at that sprite's design
+    // size); an empty image puts the set's back.
+    void Replace(const std::string& name, const Image& img)
+    {
+        if (img.px.empty())
+        {
+            replaced.erase(name);
+            return;
+        }
+        Sprite& s = replaced[name];
+        s = Sprite();
+        auto m = meta.find(name);
+        s.w = m != meta.end() ? m->second.w : (float)img.w;
+        s.h = m != meta.end() ? m->second.h : (float)img.h;
+        s.img = img;
+    }
+
     const Sprite* Get(const std::string& name)
     {
+        if (auto r = replaced.find(name); r != replaced.end()) return &r->second;
         const std::string key = HiRes ? name + "@2x" : name;
         auto it = cache.find(key);
         if (it != cache.end()) return it->second.img.px.empty() ? nullptr : &it->second;
@@ -251,7 +270,7 @@ public:
 
 private:
     Reader read = nullptr;
-    std::map<std::string, Sprite> meta, cache;
+    std::map<std::string, Sprite> meta, cache, replaced;
 
     // manifest.json as gen.py writes it: a list of objects with name, folder, size and
     // nine_slice (or null). Read with a small scanner rather than a JSON library.
@@ -328,9 +347,109 @@ inline void DrawSprite(Canvas& c, const Sprite* s, float x, float y, float w, fl
 // The game's fonts (pbr/font.narc in the ROM): 16x16 cells of 2 bits per pixel in four 8x8
 // tiles, and a width per glyph. 1 is the letter, 2 its shadow. Font 0 is the dialogue font,
 // font 2 the bold one (3 is the Unown alphabet). Drawn at whole multiples of the cell only, as the pixel art wants.
+// A font file of the player's (assets/fonts, Text: New font), drawn smooth instead of the
+// game's pixel font, at the size the pixel font would have (its 16-pixel cell at `scale`).
+// Letters are rasterised once per size and kept.
+class VectorFont
+{
+public:
+    bool Load(std::vector<uint8_t> d)
+    {
+        data = std::move(d);
+        ok = !data.empty() && stbtt_InitFont(&info, data.data(), stbtt_GetFontOffsetForIndex(data.data(), 0));
+        if (ok) stbtt_GetFontVMetrics(&info, &ascent, &descent, &gap);
+        return ok;
+    }
+    bool Ok() const { return ok; }
+
+    int Width(const std::vector<uint32_t>& text, float scale, bool bold) const
+    {
+        const float k = Scale(scale);
+        float w = 0;
+        for (size_t i = 0; i < text.size(); i++)
+        {
+            int adv, lsb;
+            stbtt_GetCodepointHMetrics(&info, (int)text[i], &adv, &lsb);
+            w += adv * k;
+            if (i + 1 < text.size()) w += stbtt_GetCodepointKernAdvance(&info, (int)text[i], (int)text[i + 1]) * k;
+        }
+        return (int)std::lround(w + (bold ? Embolden(scale) : 0));
+    }
+
+    void Draw(Canvas& c, int x, int y, const std::vector<uint32_t>& text, float scale, uint32_t ink, bool bold) const
+    {
+        const float k = Scale(scale);
+        // The baseline where the pixel font has it (row 12 of its cell), the letters a little
+        // smaller than the cell, as they are drawn with less space around them.
+        const int baseline = y + (int)std::lround(12.5f * scale);
+        float pen = (float)x;
+        const int thick = bold ? Embolden(scale) : 0;
+        for (size_t i = 0; i < text.size(); i++)
+        {
+            const Glyph& g = Get(text[i], k);
+            for (int t = 0; t <= thick; t++)
+                Blend(c, (int)std::lround(pen) + g.x0 + t, baseline + g.y0, g, ink);
+            int adv, lsb;
+            stbtt_GetCodepointHMetrics(&info, (int)text[i], &adv, &lsb);
+            pen += adv * k;
+            if (i + 1 < text.size()) pen += stbtt_GetCodepointKernAdvance(&info, (int)text[i], (int)text[i + 1]) * k;
+        }
+    }
+
+private:
+    struct Glyph
+    {
+        int x0 = 0, y0 = 0, w = 0, h = 0;
+        std::vector<uint8_t> alpha;
+    };
+    std::vector<uint8_t> data;
+    stbtt_fontinfo info{};
+    int ascent = 0, descent = 0, gap = 0;
+    bool ok = false;
+    mutable std::map<std::pair<uint32_t, int>, Glyph> cache;
+
+    // Font units to canvas pixels: the em about 14 of the pixel font's pixels.
+    float Scale(float scale) const { return stbtt_ScaleForMappingEmToPixels(&info, 14.0f * scale); }
+    static int Embolden(float scale) { return std::max(1, (int)std::lround(scale * 0.5f)); }
+
+    const Glyph& Get(uint32_t cp, float k) const
+    {
+        const auto key = std::make_pair(cp, (int)std::lround(k * 100000));
+        auto it = cache.find(key);
+        if (it != cache.end()) return it->second;
+        Glyph& g = cache[key];
+        int x1, y1;
+        stbtt_GetCodepointBitmapBox(&info, (int)cp, k, k, &g.x0, &g.y0, &x1, &y1);
+        g.w = std::max(0, x1 - g.x0);
+        g.h = std::max(0, y1 - g.y0);
+        g.alpha.assign((size_t)g.w * g.h, 0);
+        if (g.w && g.h) stbtt_MakeCodepointBitmap(&info, g.alpha.data(), g.w, g.h, g.w, k, k, (int)cp);
+        return g;
+    }
+
+    static void Blend(Canvas& c, int x, int y, const Glyph& g, uint32_t ink)
+    {
+        const int x0 = std::max(0, x), y0 = std::max(0, y), x1 = std::min(c.w, x + g.w), y1 = std::min(c.h, y + g.h);
+        if (x1 <= x0 || y1 <= y0) return;
+        c.Mark(x0, y0, x1, y1);
+        const uint32_t inkA = ink >> 24, rgb = ink & 0xFFFFFF;
+        for (int yy = y0; yy < y1; yy++)
+            for (int xx = x0; xx < x1; xx++)
+            {
+                const uint32_t a = g.alpha[(size_t)(yy - y) * g.w + (xx - x)] * inkA / 255;
+                if (!a) continue;
+                uint32_t& d = c.px[(size_t)yy * c.w + xx];
+                d = BlendOver(d, a << 24 | rgb);
+            }
+    }
+};
+
 class RomFont
 {
 public:
+    // Text drawn with this font file instead (nullptr: the game's own font).
+    void UseVector(const VectorFont* v) { vector = v && v->Ok() ? v : nullptr; }
+
     bool Load(const uint8_t* rom, size_t romSize)
     {
         const auto files = NdsNarcFiles(rom, romSize, "pbr/font.narc");
@@ -353,6 +472,7 @@ public:
     // Width in canvas pixels at `scale` (canvas pixels per font pixel).
     int Width(const std::string& text, float scale, bool bold = false) const
     {
+        if (vector) return vector->Width(Utf8(text), scale, bold);
         if (!ok) return Canvas::TextWidth(text, std::max(1, (int)std::lround(scale)));
         int w = 0;
         for (uint32_t cp : Utf8(text))
@@ -366,6 +486,11 @@ public:
     // others; the letters stay sharp.
     void Draw(Canvas& c, int x, int y, const std::string& text, float scale, uint32_t ink, uint32_t shadow, bool bold = false) const
     {
+        if (vector)
+        {
+            vector->Draw(c, x, y, Utf8(text), scale, ink, bold);
+            return;
+        }
         if (!ok)
         {
             const int k = std::max(1, (int)std::lround(scale));
@@ -409,6 +534,7 @@ private:
     };
     Face faces[2];
     bool ok = false;
+    const VectorFont* vector = nullptr;
 
     static int Advance(const Face& f, int g)
     {

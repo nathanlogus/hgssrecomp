@@ -257,6 +257,16 @@ brought to about the loudness of the game's music; sound effects, cries and jing
 the game's own. **Music** in the Game tab switches between the songs and the original
 tunes. The songs are yours: they are not part of this project and are never uploaded with it.
 
+### Your own font and button pictures
+
+The menus and the HUD use the game's own letters and coloured button pictures. A font file
+(`.otf` or `.ttf`) in `assets/fonts` replaces the letters, and button pictures in
+`assets/buttons` replace the buttons: white glyphs named like the Nintendo Switch's
+(`icon_key_a_00.png`, with an optional shadow `icon_key_ds_a_ds_00.png`; a, b, x, y, l, r,
+zl, zr, plus, minus, up, down, left, right, stick_l, stick_r). They are drawn dark on the
+HUD's light bars. **Text** and **Button pictures** in the Display tab switch back. Like
+songs, these files are yours and are not part of the project.
+
 ### Single-screen view
 
 The default view (`merged`) shows one picture, with no second screen beside it

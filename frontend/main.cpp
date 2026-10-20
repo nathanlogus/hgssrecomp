@@ -47,6 +47,7 @@
 #include "host.h"
 #include "layout.h"
 #include "ui.h"
+#define STB_TRUETYPE_IMPLEMENTATION
 #include "hud.h"
 #include "hudmenu.h"
 #include "hudtoast.h"
@@ -1029,7 +1030,9 @@ struct Settings
     bool voidFill = true; // haze instead of black where the world reaches past the loaded map
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
     bool redrawn = true;
-    bool newSongs = true; // Music: the player's songs (songs.h) instead of the game's music, where there is one  // the game's screens redrawn in the HUD style (so far the trainer card)
+    bool newSongs = true;
+    bool newText = true;    // Text: the player's font file (assets/fonts) instead of the game's
+    bool newButtons = true; // Button pictures: the player's (assets/buttons) instead of the set's // Music: the player's songs (songs.h) instead of the game's music, where there is one  // the game's screens redrawn in the HUD style (so far the trainer card)
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
     bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
     int windowH = 0;      // window height chosen in the menu; 0 = from --scale
@@ -1088,6 +1091,8 @@ struct Settings
             else if (k == "night_fx") nightFx = v == "1";
             else if (k == "redrawn_screens") redrawn = v == "1";
             else if (k == "music") newSongs = v != "original";
+            else if (k == "text_font") newText = v != "game";
+            else if (k == "button_pictures") newButtons = v != "classic";
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v == "1";
             else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), ZoomSteps[0], ZoomSteps[ZoomCount - 1]);
@@ -1129,6 +1134,8 @@ struct Settings
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
         f << "music=" << (newSongs ? "new" : "original") << "\n";
+        f << "text_font=" << (newText ? "new" : "game") << "\n";
+        f << "button_pictures=" << (newButtons ? "new" : "classic") << "\n";
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
         f << "window_height=" << windowH << "\n";
@@ -2373,6 +2380,75 @@ int main(int argc, char** argv)
     const bool spritesOk = sprites.Load(ReadUiFile);
     const bool fontOk = font.Load(rom.data(), rom.size());
     fprintf(stderr, "[hud] sprites %s, font %s\n", spritesOk ? g_uiDir.c_str() : "missing (plain menu)", fontOk ? "from the ROM" : "missing");
+    // The player's own font (the first .otf or .ttf in assets/fonts) and button pictures
+    // (assets/buttons, the white Nintendo Switch "Tips" icons: icon_key_a_00.png and its
+    // shadow icon_key_ds_a_ds_00.png, ...): used when they are there, never shipped.
+    VectorFont vectorFont;
+#ifndef __ANDROID__
+    {
+        std::error_code ec;
+        for (const auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(g_uiDir + "../fonts"), ec))
+        {
+            const std::string ext = e.path().extension().u8string();
+            if ((ext == ".otf" || ext == ".ttf" || ext == ".OTF" || ext == ".TTF") && vectorFont.Load(ReadFile(e.path().u8string())))
+            {
+                fprintf(stderr, "[hud] font %s\n", e.path().filename().u8string().c_str());
+                break;
+            }
+        }
+    }
+#endif
+    auto applyFont = [&]() { font.UseVector(cfg.newText ? &vectorFont : nullptr); };
+    applyFont();
+    std::vector<std::pair<std::string, Image>> buttonPics;
+    {
+        static const char* names[][2] = { { "buttons/button_a", "a" }, { "buttons/button_b", "b" }, { "buttons/button_x", "x" },
+            { "buttons/button_y", "y" }, { "buttons/button_l", "l" }, { "buttons/button_r", "r" }, { "buttons/button_zl", "zl" },
+            { "buttons/button_zr", "zr" }, { "buttons/button_plus", "plus" }, { "buttons/button_minus", "minus" },
+            { "buttons/button_dpad_up", "up" }, { "buttons/button_dpad_down", "down" }, { "buttons/button_dpad_left", "left" },
+            { "buttons/button_dpad_right", "right" }, { "buttons/stick_l", "stick_l" }, { "buttons/stick_r", "stick_r" } };
+        const std::string dir = g_uiDir + "../buttons/";
+        for (const auto& n : names)
+        {
+            Image glyph, shadow;
+            const std::vector<uint8_t> g = ReadFile(dir + "icon_key_" + n[1] + "_00.png"), d = ReadFile(dir + "icon_key_ds_" + n[1] + "_ds_00.png");
+            if (g.empty() || !DecodePng(g.data(), g.size(), glyph)) continue;
+            if (d.empty() || !DecodePng(d.data(), d.size(), shadow)) shadow = Image();
+            // White glyphs for dark screens: drawn in the HUD's ink over their shadow, softened,
+            // so that they read on its white bars.
+            Image pic;
+            pic.w = std::max(glyph.w, shadow.w);
+            pic.h = std::max(glyph.h, shadow.h);
+            pic.px.assign((size_t)pic.w * pic.h, 0);
+            // `invert`: light parts in the HUD's ink, dark parts (the letters) white.
+            auto put = [&](const Image& src, uint32_t rgb, float alpha, bool invert) {
+                const int ox = (pic.w - src.w) / 2, oy = (pic.h - src.h) / 2;
+                for (int y = 0; y < src.h; y++)
+                    for (int x = 0; x < src.w; x++)
+                    {
+                        const uint32_t p = src.px[(size_t)y * src.w + x], a = (uint32_t)((p >> 24) * alpha);
+                        if (!a) continue;
+                        uint32_t c = rgb;
+                        if (invert)
+                        {
+                            const float l = ((p >> 16 & 0xFF) * 0.3f + (p >> 8 & 0xFF) * 0.59f + (p & 0xFF) * 0.11f) / 255;
+                            auto mix = [&](int sh) { return (uint32_t)std::lround(255 * (1 - l) + ((rgb >> sh) & 0xFF) * l) << sh; };
+                            c = mix(16) | mix(8) | mix(0);
+                        }
+                        uint32_t& o = pic.px[(size_t)(y + oy) * pic.w + x + ox];
+                        o = BlendOver(o, a << 24 | c);
+                    }
+            };
+            if (!shadow.px.empty()) put(shadow, 0x000000, 0.25f, false);
+            put(glyph, HudColour::Ink & 0xFFFFFF, 1.0f, true);
+            buttonPics.push_back({ n[0], pic });
+        }
+        if (!buttonPics.empty()) fprintf(stderr, "[hud] %zu button pictures from %s\n", buttonPics.size(), dir.c_str());
+    }
+    auto applyButtons = [&]() {
+        for (const auto& b : buttonPics) sprites.Replace(b.first, cfg.newButtons ? b.second : Image());
+    };
+    applyButtons();
     SongPlayer songs;
     if (songs.Load(ReadSongFile)) fprintf(stderr, "[songs] a list of songs in %s../songs\n", g_uiDir.c_str());
     // The logo on the start screen: assets/logo.png (beside the HUD's folder), if it is there.
@@ -2614,7 +2690,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_TEXTFONT, M_BUTTONPICS,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2743,6 +2819,12 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_FARMAP, "Far map", onOff(cfg.farMap), "Draws the map beyond the part the game has loaded, so a wide or zoomed-out view has no gaps.");
         add(T_DISPLAY, M_VOIDFILL, "Void fill", onOff(cfg.voidFill), "Fills any ground not loaded yet with a soft haze instead of black.");
         add(T_DISPLAY, M_NIGHTFX, "Night effects", onOff(cfg.nightFx), "In the evening and at night: night colours, lamp light, glowing windows and fireflies.");
+        add(T_DISPLAY, M_TEXTFONT, "Text", vectorFont.Ok() && cfg.newText ? "New font" : "Game font",
+            vectorFont.Ok() ? "New font: the font file in assets/fonts for all of this menu's text and the HUD's. Game font: the game's own letters."
+                            : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = !vectorFont.Ok();
+        add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
+            !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
+                                : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
         add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the trainer card.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
@@ -3614,6 +3696,14 @@ int main(int argc, char** argv)
                 break;
             case M_NIGHTFX:
                 cfg.nightFx = !cfg.nightFx;
+                break;
+            case M_TEXTFONT:
+                cfg.newText = !cfg.newText;
+                applyFont();
+                break;
+            case M_BUTTONPICS:
+                cfg.newButtons = !cfg.newButtons;
+                applyButtons();
                 break;
             case M_MUSIC:
                 cfg.newSongs = !cfg.newSongs;
