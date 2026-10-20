@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Menu sounds**: the pause menu, the start and title screens, the online screens and the
+  save card now make the game's own cursor, choose and back sounds, taken from your ROM.
+  They can be turned off in Game → Menu sounds.
 - A **title screen** before the start screen when there is a video in
   `assets/animations/intro.mpg`: it plays in a loop with the logo on it, and A (or + or
   Enter) goes on to the start screen. The game's title music (or your song for it) starts
