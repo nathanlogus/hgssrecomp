@@ -10,6 +10,11 @@
   a small card with both Pokémon, their HP and the turn. Link battles show a move timer
   under the VS banner (only shown: nothing is forced).
 - The other players' trainers now also show with the widescreen world off.
+- New screens, battles: the moves now appear under the field as a grid of four buttons in
+  their type's colour with their PP, and the chosen move's type, power, accuracy and kind
+  in the box beside them, so nothing of the battle is covered. Double battles get the new
+  menus too, for both of your Pokémon, with the target drawn the same way, and so do the
+  questions with two answers ("Will you switch your Pokémon?" and the like).
 - Autosave no longer stops the game: it keeps your place in the background (for Continue).
   The game's own save by itself in Pokémon Centers and after a badge is now ALSO SAVE THE
   GAME in the Game tab (off by default), and its writing is much quicker.

@@ -1,11 +1,21 @@
 #pragma once
-// The battle's commands and moves redrawn in the HUD style (online-HUD design, 18-ss-battle),
-// in place of the strip of touch-screen buttons the single-screen view shows under the
-// field ("battle-cmd" and "battle-moves" scenes in main.cpp): a row of discs (FIGHT,
-// POKéMON, BAG, RUN), the "What will X do?" dialogue beside them and, once FIGHT is chosen, a
-// card with the moves and their PP over the field. The game still takes the input (main.cpp
-// touches the buttons for it); everything shown is read from the game's memory every frame,
-// and nothing is shown when what is read does not check out.
+// The battle's touch-screen menus redrawn in the HUD style (online-HUD design, 18-ss-battle),
+// in place of the strip of touch-screen buttons the single-screen view shows under the field
+// ("battle-cmd", "battle-moves" and "battle-pick" scenes in main.cpp), all in one band under
+// the field so that nothing of the field is covered:
+//  - the commands: a row of discs (FIGHT, POKéMON, BAG, RUN or CANCEL) beside a dialogue
+//    asking "What will X do?";
+//  - the moves (FIGHT chosen): a 2 x 2 grid of buttons in the move's type colour with its PP,
+//    where the discs were, and the chosen move's type, power, accuracy and category in the
+//    dialogue;
+//  - in a double battle, the target: the four places on the field as a 2 x 2 grid, the foes
+//    above, as the game's touch screen has them;
+//  - the questions with two answers (Use next Pokémon / Flee, Switch Pokémon / Keep
+//    battling, Yes / No, keeping or forgetting a move): the question in the dialogue, the
+//    answers as two rows.
+// The game still takes the input (main.cpp touches the buttons for it); everything shown is
+// read from the game's memory every frame, and nothing is shown when what is read does not
+// check out.
 #include <cmath>
 #include <map>
 #include "hudmenu.h"
@@ -19,25 +29,77 @@ namespace HudBattle
 // touch screen's: FIGHT, BAG, POKéMON, RUN).
 constexpr int CmdOrder[4] = { 0, 2, 1, 3 };
 
+// What the battle's touch screen is asking.
+enum Kind { Idle, Commands, Fight, Target, Choice };
+
+// The target menu's four buttons, as the touch screen numbers them (and main.cpp touches
+// them): 0 the player's left Pokémon, 1 the foes' right one, 2 the player's right one, 3 the
+// foes' left one. As a grid, foes above: TargetGrid[row][column].
+constexpr int TargetGrid[2][2] = { { 3, 1 }, { 0, 2 } };
+
+struct Mon
+{
+    int species = 0, level = 0, hp = 0, maxHp = 0;
+    std::string name;
+};
+
 // What the battle's touch screen is asking, as read from the game.
 struct State
 {
-    bool moves = false; // the move list (FIGHT chosen), else the commands
-    bool idle = false;  // neither: between two menus
-    std::string name, foe;
-    int species = 0, level = 0, hp = 0, maxHp = 0, foeSpecies = 0, foeLevel = 0;
-    bool wild = false;
+    int kind = Idle;
+    bool moves = false; // kind == Fight
+    bool idle = false;  // kind == Idle: between two menus
+    bool wild = false, doubles = false;
+    bool cancel = false; // the commands' last button is CANCEL (a double battle's second Pokémon)
+    Mon me;              // the Pokémon whose turn it is (in a choice: the player's first)
+    Mon foe[2];          // the opponent's Pokémon in battle (the second only in a double battle)
     uint16_t move[4] = {};
     uint8_t pp[4] = {}, ppMax[4] = {};
+    // The target menu: the four places (see TargetGrid), whether a Pokémon stands there and
+    // whether the move can be aimed at it; `multi`: the move hits all of those at once.
+    Mon box[4];
+    bool shown[4] = {}, hit[4] = {}, multi = false;
+    // A choice: the game's menu (13 yes/no, 14 forget/keep a move, 15 give up on a move,
+    // 16 next Pokémon/flee, 17 switch/keep battling), the move it names, the question asked.
+    int choice = 0, choiceMove = 0;
+    std::string question;
+
+    // Everything shown, for knowing when to draw again.
+    std::string Key() const
+    {
+        std::string k = std::to_string(kind) + (wild ? "w" : "") + (doubles ? "d" : "") + (cancel ? "c" : "") + "|" + std::to_string(choice) + "," +
+            std::to_string(choiceMove) + "|" + question;
+        auto add = [&](const Mon& m) {
+            k += "|" + m.name + "," + std::to_string(m.species) + "," + std::to_string(m.level) + "," + std::to_string(m.hp) + "," +
+                std::to_string(m.maxHp);
+        };
+        add(me);
+        for (const Mon& m : foe) add(m);
+        for (int i = 0; i < 4; i++)
+        {
+            k += "|" + std::to_string(move[i]) + "," + std::to_string(pp[i]) + "," + std::to_string(ppMax[i]) + (shown[i] ? "s" : "") + (hit[i] ? "h" : "");
+            add(box[i]);
+        }
+        return k + (multi ? "m" : "");
+    }
 };
+
+// Which places a target menu's move reaches (pokeheartgold sMoveRangeHitMons), by the game's
+// selection type, in the order of the touch screen's buttons. Types 1, 2, 3, 5 and 7 hit all
+// of their places at once.
+constexpr uint8_t TargetHits[12][4] = { { 1, 1, 1, 1 }, { 0, 1, 0, 1 }, { 0, 1, 1, 1 }, { 1, 1, 1, 1 }, { 1, 0, 0, 0 }, { 1, 0, 1, 0 },
+    { 0, 0, 1, 0 }, { 1, 1, 0, 1 }, { 0, 1, 1, 1 }, { 1, 1, 0, 1 }, { 1, 0, 1, 0 }, { 0, 1, 0, 1 } };
 
 // Reads the battle from main RAM. Where things are (pokeheartgold): FieldSystem (pointer at
 // 0x021D4158) -> its process manager -> the child application, the battle (overlay 12),
-// whose data is the BattleSystem; that holds the BattleContext (+0x30) and the BattleInput
-// (+0x19C), the bottom screen's state: the menu shown (curMenuId, +0x68B) and the data it was
-// given (+0x1C; for the moves: numbers, PP and maximum PP). The Pokémon in battle are in the
-// context (battleMons, +0x2D40, 0xC0 bytes each). Only plain single battles are accepted (no
-// double, link, Safari, Bug-Catching Contest, Pal Park or tutorial battles), and the menu's
+// whose data is the BattleSystem: battle type (+0x2C), the context (+0x30), the battlers'
+// display data (+0x34, each with its place, battlerType, at +0x195), their number (+0x44), the
+// last message printed (+0x18, a String) and the BattleInput (+0x19C), the bottom screen's
+// state: the menu shown (curMenuId, +0x68B), whose turn it is (battlerType, +0x68A), the
+// target menu's selection type (+0x68C), whether the commands end in CANCEL (+0x68F) and the
+// data the menu was given (+0x1C). The Pokémon in battle are in the context (battleMons,
+// +0x2D40, 0xC0 bytes each). Only plain single and double battles are accepted (no link,
+// multi, tag, Safari, Pal Park, Bug-Catching Contest or tutorial battles), and the menu's
 // data must match the Pokémon in battle.
 inline bool Read(const uint8_t* ram, uint32_t mask, State& s)
 {
@@ -49,40 +111,99 @@ inline bool Read(const uint8_t* ram, uint32_t mask, State& s)
     if (!in(fs) || !in(pm) || !in(app) || r32(app + 0xC) != 12) return false;
     const uint32_t bs = r32(app + 0x1C), ctx = r32(bs + 0x30), bi = r32(bs + 0x19C);
     if (!in(bs) || !in(ctx) || !in(bi) || r32(bi) != bs) return false;
-    // Allowed: trainer (bit 0), AI (6) and roaming Pokémon (8) battles.
-    const uint32_t type = r32(bs + 0x2C);
-    if ((type & ~0x141u) != 0 || r32(bs + 0x44) != 2) return false;
-    const int menu = (int8_t)r8(bi + 0x68B);
-    // 1-4: the four commands (sliding in or not), 11: the moves. (5-8 have other buttons.)
-    // -1 and 0: none, as between two menus.
-    if ((menu < -1 || menu > 4) && menu != 11) return false;
-
-    // The Pokémon in battle: the player's (battler 0) and the opponent's (1).
-    auto mon = [&](int b, int& species, int& level, std::string& name) {
-        const uint32_t m = ctx + 0x2D40 + 0xC0 * b;
-        species = (int)r16(m);
-        level = (int)r8(m + 0x34);
-        uint16_t nick[11];
-        for (int i = 0; i < 11; i++) nick[i] = (uint16_t)r16(m + 0x36 + 2 * i);
-        name = NdsText(nick, 11);
-        return species >= 1 && species <= 493 && level >= 1 && level <= 100 && !name.empty() && name.size() < 40;
-    };
-    if (!mon(0, s.species, s.level, s.name) || !mon(1, s.foeSpecies, s.foeLevel, s.foe)) return false;
-    const uint32_t me = ctx + 0x2D40;
-    s.hp = (int)r32(me + 0x4C);
-    s.maxHp = (int)r32(me + 0x50);
-    if (s.hp < 0 || s.maxHp <= 0 || s.hp > s.maxHp || s.maxHp > 999) return false;
+    // Allowed: trainer (bit 0), double (1), AI (6) and roaming Pokémon (8) battles.
+    const uint32_t type = r32(bs + 0x2C), count = r32(bs + 0x44);
+    s.doubles = type & 2;
     s.wild = !(type & 1);
-    s.moves = menu == 11;
-    s.idle = menu <= 0;
-    if (s.idle) return true;
+    if ((type & ~0x143u) != 0 || count != (s.doubles ? 4u : 2u)) return false;
+    const int menu = (int8_t)r8(bi + 0x68B);
+    // -1 and 0: none, as between two menus; 1-4: the commands (sliding in or not); 11: the
+    // moves; 12: the target; 13-17: two answers. (5-10 are Safari and Pal Park's.)
+    s.kind = menu >= -1 && menu <= 0 ? Idle : menu >= 1 && menu <= 4 ? Commands : menu == 11 ? Fight : menu == 12 ? Target : menu >= 13 && menu <= 17 ? Choice : -1;
+    if (s.kind < 0 || (s.kind == Target && !s.doubles)) return false;
+    s.moves = s.kind == Fight;
+    s.idle = s.kind == Idle;
+
+    auto mon = [&](int b, Mon& m) {
+        const uint32_t a = ctx + 0x2D40 + 0xC0 * b;
+        m.species = (int)r16(a);
+        m.level = (int)r8(a + 0x34);
+        uint16_t nick[11];
+        for (int i = 0; i < 11; i++) nick[i] = (uint16_t)r16(a + 0x36 + 2 * i);
+        m.name = NdsText(nick, 11);
+        m.hp = (int)r32(a + 0x4C);
+        m.maxHp = (int)r32(a + 0x50);
+        return m.species >= 1 && m.species <= 493 && m.level >= 1 && m.level <= 100 && !m.name.empty() && m.name.size() < 40 && m.hp >= 0 &&
+            m.maxHp > 0 && m.hp <= m.maxHp && m.maxHp <= 999;
+    };
+    // The battler shown at a place (battlerType: 0/1 in a single battle, 2-5 in a double).
+    auto battlerAt = [&](uint32_t place) {
+        for (int i = 0; i < (int)count; i++)
+        {
+            const uint32_t od = r32(bs + 0x34 + 4 * i);
+            if (in(od) && r8(od + 0x195) == place) return i;
+        }
+        return -1;
+    };
+    if (!mon(1, s.foe[0])) return false;
+    s.foe[1] = Mon();
+    if (s.doubles && !mon(3, s.foe[1])) s.foe[1] = Mon();
+    s.cancel = s.doubles && r8(bi + 0x68F) == 1;
     const uint32_t d = bi + 0x1C;
+    // Whose turn it is; the player's are the even battlers.
+    int who = 0;
+    if (s.kind == Commands || s.kind == Fight || s.kind == Target)
+    {
+        who = battlerAt(r8(bi + 0x68A));
+        if (who < 0 || (who & 1)) return false;
+    }
+    if (!mon(who, s.me)) return false;
+    if (s.kind == Idle) return true;
+    if (s.kind == Choice)
+    {
+        s.choice = menu;
+        s.choiceMove = menu == 15 ? (int)r16(d) : 0;
+        if (s.choiceMove > 467) return false;
+        // The question is the battle's last message (a String: size, length, magic, text).
+        s.question.clear();
+        const uint32_t str = r32(bs + 0x18);
+        const uint32_t len = r16(str + 2);
+        if (in(str) && r32(str + 4) == 0xB6F8D2EC && len <= r16(str) && len < 200)
+        {
+            uint16_t text[200];
+            for (uint32_t i = 0; i < len; i++) text[i] = (uint16_t)r16(str + 8 + 2 * i);
+            s.question = NdsText(text, len);
+        }
+        return true;
+    }
+    if (s.kind == Target)
+    {
+        // BattleInputTargetMenu: per battler its Pokémon's HP (and whether it is there), then
+        // whose turn it is and the selection type.
+        const uint32_t sel = r8(d + 33);
+        if (r8(d + 32) != r8(bi + 0x68A) || sel != r8(bi + 0x68C) || sel >= 12) return false;
+        s.multi = sel == 1 || sel == 2 || sel == 3 || sel == 5 || sel == 7;
+        bool any = false;
+        for (int i = 0; i < 4; i++)
+        {
+            const int b = battlerAt(2 + i);
+            if (b < 0) return false;
+            const uint32_t t = d + 8 * b;
+            s.shown[i] = (r8(t + 1) >> 2) & 1;
+            s.box[i] = Mon();
+            if (s.shown[i] && (!mon(b, s.box[i]) || s.box[i].hp != (int)(int16_t)r16(t + 4) || s.box[i].maxHp != (int)r16(t + 6))) return false;
+            s.hit[i] = s.shown[i] && TargetHits[sel][i];
+            any |= s.hit[i];
+        }
+        return any;
+    }
     // BattleInputMainMenu: the HP it shows is the Pokémon's.
-    const bool mainData = r8(d + 1) == 0 && (int)(int16_t)r16(d + 4) == s.hp && (int)r16(d + 6) == s.maxHp;
-    if (!s.moves && mainData) return true;
+    const bool mainData = (int)r8(d + 1) == who && battlerAt(r8(d)) == who && (int)(int16_t)r16(d + 4) == s.me.hp && (int)r16(d + 6) == s.me.maxHp;
+    if (s.kind == Commands && mainData) return true;
     // BattleInputFightMenu: the moves must be the Pokémon's, with its PP. (Back from the moves
     // the commands come up without new data, so the moves' data is still there then.)
-    int count = 0;
+    const uint32_t me = ctx + 0x2D40 + 0xC0 * who;
+    int n = 0;
     for (int i = 0; i < 4; i++)
     {
         s.move[i] = (uint16_t)r16(d + 2 * i);
@@ -91,9 +212,9 @@ inline bool Read(const uint8_t* ram, uint32_t mask, State& s)
         if (s.move[i] != r16(me + 0xC + 2 * i) || s.move[i] > 467 || s.pp[i] != r8(me + 0x2C + i) || s.pp[i] > s.ppMax[i] ||
             s.ppMax[i] > 64 || (s.move[i] != 0) != (s.ppMax[i] != 0))
             return false;
-        count += s.move[i] != 0;
+        n += s.move[i] != 0;
     }
-    return r8(d + 16) == r8(bi + 0x68A) && count > 0;
+    return r8(d + 16) == r8(bi + 0x68A) && n > 0;
 }
 
 // Any single battle, link battles too, as the others in a session are told about it
@@ -186,6 +307,20 @@ inline uint32_t TypeColour(int t)
         0xFFB8B8D0, 0xFF68A090, 0xFFF08030, 0xFF6890F0, 0xFF78C850, 0xFFF8D030, 0xFFF85888, 0xFF98D8D8, 0xFF7038F8, 0xFF705848 };
     return t >= 0 && t < 18 ? c[t] : 0xFF68A090;
 }
+// Types light enough to want dark letters.
+inline bool LightType(int t)
+{
+    return t == 13 || t == 15 || t == 4 || t == 8;
+}
+
+// `a` mixed with `b`, `k` of the way (0-256), keeping a's alpha.
+inline uint32_t Mix(uint32_t a, uint32_t b, int k)
+{
+    uint32_t out = a & 0xFF000000;
+    for (int sh = 0; sh < 24; sh += 8)
+        out |= (uint32_t)((((a >> sh) & 0xFF) * (256 - k) + ((b >> sh) & 0xFF) * k) >> 8) << sh;
+    return out;
+}
 
 // A filled rectangle with round corners of radius `r`, in canvas pixels, its edges smoothed.
 inline void RoundRect(Canvas& c, float x, float y, float w, float h, float r, uint32_t argb)
@@ -213,101 +348,203 @@ inline void RoundRect(Canvas& c, float x, float y, float w, float h, float r, ui
 inline void TypePill(Canvas& c, const Ui& ui, const RomFont& f, float x, float y, float w, float h, int type)
 {
     RoundRect(c, ui(x), ui(y), ui(w), ui(h), ui(h / 2), TypeColour(type));
-    // Dark letters on the light types.
-    const bool light = type == 13 || type == 15 || type == 4;
-    HudText(c, ui, f, x + w / 2, y + (h - 32) / 2, 32, TypeName(type), light ? HudColour::Ink : HudColour::White, 1);
+    HudText(c, ui, f, x + w / 2, y + (h - 32) / 2, 32, TypeName(type), LightType(type) ? HudColour::Ink : HudColour::White, 1);
 }
 
-// The commands strip and, for the moves, the card. `sel`: the chosen button as an index of
-// main.cpp's strip (-1 none). The strip covers the view from `top` (design pixels) down.
-inline void DrawAll(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Moves& mv, const State& s, int sel, const Image* myIcon,
-    const Image* foeIcon, const std::vector<HudHint>& hints, float top)
+// A button of the grids: a white rim around its colour, and a yellow ring outside when chosen
+// (design pixels).
+inline void GridButton(Canvas& c, const Ui& ui, float x, float y, float w, float h, uint32_t colour, bool on)
+{
+    if (on)
+    {
+        RoundRect(c, ui(x - 7), ui(y - 7), ui(w + 14), ui(h + 14), ui(30), 0xFF3B3F4A);
+        RoundRect(c, ui(x - 5), ui(y - 5), ui(w + 10), ui(h + 10), ui(28), HudColour::Yellow);
+    }
+    RoundRect(c, ui(x), ui(y), ui(w), ui(h), ui(24), 0xFFFFFFFF);
+    RoundRect(c, ui(x + 4), ui(y + 4), ui(w - 8), ui(h - 8), ui(20), colour);
+}
+
+// A bar of `frac` in a frame (design pixels): teal above half, orange above a quarter, red
+// below; with `hp`, green, yellow and red as the game's HP bars.
+inline void Bar(Canvas& c, const Ui& ui, Sprites& sp, float x, float y, float w, float frac, bool hp)
+{
+    HudSprite(c, ui, sp, "bars/bar_frame", x, y, w, 22);
+    if (frac <= 0) return;
+    const bool high = frac > 0.5f, mid = !high && frac > 0.25f;
+    const char* fill = high ? (hp ? "bars/fill_green" : "bars/fill_teal") : mid ? "bars/fill_yellow" : "bars/fill_red";
+    HudSprite(c, ui, sp, fill, x + 6, y + 4, std::max(16.0f, (w - 12) * frac), 14, mid && !hp ? 0xFFFFB070 : 0xFFFFFFFF);
+}
+
+// The band under the field. `sel`: the chosen button as main.cpp touches it (the commands and
+// moves: an index of the touch screen's buttons; the target: of TargetGrid's; a choice: 0
+// the upper answer, 1 the lower), -1 none. The band covers the view from `top` (design
+// pixels) down.
+inline void DrawAll(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Moves& mv, RomArt& art, const State& s, int sel,
+    const std::vector<HudHint>& hints, float top)
 {
     using namespace HudColour;
     const float wd = ui.W / ui.s;
-    // The strip: a pale band under the field.
     FillBlend(c, 0, ui(top), (float)c.w, (float)c.h - ui(top), 0xFFEAF4FA);
     FillBlend(c, 0, ui(top), (float)c.w, ui(4), 0xFFFFFFFF);
 
-    // The dialogue: what the game asks, and who is fighting.
-    const float discsW = 4 * 207 + 40, bx = 40, by = top + 30, bw = wd - discsW - 80, bh = 190;
+    // The dialogue on the left; the buttons on the right, in the area of the four discs.
+    const float areaW = 4 * 207, areaX = wd - areaW - 40, bx = 40, by = top + 30, bw = areaX - 40 - bx, bh = 190;
     HudPanel(c, ui, sp, "panels/dialogue_box", bx, by, bw, bh);
-    HudText(c, ui, f, bx + 40, by + 34, 48, "What will " + s.name + " do?", Ink);
-    float lx = bx + 34;
     const float ly = by + 112;
-    if (myIcon)
-    {
-        HudPixelArt(c, ui, myIcon, lx, ly - 18, 64, 64);
-        lx += 70;
-    }
-    std::string line = "Lv " + std::to_string(s.level) + " \xC2\xB7 HP " + std::to_string(s.hp) + "/" + std::to_string(s.maxHp) + "   \xC2\xB7   " +
-        (s.wild ? "wild " : "") + s.foe + " Lv " + std::to_string(s.foeLevel);
-    HudText(c, ui, f, lx, ly, 32, line, Muted);
-    lx += HudTextWidth(ui, f, 32, line) + 8;
-    if (foeIcon && lx + 64 < bx + bw - 20) HudPixelArt(c, ui, foeIcon, lx, ly - 18, 64, 64);
+    const std::string dot = " \xC2\xB7 ";
+    // A line of small text with Pokémon icons: who is fighting.
+    auto fighters = [&]() {
+        float lx = bx + 34;
+        auto icon = [&](int species) {
+            if (const Image* im = art.PokemonIcon(species); im && lx + 64 < bx + bw - 20)
+            {
+                HudPixelArt(c, ui, im, lx, ly - 18, 64, 64);
+                lx += 70;
+            }
+        };
+        // (What does not fit is left out, as a double battle's second foe with long names.)
+        auto text = [&](const std::string& t) {
+            const float w = HudTextWidth(ui, f, 32, t);
+            if (lx + w > bx + bw - 24)
+            {
+                lx = bx + bw;
+                return;
+            }
+            HudText(c, ui, f, lx, ly, 32, t, Muted);
+            lx += w + 8;
+        };
+        icon(s.me.species);
+        text("Lv " + std::to_string(s.me.level) + dot + "HP " + std::to_string(s.me.hp) + "/" + std::to_string(s.me.maxHp) + "   " + dot + "  " +
+            (s.wild ? "wild " : "") + s.foe[0].name + (s.foe[1].species ? "" : " Lv " + std::to_string(s.foe[0].level)));
+        icon(s.foe[0].species);
+        // (Two foes: their names only, for room.)
+        if (s.foe[1].species)
+        {
+            text("& " + s.foe[1].name);
+            icon(s.foe[1].species);
+        }
+    };
 
-    // The discs; the chosen one larger with its name on a yellow pill. While the moves are
-    // shown FIGHT stays chosen; between menus none is, and the others are faded.
-    static const char* icon[4] = { "battle/command_fight", "battle/command_bag", "battle/command_pokemon", "battle/command_run" };
-    static const char* label[4] = { "FIGHT", "BAG", "POK\xC3\xA9MON", "RUN" };
-    const int chosen = s.idle ? -1 : s.moves ? 0 : sel;
-    for (int k = 0; k < 4; k++)
+    if (s.kind == Commands || s.kind == Idle)
     {
-        const int i = CmdOrder[k];
-        const bool on = i == chosen;
-        const float cx = wd - 140 - (3 - k) * 207, cy = top + 104, d = on ? 176 : 140;
-        HudSprite(c, ui, sp, std::string(icon[i]) + (on ? "_selected" : ""), cx - d / 2, cy - d / 2, d, d, (s.moves || s.idle) && !on ? 0xA0FFFFFF : 0xFFFFFFFF);
-        const float lw = HudTextWidth(ui, f, 32, label[i]) + 36, ly2 = cy + 66;
-        HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", cx - lw / 2, ly2, lw, 40);
-        HudText(c, ui, f, cx, ly2 + 4, 32, label[i], Ink, 1);
+        HudText(c, ui, f, bx + 40, by + 34, 48, "What will " + s.me.name + " do?", Ink);
+        fighters();
+        // The discs; the chosen one larger with its name on a yellow pill. Between menus none
+        // is, and the others are faded.
+        static const char* icon[4] = { "battle/command_fight", "battle/command_bag", "battle/command_pokemon", "battle/command_run" };
+        static const char* label[4] = { "FIGHT", "BAG", "POK\xC3\xA9MON", "RUN" };
+        const int chosen = s.idle ? -1 : sel;
+        for (int k = 0; k < 4; k++)
+        {
+            const int i = CmdOrder[k];
+            const bool on = i == chosen;
+            const float cx = wd - 140 - (3 - k) * 207, cy = top + 104, d = on ? 176 : 140;
+            HudSprite(c, ui, sp, std::string(icon[i]) + (on ? "_selected" : ""), cx - d / 2, cy - d / 2, d, d, s.idle && !on ? 0xA0FFFFFF : 0xFFFFFFFF);
+            const std::string name = i == 3 && s.cancel ? "CANCEL" : label[i];
+            const float lw = HudTextWidth(ui, f, 32, name) + 36, ly2 = cy + 66;
+            HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", cx - lw / 2, ly2, lw, 40);
+            HudText(c, ui, f, cx, ly2 + 4, 32, name, Ink, 1);
+        }
+    }
+    else if (s.kind == Fight)
+    {
+        // The chosen move's details in the dialogue.
+        Moves::Info in;
+        if (sel >= 0 && sel < 4 && s.move[sel] && mv.Get(s.move[sel], in))
+        {
+            HudText(c, ui, f, bx + 40, by + 34, 48, mv.Name(s.move[sel]), Ink);
+            TypePill(c, ui, f, bx + 34, ly - 4, 140, 40, in.type);
+            static const char* cat[3] = { "Physical", "Special", "Status" };
+            HudText(c, ui, f, bx + 194, ly, 32,
+                std::string("Power ") + (in.power > 1 ? std::to_string(in.power) : "-") + dot + "Accuracy " + (in.accuracy ? std::to_string(in.accuracy) : "-") +
+                    dot + cat[in.category] + dot + "PP " + std::to_string(s.pp[sel]) + "/" + std::to_string(s.ppMax[sel]),
+                Muted);
+        }
+        else
+        {
+            HudText(c, ui, f, bx + 40, by + 34, 48, "What will " + s.me.name + " do?", Ink);
+            fighters();
+        }
+        // The moves as the touch screen has them: two rows of two.
+        const float w = (areaW - 20) / 2, h = 86;
+        for (int i = 0; i < 4; i++)
+        {
+            const float x = areaX + (i & 1) * (w + 20), y = by + (i >> 1) * (h + 18);
+            if (!s.move[i])
+            {
+                RoundRect(c, ui(x), ui(y), ui(w), ui(h), ui(24), 0xFFD5DCE4);
+                HudText(c, ui, f, x + w / 2, y + 27, 32, "-", Muted, 1);
+                continue;
+            }
+            const bool known = mv.Get(s.move[i], in), empty = s.pp[i] == 0;
+            // A move without PP left is dimmed.
+            const uint32_t colour = known ? TypeColour(in.type) : 0xFF68A090;
+            GridButton(c, ui, x, y, w, h, empty ? Mix(colour, 0xFFC8CDD4, 170) : colour, i == sel);
+            const uint32_t ink = empty ? 0xFF6E7684 : known && LightType(in.type) ? Ink : White;
+            HudText(c, ui, f, x + 26, y + 10, 32, mv.Name(s.move[i]), ink);
+            // PP: a bar, and the numbers on a white chip in the bar's colour.
+            const float frac = (float)s.pp[i] / s.ppMax[i];
+            Bar(c, ui, sp, x + 24, y + 52, w - 172, frac, false);
+            RoundRect(c, ui(x + w - 134), ui(y + 44), ui(112), ui(34), ui(17), 0xF0FFFFFF);
+            HudText(c, ui, f, x + w - 78, y + 45, 32, std::to_string(s.pp[i]) + "/" + std::to_string(s.ppMax[i]),
+                frac > 0.5f ? Ink : frac > 0.25f ? 0xFFD07010 : Danger, 1);
+        }
+    }
+    else if (s.kind == Target)
+    {
+        HudText(c, ui, f, bx + 40, by + 34, 48, s.multi ? "This move hits them all" : "Which Pok\xC3\xA9mon will " + s.me.name + " aim at?", Ink);
+        HudText(c, ui, f, bx + 40, ly, 32, s.multi ? "The Pok\xC3\xA9mon framed in yellow" : "Foes above, " + s.me.name + "'s side below", Muted);
+        const float w = (areaW - 20) / 2, h = 86;
+        for (int r = 0; r < 2; r++)
+            for (int col = 0; col < 2; col++)
+            {
+                const int i = TargetGrid[r][col];
+                const float x = areaX + col * (w + 20), y = by + r * (h + 18);
+                if (!s.shown[i])
+                {
+                    RoundRect(c, ui(x), ui(y), ui(w), ui(h), ui(24), 0xFFD5DCE4);
+                    HudText(c, ui, f, x + w / 2, y + 27, 32, "-", Muted, 1);
+                    continue;
+                }
+                const Mon& m = s.box[i];
+                const uint32_t colour = r == 0 ? 0xFFE05252 : 0xFF4A90E2;
+                const bool on = s.hit[i] && (s.multi || i == sel);
+                GridButton(c, ui, x, y, w, h, s.hit[i] ? colour : Mix(colour, 0xFFC8CDD4, 170), on);
+                const Image* im = art.PokemonIcon(m.species);
+                if (im) HudPixelArt(c, ui, im, x + 14, y + 11, 64, 64);
+                const uint32_t ink = s.hit[i] ? White : 0xFF6E7684;
+                HudText(c, ui, f, x + 88, y + 10, 32, m.name, ink);
+                HudText(c, ui, f, x + w - 24, y + 10, 32, "Lv " + std::to_string(m.level), ink, 2);
+                Bar(c, ui, sp, x + 88, y + 52, w - 112, (float)m.hp / m.maxHp, true);
+            }
+    }
+    else if (s.kind == Choice)
+    {
+        std::string q = s.question;
+        if (q.empty()) q = s.choice == 16 ? "Use next Pok\xC3\xA9mon?" : s.choice == 17 ? "Will you switch Pok\xC3\xA9mon?" : "";
+        const std::vector<std::string> lines = HudWrap(ui, f, 40, q, bw - 80);
+        for (size_t i = 0; i < lines.size() && i < 3; i++) HudText(c, ui, f, bx + 40, by + 30 + 46 * i, 40, lines[i], Ink);
+        // The answers, as the game words them.
+        const std::string mvName = s.choiceMove ? mv.Name(s.choiceMove) : "the move";
+        std::string a[2];
+        switch (s.choice)
+        {
+        case 14: a[0] = "Forget a move!"; a[1] = "Keep old moves!"; break;
+        case 15: a[0] = "Give up on " + mvName + "?"; a[1] = "Don't give up on " + mvName + "!"; break;
+        case 16: a[0] = "Use next Pok\xC3\xA9mon"; a[1] = "Flee"; break;
+        case 17: a[0] = "Switch Pok\xC3\xA9mon"; a[1] = "Keep battling"; break;
+        default: a[0] = "Yes"; a[1] = "No"; break;
+        }
+        const float h = 86;
+        for (int i = 0; i < 2; i++)
+        {
+            const float y = by + i * (h + 18);
+            HudPanel(c, ui, sp, i == sel ? "panels/row_selected" : "panels/row", areaX, y, areaW, h);
+            if (i == sel) HudSprite(c, ui, sp, "cursor/cursor", areaX + 20, y + 23, 36, 40);
+            HudText(c, ui, f, areaX + areaW / 2, y + 23, 40, a[i], Ink, 1);
+        }
     }
     DrawHintBar(c, ui, sp, f, hints);
-    if (!s.moves) return;
-
-    // The moves: a card over the field.
-    const float w = 780, x = wd / 2 - w / 2, y = 30, rowX = x + 22, rowW = w - 44;
-    HudPanel(c, ui, sp, "panels/card", x, y, w, 446);
-    RoundRect(c, ui(rowX), ui(y + 22), ui(rowW), ui(52), ui(16), 0xFFE05252);
-    HudSprite(c, ui, sp, "icons/white/icon_fight", rowX + 18, y + 28, 40, 40);
-    HudText(c, ui, f, rowX + 72, y + 32, 32, "FIGHT", White);
-    HudText(c, ui, f, rowX + rowW - 20, y + 32, 32, s.name, White, 2);
-    for (int i = 0; i < 4; i++)
-    {
-        const float ry = y + 86 + i * 74, rh = 62;
-        if (!s.move[i])
-        {
-            HudPanel(c, ui, sp, "panels/row_disabled", rowX, ry, rowW, rh);
-            HudText(c, ui, f, rowX + 200, ry + 15, 32, "-", Muted);
-            continue;
-        }
-        Moves::Info in;
-        const bool known = mv.Get(s.move[i], in);
-        const bool on = i == sel, empty = s.pp[i] == 0;
-        HudPanel(c, ui, sp, on ? "panels/row_selected" : empty ? "panels/row_disabled" : "panels/row", rowX, ry, rowW, rh);
-        if (on) HudSprite(c, ui, sp, "cursor/cursor", rowX + 12, ry + 11, 36, 40);
-        if (known) TypePill(c, ui, f, rowX + 58, ry + 11, 128, 40, in.type);
-        HudText(c, ui, f, rowX + 204, ry + 15, 32, mv.Name(s.move[i]), empty && !on ? Muted : Ink);
-        // PP: a bar teal above half, orange above a quarter, red below.
-        const float frac = (float)s.pp[i] / s.ppMax[i], barW = 180, barX = rowX + rowW - 160 - barW, barY = ry + 20;
-        HudSprite(c, ui, sp, "bars/bar_frame", barX, barY, barW, 22);
-        if (s.pp[i])
-            HudSprite(c, ui, sp, frac > 0.5f ? "bars/fill_teal" : frac > 0.25f ? "bars/fill_yellow" : "bars/fill_red", barX + 6, barY + 4,
-                std::max(16.0f, (barW - 12) * frac), 14, frac > 0.5f || frac <= 0.25f ? 0xFFFFFFFF : 0xFFFFB070);
-        HudText(c, ui, f, rowX + rowW - 24, ry + 15, 32, std::to_string(s.pp[i]) + "/" + std::to_string(s.ppMax[i]),
-            frac <= 0.25f ? Danger : Ink, 2);
-    }
-    // The chosen move's numbers.
-    Moves::Info in;
-    if (sel >= 0 && sel < 4 && s.move[sel] && mv.Get(s.move[sel], in))
-    {
-        const float fy = y + 86 + 4 * 74 + 4;
-        TypePill(c, ui, f, rowX + 6, fy, 128, 40, in.type);
-        static const char* cat[3] = { "Physical", "Special", "Status" };
-        const std::string dot = " \xC2\xB7 ";
-        const std::string text = std::string("Power ") + (in.power > 1 ? std::to_string(in.power) : "-") + dot + "Acc " +
-            (in.accuracy ? std::to_string(in.accuracy) : "-") + dot + cat[in.category];
-        HudText(c, ui, f, rowX + 154, fy + 4, 32, text, Muted);
-    }
 }
 
 // Draws into `c`, redrawing only when something shown changes: the last picture is kept in a
@@ -315,13 +552,10 @@ inline void DrawAll(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Move
 class Hud
 {
 public:
-    void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Moves& mv, const State& s, int sel, const Image* myIcon,
-        const Image* foeIcon, const std::vector<HudHint>& hints, float top)
+    void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Moves& mv, RomArt& art, const State& s, int sel,
+        const std::vector<HudHint>& hints, float top)
     {
-        std::string k = s.name + "|" + s.foe + "|" + std::to_string(s.moves) + std::to_string(s.idle) + std::to_string(sel) + "|" + std::to_string(s.level) + "," +
-            std::to_string(s.hp) + "," + std::to_string(s.maxHp) + "," + std::to_string(s.species) + "," + std::to_string(s.foeSpecies) + "," +
-            std::to_string(s.foeLevel) + "|" + std::to_string(c.w) + "x" + std::to_string(c.h) + "|" + std::to_string(top);
-        for (int i = 0; i < 4; i++) k += "|" + std::to_string(s.move[i]) + "," + std::to_string(s.pp[i]) + "," + std::to_string(s.ppMax[i]);
+        std::string k = s.Key() + "|" + std::to_string(sel) + "|" + std::to_string(c.w) + "x" + std::to_string(c.h) + "|" + std::to_string(top);
         for (const HudHint& h : hints)
             for (const std::string& g : h.glyphs) k += "|" + g + h.label;
         if (k != key)
@@ -329,25 +563,12 @@ public:
             key = k;
             layer.Resize(c.w, c.h);
             std::fill(layer.px.begin(), layer.px.end(), 0);
-            DrawAll(layer, ui, sp, f, mv, s, sel, myIcon, foeIcon, hints, top);
+            DrawAll(layer, ui, sp, f, mv, art, s, sel, hints, top);
         }
-        // The strip is opaque: copied. The card is blended over the field.
+        // The band is opaque: copied.
         const int y0 = std::clamp((int)ui(top), 0, c.h);
         std::copy(layer.px.begin() + (size_t)y0 * c.w, layer.px.end(), c.px.begin() + (size_t)y0 * c.w);
         c.Mark(0, y0, c.w, c.h);
-        if (s.moves)
-        {
-            const float wd = ui.W / ui.s;
-            const int x0 = std::max(0, (int)ui(wd / 2 - 410)), x1 = std::min(c.w, (int)std::ceil(ui(wd / 2 + 410)));
-            const int ya = std::max(0, (int)ui(10)), yb = std::min(y0, (int)std::ceil(ui(500)));
-            for (int y = ya; y < yb; y++)
-                for (int x = x0; x < x1; x++)
-                {
-                    const size_t p = (size_t)y * c.w + x;
-                    c.px[p] = BlendOver(c.px[p], layer.px[p]);
-                }
-            c.Mark(x0, ya, x1, yb);
-        }
     }
 
 private:

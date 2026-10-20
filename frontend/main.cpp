@@ -1580,6 +1580,12 @@ int main(int argc, char** argv)
         unsigned last = rc_probe_last_frame(probe);
         return last && last + 3 >= rc_current_frame();
     };
+    // The battle asked for touch-screen input within the last few frames (it stops for a
+    // moment between two menus).
+    auto battleInputRecent = [&]() {
+        unsigned last = rc_probe_last_frame(probeBattleInput);
+        return last && last + 20 >= rc_current_frame();
+    };
     auto saveWriting = [&]() {
         for (int probe : probeSaveWrite)
         {
@@ -1629,6 +1635,8 @@ int main(int argc, char** argv)
     int battleSel = 0;
     // The strip `battleSel` belongs to (its scene's name); on a new strip it starts again at 0.
     std::string battleStripKind;
+    // Whether the HUD's sprites loaded: the redrawn battle menus (hudbattle.h) need them.
+    bool battleHudOk = false;
     // Per application, the overlay that holds its code when no other application's code is
     // there (-1 otherwise), and per section the frames on which it has run since it started
     // running (see where it is counted).
@@ -2248,7 +2256,12 @@ int main(int argc, char** argv)
         else if (probeActive(probeBattleInput) ||
             // While the commands slide out and the moves in, the game stops reading the touch
             // screen for a few frames; the strip stays up meanwhile (see battleStripUntil).
-            (frame < battleStripUntil && sectionActive("OVY_12") && !AutoFocus::Blank(screens[1].pixels)))
+            (frame < battleStripUntil && sectionActive("OVY_12") && !AutoFocus::Blank(screens[1].pixels)) ||
+            // (With the redrawn menus, also while the game's memory says a menu is up: see menuUp.)
+            (cfg.redrawn && battleHudOk && battleInputRecent() && sectionActive("OVY_12") && [&] {
+                HudBattle::State s;
+                return HudBattle::Read(nds->MainRAM, nds->MainRAMMask, s) && s.kind != HudBattle::Idle;
+            }()))
         {
             // Battle, choosing a command or a move. On a wide view the buttons are taken off
             // the touch screen one by one and laid out as a strip along the bottom, in place
@@ -2267,22 +2280,35 @@ int main(int argc, char** argv)
             auto blue = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return bl > 150 && r < 110 && g > 90 && g < 200 && bl > r + 60; };
             auto red = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return r > 180 && g < 120 && bl < 120; };
             auto orange = [&](int x, int y) { int r, g, bl; rgb(x, y, r, g, bl); return r > 180 && g > 110 && g < 200 && bl < 110; };
-            const bool cmd = red(128, 60) && orange(40, 160) && blue(128, 166);
-            const bool moves = !cmd && blue(40, 166) && blue(128, 166) && blue(216, 166);
+            // With the redrawn menus the target (double battles) and the questions with two
+            // answers get the strip as well, going by the game's memory (hudbattle.h draws
+            // them). The target's CANCEL bar would otherwise pass for the moves' buttons.
+            // While the buttons of one menu slide out and the next one's in (the moves and the
+            // target of a double battle), neither picture is recognised, but the game's memory
+            // still says a menu is up: the strip stays rather than the view jumping for those
+            // frames. (The menu's number stays after the last answer while the turn plays out,
+            // so only as long as the game was asking for input a moment ago.)
+            HudBattle::State pickState;
+            const bool redrawnRead = cfg.redrawn && battleHudOk && viewWidth >= 300 && battleInputRecent() &&
+                HudBattle::Read(nds->MainRAM, nds->MainRAMMask, pickState);
+            const bool pick = redrawnRead && (pickState.kind == HudBattle::Target || pickState.kind == HudBattle::Choice);
+            const bool menuUp = redrawnRead && pickState.kind != HudBattle::Idle;
+            const bool cmd = !pick && red(128, 60) && orange(40, 160) && blue(128, 166);
+            const bool moves = !pick && !cmd && blue(40, 166) && blue(128, 166) && blue(216, 166);
             const bool idle = AutoFocus::Blank(screens[1].pixels) || (!blue(128, 166) && !red(128, 60));
-            battleUnknown = (cmd || moves || idle) ? 0 : battleUnknown + 1;
+            battleUnknown = (cmd || moves || idle || pick) ? 0 : battleUnknown + 1;
             // Only after the commands (FIGHT): after a move is chosen the battle goes on and
             // its messages must not be covered.
             if (cmd) battleStripUntil = frame + 20;
-            else if (moves || idle) battleStripUntil = 0;
+            else if (moves || idle || pick) battleStripUntil = 0;
             const float L = 128 - viewWidth / 2;
             auto put = [&](int sx, int sy, int sw, int sh, float x, float y, float scale) {
                 sc.items.push_back({ 1, sx, sy, sw, sh, x, y, scale, 0, 255, false });
             };
-            if (viewWidth >= 300 && (cmd || moves || frame < battleStripUntil))
+            if (viewWidth >= 300 && (cmd || moves || pick || menuUp || frame < battleStripUntil))
             {
                 // (Neither: the strip without buttons, while the next ones slide in.)
-                sc.name = cmd ? "battle-cmd" : moves ? "battle-moves" : "battle-strip";
+                sc.name = pick ? "battle-pick" : cmd ? "battle-cmd" : moves ? "battle-moves" : "battle-strip";
                 // The strip: the first line of the message box ("What will X do?") as a
                 // label at the top, the buttons under it.
                 sc.items.push_back(FillRect(L, 137, (int)viewWidth + 1, 55, 0x20242C));
@@ -2415,6 +2441,7 @@ int main(int argc, char** argv)
     RomFont font;
     FindUiDir();
     const bool spritesOk = sprites.Load(ReadUiFile);
+    battleHudOk = spritesOk;
     const bool fontOk = font.Load(rom.data(), rom.size());
     fprintf(stderr, "[hud] sprites %s, font %s\n", spritesOk ? g_uiDir.c_str() : "missing (plain menu)", fontOk ? "from the ROM" : "missing");
     // The player's own fonts (.otf or .ttf files in assets/fonts, as families: "Calamity-Regular"
@@ -4541,56 +4568,96 @@ int main(int argc, char** argv)
             static uint32_t prevStripKeys = 0;
             static int stripTouch = 0, stripTouchX = 0, stripTouchY = 0;
             const bool cmd = merged && !strcmp(scene.name, "battle-cmd"), moves = merged && !strcmp(scene.name, "battle-moves");
-            // With the redrawn commands (hudbattle.h) the discs are in another order and the
-            // moves in a column; what the game shows is read from its memory.
+            // The redrawn target and two-answer menus (only shown with the redrawn menus).
+            const bool pick = merged && !strcmp(scene.name, "battle-pick");
+            // With the redrawn menus (hudbattle.h) the discs are in another order and the moves
+            // and targets in a grid; what the game shows is read from its memory.
             HudBattle::State bs;
-            const bool redrawnBattle = cfg.redrawn && spritesOk && (cmd || moves) && HudBattle::Read(nds->MainRAM, nds->MainRAMMask, bs) &&
-                !bs.idle && bs.moves == moves;
-            if (!uiOpen && (cmd || moves))
+            const bool redrawnBattle = cfg.redrawn && spritesOk && (cmd || moves || pick) && HudBattle::Read(nds->MainRAM, nds->MainRAMMask, bs) &&
+                (pick ? bs.kind == HudBattle::Target || bs.kind == HudBattle::Choice : !bs.idle && bs.moves == moves);
+            const bool target = pick && redrawnBattle && bs.kind == HudBattle::Target, choice = pick && redrawnBattle && bs.kind == HudBattle::Choice;
+            if (!uiOpen && (cmd || moves || target || choice))
             {
                 if (stripKind != scene.name)
                 {
                     stripKind = scene.name;
                     battleSel = 0;
+                    // A target: the first that can be aimed at, foes first.
+                    if (target)
+                        for (int i : { 3, 1, 0, 2 })
+                            if (bs.hit[i]) { battleSel = i; break; }
                     prevStripKeys = keys; // a key still held from before does not count
                 }
                 const uint32_t edge = keys & ~prevStripKeys;
                 prevStripKeys = keys;
                 static const int cmdX[4] = { 128, 39, 216, 128 }, cmdY[4] = { 84, 168, 168, 172 };
                 static const int movX[4] = { 64, 192, 64, 192 }, movY[4] = { 52, 52, 116, 116 };
+                // The target menu's buttons (as numbered in HudBattle::TargetGrid) and the two answers.
+                static const int tgtX[4] = { 60, 196, 196, 60 }, tgtY[4] = { 116, 44, 116, 44 };
+                static const int ansX[2] = { 128, 128 }, ansY[2] = { 68, 140 };
                 // Empty move slots are skipped: theirs is a plain grey where a move's name is white.
                 const u32* screenImagesPrev = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get();
                 auto usable = [&](int i) {
-                    if (cmd) return true;
+                    if (cmd || choice) return true;
+                    if (target) return bs.hit[i];
                     if (redrawnBattle) return bs.move[i] != 0;
                     uint32_t c = screenImagesPrev[(movY[i] - 14) * 256 + movX[i]];
                     return ((c >> 16) & 0xFF) > 200 && ((c >> 8) & 0xFF) > 200 && (c & 0xFF) > 200;
                 };
-                // The buttons in the order they are shown, as indices of the touch screen's.
-                static const int sameOrder[4] = { 0, 1, 2, 3 };
-                const int* order = redrawnBattle && cmd ? HudBattle::CmdOrder : sameOrder;
-                const int pos = int(std::find(order, order + 4, battleSel) - order);
-                // The redrawn moves are a column: up and down walk it as well.
-                const bool column = redrawnBattle && moves;
-                const uint32_t next = 1u << KEY_RIGHT | (column ? 1u << KEY_DOWN : 0), prev = 1u << KEY_LEFT | (column ? 1u << KEY_UP : 0);
-                for (int dir : { (edge & next) ? 1 : 0, (edge & prev) ? -1 : 0 })
-                    if (dir)
-                        for (int p = pos + dir; p >= 0 && p < 4; p += dir)
-                            if (usable(order[p])) { battleSel = order[p]; break; }
+                if (redrawnBattle && !cmd)
+                {
+                    // The grids of two by two (moves, targets) and the two answers, one above
+                    // the other: each arrow goes to the neighbour on its side, if there is one.
+                    // (A move's buttons are numbered row by row, so the neighbours differ in
+                    // bit 0 across and bit 1 up and down; a target's go by TargetGrid.)
+                    int row = 0, col = 0;
+                    if (target)
+                    {
+                        for (int r = 0; r < 2; r++)
+                            for (int c = 0; c < 2; c++)
+                                if (HudBattle::TargetGrid[r][c] == battleSel) row = r, col = c;
+                    }
+                    else if (choice)
+                        row = battleSel & 1;
+                    else
+                        row = battleSel >> 1, col = battleSel & 1;
+                    int r2 = row, c2 = col;
+                    if (edge & (1u << KEY_UP | 1u << KEY_DOWN)) r2 = (edge & 1u << KEY_UP) ? 0 : 1;
+                    if (!choice && (edge & (1u << KEY_LEFT | 1u << KEY_RIGHT))) c2 = (edge & 1u << KEY_LEFT) ? 0 : 1;
+                    const int to = target ? HudBattle::TargetGrid[r2][c2] : choice ? r2 : r2 * 2 + c2;
+                    // (A move hitting all its targets at once has nothing to choose.)
+                    if (to != battleSel && usable(to) && !(target && bs.multi)) battleSel = to;
+                }
+                else
+                {
+                    // The buttons in the order they are shown, as indices of the touch screen's.
+                    static const int sameOrder[4] = { 0, 1, 2, 3 };
+                    const int* order = redrawnBattle && cmd ? HudBattle::CmdOrder : sameOrder;
+                    const int pos = int(std::find(order, order + 4, battleSel) - order);
+                    const uint32_t next = 1u << KEY_RIGHT, prev = 1u << KEY_LEFT;
+                    for (int dir : { (edge & next) ? 1 : 0, (edge & prev) ? -1 : 0 })
+                        if (dir)
+                            for (int p = pos + dir; p >= 0 && p < 4; p += dir)
+                                if (usable(order[p])) { battleSel = order[p]; break; }
+                }
                 if (opt.logSections && edge) fprintf(stderr, "[strip] frame %u: keys %03x, chosen %d\n", frame, edge, battleSel);
                 if (edge & (1 << KEY_A))
                 {
                     stripTouch = 4;
-                    stripTouchX = cmd ? cmdX[battleSel] : movX[battleSel];
-                    stripTouchY = cmd ? cmdY[battleSel] : movY[battleSel];
+                    const int* xs = cmd ? cmdX : target ? tgtX : choice ? ansX : movX;
+                    const int* ys = cmd ? cmdY : target ? tgtY : choice ? ansY : movY;
+                    stripTouchX = xs[battleSel];
+                    stripTouchY = ys[battleSel];
                 }
-                // B in the move list touches CANCEL. Given to the game as a key, the first
-                // press only brought up its own cursor. On the command row it does nothing.
-                if (moves && (edge & (1 << KEY_B)))
+                // B in the move list and the target menu touches CANCEL. Given to the game as
+                // a key, the first press only brought up its own cursor. On the command row it
+                // touches CANCEL when the game shows one there (a double battle's second
+                // Pokémon: back to the first); in a question the lower answer, as the game's B.
+                if ((moves || target || (cmd && redrawnBattle && bs.cancel) || choice) && (edge & (1 << KEY_B)))
                 {
                     stripTouch = 4;
                     stripTouchX = 128;
-                    stripTouchY = 172;
+                    stripTouchY = choice ? ansY[1] : 172;
                 }
                 keys &= ~((1u << KEY_LEFT) | (1u << KEY_RIGHT) | (1u << KEY_UP) | (1u << KEY_DOWN) | (1u << KEY_A) | (1u << KEY_B));
             }
@@ -5450,21 +5517,22 @@ int main(int argc, char** argv)
         // also while one set slides out and the other in, as long as the game's memory says
         // which is up. Otherwise the strip stays as it is.
         if (spritesOk && cfg.redrawn && merged && hudFree &&
-            (!strcmp(scene.name, "battle-cmd") || !strcmp(scene.name, "battle-moves") || !strcmp(scene.name, "battle-strip")))
+            (!strcmp(scene.name, "battle-cmd") || !strcmp(scene.name, "battle-moves") || !strcmp(scene.name, "battle-strip") ||
+                !strcmp(scene.name, "battle-pick")))
         {
             HudBattle::State bs;
             // (Between menus, idle, only while the strip is kept up for the slide.)
             if (HudBattle::Read(nds->MainRAM, nds->MainRAMMask, bs) && (!bs.idle || !strcmp(scene.name, "battle-strip")))
             {
                 // The chosen button once the input has taken this strip over (it starts at 0).
-                const bool agree = !bs.idle && !strcmp(scene.name, bs.moves ? "battle-moves" : "battle-cmd");
+                const bool pickKind = bs.kind == HudBattle::Target || bs.kind == HudBattle::Choice;
+                const bool agree = !bs.idle && !strcmp(scene.name, pickKind ? "battle-pick" : bs.moves ? "battle-moves" : "battle-cmd");
                 const int sel = !agree ? -1 : battleStripKind == scene.name ? battleSel : 0;
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 std::vector<HudHint> hints;
                 if (!bs.idle) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Confirm" } };
-                if (bs.moves) hints.push_back({ { back }, "Back" });
-                battleHud.Draw(canvas, ui, sprites, font, battleMoves, bs, sel, romArt.PokemonIcon(bs.species),
-                    romArt.PokemonIcon(bs.foeSpecies), hints, (view.originY + 137 * view.unit) / ui.s);
+                if (bs.moves || bs.kind == HudBattle::Target || (bs.kind == HudBattle::Commands && bs.cancel)) hints.push_back({ { back }, "Back" });
+                battleHud.Draw(canvas, ui, sprites, font, battleMoves, romArt, bs, sel, hints, (view.originY + 137 * view.unit) / ui.s);
                 overlayUsed = true;
             }
         }
