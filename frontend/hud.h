@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <tuple>
 #include <string>
 #include <vector>
 #include <zlib.h>
@@ -315,9 +316,9 @@ private:
     }
 };
 
-// Draws a sprite over the rectangle (x, y, w, h) in canvas pixels; `scale` is canvas
-// pixels per design pixel (Ui::s), used for the fixed corners of 9-slice sprites.
-inline void DrawSprite(Canvas& c, const Sprite* s, float x, float y, float w, float h, float scale, uint32_t tint = 0xFFFFFFFF)
+// Draws a sprite over the rectangle (x, y, w, h) in canvas pixels, scaling it as it goes; see
+// DrawSprite, which keeps the result.
+inline void DrawSpriteScaled(Canvas& c, const Sprite* s, float x, float y, float w, float h, float scale, uint32_t tint = 0xFFFFFFFF)
 {
     if (!s) return;
     if (!s->nine)
@@ -342,6 +343,55 @@ inline void DrawSprite(Canvas& c, const Sprite* s, float x, float y, float w, fl
         for (int col = 0; col < 3; col++)
             Blit(c, s->img, sx[col], sy[r], sx[col + 1] - sx[col], sy[r + 1] - sy[r], dxs[col], dys[r],
                 dxs[col + 1] - dxs[col], dys[r + 1] - dys[r], true, tint);
+}
+
+// Draws a sprite over the rectangle (x, y, w, h) in canvas pixels (on whole pixels); `scale`
+// is canvas pixels per design pixel (Ui::s), used for the fixed corners of 9-slice sprites.
+// Scaling and smoothing a sprite pixel by pixel is slow and the HUD draws the same sprite at
+// the same size over and over (a menu's rows), so each size and tint is made once and kept;
+// drawing is then only blending the finished picture in.
+inline void DrawSprite(Canvas& c, const Sprite* s, float x, float y, float w, float h, float scale, uint32_t tint = 0xFFFFFFFF)
+{
+    if (!s) return;
+    const int x0 = (int)std::lround(x), y0 = (int)std::lround(y);
+    const int iw = (int)std::lround(x + w) - x0, ih = (int)std::lround(y + h) - y0;
+    if (iw <= 0 || ih <= 0) return;
+    struct Key
+    {
+        const Sprite* s;
+        int w, h, scale;
+        uint32_t tint;
+        bool operator<(const Key& o) const
+        {
+            return std::tie(s, w, h, scale, tint) < std::tie(o.s, o.w, o.h, o.scale, o.tint);
+        }
+    };
+    static std::map<Key, std::vector<uint32_t>> made;
+    if (made.size() > 600) made.clear(); // a different screen size or many sizes: start again
+    const Key key = { s, iw, ih, (int)std::lround(scale * 1000), tint };
+    auto it = made.find(key);
+    if (it == made.end())
+    {
+        Canvas t;
+        t.Resize(iw, ih);
+        DrawSpriteScaled(t, s, 0, 0, (float)iw, (float)ih, scale, tint);
+        it = made.emplace(key, std::move(t.px)).first;
+    }
+    const std::vector<uint32_t>& px = it->second;
+    const int cx0 = std::max(0, x0), cy0 = std::max(0, y0), cx1 = std::min(c.w, x0 + iw), cy1 = std::min(c.h, y0 + ih);
+    if (cx1 <= cx0 || cy1 <= cy0) return;
+    c.Mark(cx0, cy0, cx1, cy1);
+    for (int yy = cy0; yy < cy1; yy++)
+    {
+        const uint32_t* src = &px[(size_t)(yy - y0) * iw + (cx0 - x0)];
+        uint32_t* dst = &c.px[(size_t)yy * c.w + cx0];
+        for (int xx = cx0; xx < cx1; xx++, src++, dst++)
+        {
+            const uint32_t a = *src >> 24;
+            if (a == 255) *dst = *src;
+            else if (a) *dst = BlendOver(*dst, *src);
+        }
+    }
 }
 
 // The game's fonts (pbr/font.narc in the ROM): 16x16 cells of 2 bits per pixel in four 8x8
