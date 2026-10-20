@@ -52,8 +52,16 @@ DYNAMIC_WARP = 0x1270         # LocalFieldData.dynamicWarp (a Location: map, war
 
 TIMES = {'day': '12:00', 'morning': '07:00', 'evening': '18:00', 'night': '22:00'}
 
-ARRIVE = 1500                 # frame of the snapshot: the place is shown well before this
-BOOT_TAPS = range(400, 1100, 90)  # A through the intro, title and Continue
+ARRIVE = 1900                 # frame of the snapshot: the place is shown well before this
+# A through the intro, the title and the Continue menu, which can come as late as frame
+# ~1150; afterwards an A in the field faces away from the door the place starts at.
+BOOT_TAPS = range(400, 1400, 90)
+
+
+def snapshot_frame(path):
+    """The frame a snapshot was taken at (its first word; older ones are at 1500)."""
+    with open(path, 'rb') as f:
+        return struct.unpack('<I', f.read(4))[0]
 
 
 def crc16(data):
@@ -180,14 +188,15 @@ def cmd_run(a):
             if not os.path.exists(snap):
                 print(f'{name}: no snapshot (run "snapshots --time {t}" first)')
                 continue
-            lines, end = walk_input(p, ARRIVE)
-            end = max(end, ARRIVE + a.frames)
+            start = snapshot_frame(snap)
+            lines, end = walk_input(p, start)
+            end = max(end, start + a.frames)
             inp = os.path.join(place_dir('work'), 'walk.txt')
             write_input(inp, lines)
             shots = os.path.join(place_dir('runs'), name)
             shutil.rmtree(shots, ignore_errors=True)
             os.makedirs(shots)
-            at = [ARRIVE + 30 + (end - ARRIVE - 30) * k // 3 for k in range(4)]
+            at = [start + 30 + (end - start - 30) * k // 3 for k in range(4)]
             code = run_game([a.rom, '--headless', '--no-save', '--save', os.path.join(place_dir('saves'), p['name'] + '.sav'),
                              '--config', cfg, '--state-load', snap, '--input', inp, '--frames', str(end + 1),
                              '--shot-dir', shots + '/', '--shot-at', ','.join(map(str, at)), '--compose', a.size],
@@ -235,12 +244,13 @@ def cmd_lockstep(a):
             if not os.path.exists(snap):
                 print(f'{name}: no snapshot (run "snapshots --time {t}" first)')
                 continue
-            lines, end = walk_input(p, ARRIVE)
+            start = snapshot_frame(snap)
+            lines, end = walk_input(p, start)
             inp = os.path.join(place_dir('work'), 'walk.txt')
             write_input(inp, lines)
             log = os.path.join(place_dir('lockstep'), name + '.log')
             run_game([a.rom, '--headless', '--lockstep', '--no-save', '--save', os.path.join(place_dir('saves'), p['name'] + '.sav'),
-                      '--state-load', snap, '--input', inp, '--frames', str(max(end, ARRIVE + a.frames))], log, None)
+                      '--state-load', snap, '--input', inp, '--frames', str(max(end, start + a.frames))], log, None)
             result = [l for l in open(log, errors='replace') if l.startswith('[lockstep] PASS') or 'differ' in l or 'FAIL' in l]
             ok = any(l.startswith('[lockstep] PASS') for l in result)
             failed += not ok

@@ -138,6 +138,19 @@ public:
     // Fireflies over tall grass and woods around the camera, placed in the world (so they
     // stay where they are while the view moves) and given as places in the wide picture,
     // whose view is `viewWidth` DS pixels wide and zoomed by `zoom` (see WideState).
+    // Whether the player is outdoors, where the game shows the time of day: the overworld's
+    // map matrix (number 0) or the Safari Zone. Houses, caves and other interiors have
+    // matrices of their own and look the same at any hour.
+    bool Outdoors(melonDS::NDS& nds)
+    {
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        const uint32_t fs = Read32(FieldSystemPtr);
+        if (!InRam(fs)) return false;
+        const uint32_t matrix = Read32(fs + 0x30);
+        return InRam(matrix) && (Read8(matrix + 2) == 0 || Read32(fs + 0x70) == 1);
+    }
+
     void Fireflies(melonDS::NDS& nds, float seconds, float viewWidth, float zoom, std::vector<NightFly>& out)
     {
         Ram = nds.MainRAM;

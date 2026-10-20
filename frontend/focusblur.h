@@ -24,24 +24,25 @@ public:
         H = (ph + cell - 1) / cell;
         const size_t n = (size_t)W * H;
         const int step = std::max(1, cell / 2);
-        rgb.assign(n * 3, 0.0f);
+        rgb.assign(n * 4, 0.0f);
         for (int cy = 0; cy < H; cy++)
             for (int cx = 0; cx < W; cx++)
             {
-                float r = 0, g = 0, b = 0;
+                float r = 0, g = 0, b = 0, drawn = 0;
                 int count = 0;
                 for (int y = cy * cell; y < std::min(ph, cy * cell + cell); y += step)
                     for (int x = cx * cell; x < std::min(pw, cx * cell + cell); x += step)
                     {
                         const uint32_t c = px[(size_t)y * pw + x];
                         count++;
-                        if (!(c >> 24)) continue; // nothing drawn: black
+                        if (!(c >> 24)) continue; // nothing drawn: not mixed in
                         r += (c >> 16) & 0xFF;
                         g += (c >> 8) & 0xFF;
                         b += c & 0xFF;
+                        drawn++;
                     }
-                float* o = &rgb[((size_t)cy * W + cx) * 3];
-                if (count) { o[0] = r / count; o[1] = g / count; o[2] = b / count; }
+                float* o = &rgb[((size_t)cy * W + cx) * 4];
+                if (count) { o[0] = r / count; o[1] = g / count; o[2] = b / count; o[3] = drawn / count; }
             }
         // The quarter size is already soft; light adds a little, strong more.
         for (int k = 0; k < level; k++) Blur(1);
@@ -56,15 +57,19 @@ public:
                 const float dx = ((x + 0.5f) / W - 0.5f) * W / H, dy = (y + 0.5f) / H - 0.5f;
                 const float t = std::clamp((std::sqrt(dx * dx + dy * dy) - sharp) / ramp, 0.0f, 1.0f);
                 const uint32_t a = (uint32_t)(255 * t * t * (3 - 2 * t));
-                const float* c = &rgb[((size_t)y * W + x) * 3];
-                Layer[(size_t)y * W + x] = (a << 24) | ((uint32_t)c[0] << 16) | ((uint32_t)c[1] << 8) | (uint32_t)c[2];
+                const float* c = &rgb[((size_t)y * W + x) * 4];
+                // Back from premultiplied; where little is drawn the layer fades out.
+                const float k = c[3] > 0.01f ? 1.0f / c[3] : 0.0f;
+                const uint32_t al = (uint32_t)(a * std::min(1.0f, c[3]));
+                Layer[(size_t)y * W + x] = (al << 24) | ((uint32_t)std::min(255.0f, c[0] * k) << 16) |
+                    ((uint32_t)std::min(255.0f, c[1] * k) << 8) | (uint32_t)std::min(255.0f, c[2] * k);
             }
     }
 
 private:
     std::vector<float> rgb, tmp;
 
-    // Box blur of radius r on the three channels, along the rows and then the columns.
+    // Box blur of radius r on the four channels, along the rows and then the columns.
     void Blur(int r)
     {
         tmp.resize(rgb.size());
@@ -72,9 +77,9 @@ private:
         for (int pass = 0; pass < 2; pass++)
         {
             const int len = pass ? H : W, lines = pass ? W : H;
-            const size_t stride = pass ? (size_t)W * 3 : 3, lineStep = pass ? 3 : (size_t)W * 3;
+            const size_t stride = pass ? (size_t)W * 4 : 4, lineStep = pass ? 4 : (size_t)W * 4;
             for (int line = 0; line < lines; line++)
-                for (int c = 0; c < 3; c++)
+                for (int c = 0; c < 4; c++)
                 {
                     const float* in = rgb.data() + line * lineStep + c;
                     float* out = tmp.data() + line * lineStep + c;

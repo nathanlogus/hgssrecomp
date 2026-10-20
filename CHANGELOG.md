@@ -25,7 +25,8 @@
 - **BLUR** in the pause menu (off by default; LIGHT or STRONG): the world stays sharp in
   a circle around you and softens towards the edges, like a model railway (the
   "tilt-shift" look of Link's Awakening). Text boxes and menus stay sharp.
-- **NIGHT EFFECTS** in the pause menu (on by default): in the evening and at night,
+- **NIGHT EFFECTS** in the pause menu (on by default): outdoors in the evening and at night
+  (houses, caves and other interiors look the same at any hour, as in the game),
   the world turns a deep night blue, street lamps and lanterns light a warm pool of
   ground around them (the cobbles show their own colours there), lit windows glow and
   light the ground below them, and fireflies drift over tall grass and woods. They

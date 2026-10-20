@@ -3016,9 +3016,9 @@ int main(int argc, char** argv)
                     focusBlur.Build(wideImage.pixels, wideImage.w, wideImage.h, cfg.blur);
                     wideImage.blur = &focusBlur;
                 }
-                if (cfg.nightFx)
+                if (cfg.nightFx && worldBlocks.Outdoors(*nds))
                 {
-                    // Evening and night by the game's clock.
+                    // Evening and night by the game's clock (outdoors: interiors look the same at any hour).
                     int year, month, day, hour, minute, second;
                     nds->RTC.GetDateTime(year, month, day, hour, minute, second);
                     const float strength = NightStrength(hour, minute);
