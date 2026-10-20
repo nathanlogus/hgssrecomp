@@ -174,7 +174,15 @@ void WriteGBASave(const u8*, u32, u32, u32, void*) {}
 void WriteFirmware(const Firmware&, u32, u32, void*) {}
 void WriteDateTime(int, int, int, int, int, int, void*) {}
 
-// MP_* (local wireless between consoles) are in party.cpp.
+void MP_Begin(void*) {}
+void MP_End(void*) {}
+int MP_SendPacket(u8*, int, u64, void*) { return 0; }
+int MP_RecvPacket(u8*, u64*, void*) { return 0; }
+int MP_SendCmd(u8*, int, u64, void*) { return 0; }
+int MP_SendReply(u8*, int, u64, u16, void*) { return 0; }
+int MP_SendAck(u8*, int, u64, void*) { return 0; }
+int MP_RecvHostPacket(u8*, u64*, void*) { return 0; }
+u16 MP_RecvReplies(u8*, u64, u16, void*) { return 0; }
 int Net_SendPacket(u8*, int, void*) { return 0; }
 int Net_RecvPacket(u8*, void*) { return 0; }
 

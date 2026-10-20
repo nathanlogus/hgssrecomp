@@ -39,6 +39,11 @@
 - ROM hacks that change the game's code in place, such as Definitive HeartGold, can
   be recompiled: `tools/rehash_layout.py` makes a layout for them from the base
   game's. Code a hack adds elsewhere runs on the interpreter.
+- First steps towards playing together over the internet (for testers, from the
+  command line for now): run `tools/party_server.py` somewhere both players can reach
+  and start the game with `--party <server>`. Up to four games in the same party
+  share the Pokemon Center's wireless clubs as if their consoles were side by side,
+  each with its own save; it copes with a slow connection.
 
 ## v0.4.2 — Faster widescreen
 

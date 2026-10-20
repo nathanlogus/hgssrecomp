@@ -51,6 +51,7 @@
 #include "gpucompose.h"
 #include "battlewide.h"
 #include "voidfill.h"
+#include "party.h"
 #include "worldblocks.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
@@ -403,6 +404,7 @@ struct Options
     int composeW = 0, composeH = 0; // screenshots use the single-display layout at this size
     int scale = 3;
     std::string layout = "merged";
+    std::string party, partyCode = "union"; // relay server and party to join
 };
 
 static void Usage()
@@ -443,6 +445,9 @@ static void Usage()
         "  --interp             run the ARM9 on the interpreter instead of recompiled code\n"
         "  --lockstep           run interpreter and recompiled code side by side and compare\n"
         "                       every ARM9 instruction (headless only)\n"
+        "  --party <host[:port]> join a party on a relay server (tools/party_server.py): the\n"
+        "                       games in it share local wireless (Union Room, link battles, trades)\n"
+        "  --party-code <name>  which party on the server (default union)\n"
         "  --log <0-3>          core log level (0 = everything)\n");
 }
 
@@ -483,6 +488,8 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--state-load") o.stateLoad = next();
         else if (a == "--compose") sscanf(next().c_str(), "%dx%d", &o.composeW, &o.composeH);
         else if (a == "--interp") o.recomp = false;
+        else if (a == "--party") o.party = next();
+        else if (a == "--party-code") o.partyCode = next();
         else if (a == "--lockstep") { o.lockstep = true; o.headless = true; o.noSave = true; }
         else if (a == "--frames") o.frames = strtoul(next().c_str(), nullptr, 10);
         else if (a == "--input") o.script = next();
@@ -533,6 +540,9 @@ static void SetClock(NDS& nds, bool fixed)
     nds.RTC.SetDateTime(y, mo, d, h, mi, sec);
 }
 
+// Player number in a party, or -1: each player's console needs its own wireless address.
+static int PartyPlayer = -1;
+
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
     NDSCart::NDSCartArgs cartArgs;
@@ -550,6 +560,13 @@ static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const s
     }
     NDSArgs args;
     args.JIT = std::nullopt;
+    if (PartyPlayer > 0)
+    {
+        auto& header = args.Firmware.GetHeader();
+        header.MacAddr[5] += PartyPlayer * 0x10; // as melonDS does for its extra instances
+        header.UpdateChecksum();
+        args.Firmware.UpdateChecksums();
+    }
     auto nds = std::make_unique<NDS>(std::move(args));
     nds->SetNDSCart(std::move(cart));
     nds->Reset();
@@ -1163,8 +1180,19 @@ int main(int argc, char** argv)
 
     std::vector<uint8_t> sav = ReadFile(opt.save);
     fprintf(stderr, "ROM %s: %zu bytes; save %s: %zu bytes\n", opt.rom.c_str(), rom.size(), opt.save.c_str(), sav.size());
+    if (!opt.party.empty())
+    {
+        if (opt.lockstep)
+        {
+            fprintf(stderr, "--party cannot be used with --lockstep\n");
+            return 2;
+        }
+        PartyPlayer = Party_Join(opt.party, opt.partyCode);
+        if (PartyPlayer < 0) return 1;
+    }
     auto nds = MakeConsole(rom, sav, opt.headless);
     if (!nds) return 1;
+    if (PartyPlayer >= 0) Party_Attach(*nds);
     nds->ARM9.RecompEnable = opt.recomp;
 
     // Lockstep: a second console on the plain interpreter runs each frame first and
@@ -3164,6 +3192,7 @@ int main(int argc, char** argv)
             }
         }
         perfMark(1);
+        Party_Process();
         frame++;
         if (!holdScript) scriptClock++;
 
@@ -3673,6 +3702,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "[audio] %llu samples, peak %d, rms %.1f\n", (unsigned long long)AudioSamples, AudioPeak,
             sqrt(AudioSumSq / AudioSamples));
     if (!opt.noSave) FlushSave(opt.save);
+    Party_Leave();
     if (!opt.headless) SDL_Quit();
     if (nds->ARM9.RecompEnable) rc_print_stats();
     if (opt.lockstep)

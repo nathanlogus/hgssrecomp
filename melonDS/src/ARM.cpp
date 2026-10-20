@@ -291,6 +291,13 @@ void ARM::SetupCodeMem(u32 addr)
     }
 }
 
+// ssrecomp: called before each ARM9 instruction (or recompiled chunk) at an address in
+// ssr_HleFirst..ssr_HleLast; returns true when it has taken over the instruction, having
+// moved the CPU on (JumpTo) itself. Globals rather than members so that ARM.h, which
+// every recompiled file includes, stays as it is.
+bool (*ssr_HleHook)(ARMv5* cpu, u32 addr) = nullptr;
+u32 ssr_HleFirst = 0, ssr_HleLast = 0;
+
 void ARMv5::JumpTo(u32 addr, bool restorecpsr)
 {
     if (restorecpsr)
@@ -690,7 +697,13 @@ void ARMv5::Execute()
         else
 #endif
         {
-            if (RecompEnable && RecompRun(this))
+            u32 hleAddr;
+            if (ssr_HleHook && (hleAddr = R[15] - ((CPSR & 0x20) ? 2 : 4)) - ssr_HleFirst <= ssr_HleLast - ssr_HleFirst
+                && ssr_HleHook(this, hleAddr))
+            {
+                // the frontend ran it
+            }
+            else if (RecompEnable && RecompRun(this))
             {
                 // recompiled code ran one or more instructions
             }
