@@ -1031,7 +1031,7 @@ struct Settings
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
     bool redrawn = true;
     bool newSongs = true;
-    bool newText = true;    // Text: the player's font file (assets/fonts) instead of the game's
+    std::string textFont = "new"; // Text: a font family of the player's (assets/fonts) by name, "new" (the first), or "game"
     bool newButtons = true; // Button pictures: the player's (assets/buttons) instead of the set's // Music: the player's songs (songs.h) instead of the game's music, where there is one  // the game's screens redrawn in the HUD style (so far the trainer card)
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
     bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
@@ -1091,7 +1091,7 @@ struct Settings
             else if (k == "night_fx") nightFx = v == "1";
             else if (k == "redrawn_screens") redrawn = v == "1";
             else if (k == "music") newSongs = v != "original";
-            else if (k == "text_font") newText = v != "game";
+            else if (k == "text_font") textFont = v;
             else if (k == "button_pictures") newButtons = v != "classic";
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v == "1";
@@ -1134,7 +1134,7 @@ struct Settings
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
         f << "music=" << (newSongs ? "new" : "original") << "\n";
-        f << "text_font=" << (newText ? "new" : "game") << "\n";
+        f << "text_font=" << textFont << "\n";
         f << "button_pictures=" << (newButtons ? "new" : "classic") << "\n";
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
@@ -2380,25 +2380,67 @@ int main(int argc, char** argv)
     const bool spritesOk = sprites.Load(ReadUiFile);
     const bool fontOk = font.Load(rom.data(), rom.size());
     fprintf(stderr, "[hud] sprites %s, font %s\n", spritesOk ? g_uiDir.c_str() : "missing (plain menu)", fontOk ? "from the ROM" : "missing");
-    // The player's own font (the first .otf or .ttf in assets/fonts) and button pictures
+    // The player's own fonts (.otf or .ttf files in assets/fonts, as families: "Calamity-Regular"
+    // and "Calamity-Bold" are one, its bold used for bold text) and button pictures
     // (assets/buttons, the white Nintendo Switch "Tips" icons: icon_key_a_00.png and its
     // shadow icon_key_ds_a_ds_00.png, ...): used when they are there, never shipped.
-    VectorFont vectorFont;
+    struct FontFamily
+    {
+        std::string name;
+        std::unique_ptr<VectorFont> regular, bold;
+    };
+    std::vector<FontFamily> fontFamilies;
 #ifndef __ANDROID__
     {
         std::error_code ec;
+        std::vector<std::filesystem::path> files;
         for (const auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(g_uiDir + "../fonts"), ec))
         {
-            const std::string ext = e.path().extension().u8string();
-            if ((ext == ".otf" || ext == ".ttf" || ext == ".OTF" || ext == ".TTF") && vectorFont.Load(ReadFile(e.path().u8string())))
-            {
-                fprintf(stderr, "[hud] font %s\n", e.path().filename().u8string().c_str());
-                break;
-            }
+            std::string ext = e.path().extension().u8string();
+            for (char& ch : ext) ch = (char)tolower((unsigned char)ch);
+            if (ext == ".otf" || ext == ".ttf") files.push_back(e.path());
         }
+        std::sort(files.begin(), files.end());
+        for (const auto& path : files)
+        {
+            // "Calamity-Bold" -> family "Calamity", bold; "rodin" -> "rodin".
+            std::string stem = path.stem().u8string(), lower = stem;
+            for (char& ch : lower) ch = (char)tolower((unsigned char)ch);
+            bool bold = false;
+            for (const char* suffix : { "-bold", "_bold", " bold", "-regular", "_regular", " regular" })
+                if (lower.size() > strlen(suffix) && lower.compare(lower.size() - strlen(suffix), strlen(suffix), suffix) == 0)
+                {
+                    bold = strstr(suffix, "bold") != nullptr;
+                    stem.resize(stem.size() - strlen(suffix));
+                    break;
+                }
+            auto font = std::make_unique<VectorFont>();
+            if (!font->Load(ReadFile(path.u8string()))) continue;
+            auto it = std::find_if(fontFamilies.begin(), fontFamilies.end(), [&](const FontFamily& f) { return f.name == stem; });
+            if (it == fontFamilies.end())
+            {
+                fontFamilies.push_back({ stem, nullptr, nullptr });
+                it = fontFamilies.end() - 1;
+            }
+            (bold ? it->bold : it->regular) = std::move(font);
+            fprintf(stderr, "[hud] font %s\n", path.filename().u8string().c_str());
+        }
+        // A family with only a bold file uses it for everything.
+        for (FontFamily& f : fontFamilies)
+            if (!f.regular) f.regular = std::move(f.bold);
     }
 #endif
-    auto applyFont = [&]() { font.UseVector(cfg.newText ? &vectorFont : nullptr); };
+    // The family in use (cfg.textFont), or null for the game's letters.
+    auto textFamily = [&]() -> const FontFamily* {
+        if (cfg.textFont == "game" || fontFamilies.empty()) return nullptr;
+        for (const FontFamily& f : fontFamilies)
+            if (f.name == cfg.textFont) return &f;
+        return &fontFamilies[0];
+    };
+    auto applyFont = [&]() {
+        const FontFamily* f = textFamily();
+        font.UseVector(f ? f->regular.get() : nullptr, f ? f->bold.get() : nullptr);
+    };
     applyFont();
     std::vector<std::pair<std::string, Image>> buttonPics;
     {
@@ -2819,9 +2861,9 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_FARMAP, "Far map", onOff(cfg.farMap), "Draws the map beyond the part the game has loaded, so a wide or zoomed-out view has no gaps.");
         add(T_DISPLAY, M_VOIDFILL, "Void fill", onOff(cfg.voidFill), "Fills any ground not loaded yet with a soft haze instead of black.");
         add(T_DISPLAY, M_NIGHTFX, "Night effects", onOff(cfg.nightFx), "In the evening and at night: night colours, lamp light, glowing windows and fireflies.");
-        add(T_DISPLAY, M_TEXTFONT, "Text", vectorFont.Ok() && cfg.newText ? "New font" : "Game font",
-            vectorFont.Ok() ? "New font: the font file in assets/fonts for all of this menu's text and the HUD's. Game font: the game's own letters."
-                            : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = !vectorFont.Ok();
+        add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
+            !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
+                                  : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
@@ -3698,9 +3740,18 @@ int main(int argc, char** argv)
                 cfg.nightFx = !cfg.nightFx;
                 break;
             case M_TEXTFONT:
-                cfg.newText = !cfg.newText;
+            {
+                // The fonts in turn, then the game's letters.
+                const FontFamily* f = textFamily();
+                int i = -1;
+                for (size_t k = 0; k < fontFamilies.size(); k++)
+                    if (f == &fontFamilies[k]) i = (int)k;
+                const int n = (int)fontFamilies.size() + 1;
+                i = ((i < 0 ? n - 1 : i) + (dir < 0 ? n - 1 : 1)) % n;
+                cfg.textFont = i == n - 1 ? "game" : fontFamilies[i].name;
                 applyFont();
                 break;
+            }
             case M_BUTTONPICS:
                 cfg.newButtons = !cfg.newButtons;
                 applyButtons();

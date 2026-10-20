@@ -497,8 +497,13 @@ private:
 class RomFont
 {
 public:
-    // Text drawn with this font file instead (nullptr: the game's own font).
-    void UseVector(const VectorFont* v) { vector = v && v->Ok() ? v : nullptr; }
+    // Text drawn with this font file instead (nullptr: the game's own font), and bold text
+    // with `bold` (nullptr: the regular one, thickened).
+    void UseVector(const VectorFont* v, const VectorFont* b = nullptr)
+    {
+        vector = v && v->Ok() ? v : nullptr;
+        vectorBold = vector && b && b->Ok() ? b : nullptr;
+    }
 
     bool Load(const uint8_t* rom, size_t romSize)
     {
@@ -522,7 +527,7 @@ public:
     // Width in canvas pixels at `scale` (canvas pixels per font pixel).
     int Width(const std::string& text, float scale, bool bold = false) const
     {
-        if (vector) return vector->Width(Utf8(text), scale, bold);
+        if (vector) return bold && vectorBold ? vectorBold->Width(Utf8(text), scale, false) : vector->Width(Utf8(text), scale, bold);
         if (!ok) return Canvas::TextWidth(text, std::max(1, (int)std::lround(scale)));
         int w = 0;
         for (uint32_t cp : Utf8(text))
@@ -538,7 +543,8 @@ public:
     {
         if (vector)
         {
-            vector->Draw(c, x, y, Utf8(text), scale, ink, bold);
+            if (bold && vectorBold) vectorBold->Draw(c, x, y, Utf8(text), scale, ink, false);
+            else vector->Draw(c, x, y, Utf8(text), scale, ink, bold);
             return;
         }
         if (!ok)
@@ -585,6 +591,7 @@ private:
     Face faces[2];
     bool ok = false;
     const VectorFont* vector = nullptr;
+    const VectorFont* vectorBold = nullptr;
 
     static int Advance(const Face& f, int g)
     {

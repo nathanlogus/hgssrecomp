@@ -4,8 +4,9 @@
 
 - **Your own font and button pictures** for the menus and the HUD: a font file (.otf or
   .ttf) in `assets/fonts` and button pictures in `assets/buttons` (named like the Switch's
-  `icon_key_a_00.png`) are used when they are there. TEXT and BUTTON PICTURES in the
-  Display tab switch back to the game's letters and the coloured buttons.
+  `icon_key_a_00.png`) are used when they are there. TEXT in the Display tab chooses
+  between the fonts there (a family's Bold file is used for bold text) and the game's
+  letters; BUTTON PICTURES switches back to the coloured buttons.
 - **Your own music**: put MP3 files in `assets/songs` and list them in `songs.txt` there
   ("1022 = my goldenrod song.mp3", the number being the game's music); while the game
   plays a tune that has a song, the song plays instead, looping, at the game's loudness.

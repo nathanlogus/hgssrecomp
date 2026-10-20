@@ -260,7 +260,9 @@ tunes. The songs are yours: they are not part of this project and are never uplo
 ### Your own font and button pictures
 
 The menus and the HUD use the game's own letters and coloured button pictures. A font file
-(`.otf` or `.ttf`) in `assets/fonts` replaces the letters, and button pictures in
+(`.otf` or `.ttf`) in `assets/fonts` replaces the letters (several can be there: **Text**
+chooses one; `Name-Regular` and `Name-Bold` files are one font, the bold one used for bold
+text), and button pictures in
 `assets/buttons` replace the buttons: white glyphs named like the Nintendo Switch's
 (`icon_key_a_00.png`, with an optional shadow `icon_key_ds_a_ds_00.png`; a, b, x, y, l, r,
 zl, zr, plus, minus, up, down, left, right, stick_l, stick_r). They are drawn dark on the
