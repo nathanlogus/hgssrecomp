@@ -30,6 +30,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #else
+#include <arpa/inet.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <fcntl.h>
