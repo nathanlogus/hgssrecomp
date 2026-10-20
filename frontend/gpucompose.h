@@ -173,6 +173,19 @@ private:
         if (wide.fadeMode == 2) k = 255 * (16 - wide.fade) / 16;
         SDL_SetTextureColorMod(tex, k, k, k);
         SDL_RenderCopy(R, tex, nullptr, nullptr);
+        if (wide.blur)
+        {
+            // Focus blur: a blurred copy, clear in the middle, blended over the world.
+            const FocusBlur& fb = *wide.blur;
+            if (SDL_Texture* t = Make(BlurTex, fb.W, fb.H))
+            {
+                SDL_UpdateTexture(t, nullptr, fb.Layer.data(), fb.W * 4);
+                SDL_SetTextureScaleMode(t, SDL_ScaleModeLinear);
+                SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureColorMod(t, k, k, k);
+                SDL_RenderCopy(R, t, nullptr, nullptr);
+            }
+        }
         if (wide.fx)
         {
             // Night effects: the world multiplied by one layer, then the other added, both
@@ -256,7 +269,7 @@ private:
     SDL_Renderer* R;
     SDL_BlendMode Premultiplied;
     std::vector<Tex> Slots;
-    Tex WideTex, EdgeTex[2], FillTex[2], FxTex[2];
+    Tex WideTex, EdgeTex[2], FillTex[2], FxTex[2], BlurTex;
     uint32_t Fill[16 * 192];
     std::vector<SDL_Rect> Spans;
     std::vector<uint32_t> Buf;

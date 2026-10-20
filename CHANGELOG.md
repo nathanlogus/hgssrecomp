@@ -22,9 +22,13 @@
 - With FAR MAP, the people of the next town or route are already standing there
   before you walk in (the game only creates them once you enter their map). They
   stand still until then, facing the way they start.
+- **BLUR** in the pause menu (off by default; LIGHT or STRONG): the world stays sharp in
+  a circle around you and softens towards the edges, like a model railway (the
+  "tilt-shift" look of Link's Awakening). Text boxes and menus stay sharp.
 - **NIGHT EFFECTS** in the pause menu (on by default): in the evening and at night,
-  lit windows and street lamps glow and cast warm light around them, fireflies drift
-  over tall grass and woods, and the night gets deeper colours with darker edges. They
+  the world turns a deep night blue, street lamps and lanterns light a warm pool of
+  ground around them (the cobbles show their own colours there), lit windows glow and
+  light the ground below them, and fireflies drift over tall grass and woods. They
   follow the game's clock, cover the far map too, and leave text boxes and menus alone.
 - **VOID FILL** in the pause menu (on by default): when a far zoom or a wide screen
   shows ground the game has not loaded yet, that corner is filled with a dimmed haze

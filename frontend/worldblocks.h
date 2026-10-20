@@ -186,7 +186,76 @@ public:
             }
     }
 
+    // Street lamps and lanterns around the camera (props with a lamp's build model), as
+    // places in the wide picture like Fireflies: the oval their light makes on the ground
+    // and the lamp's head.
+    void Lights(melonDS::NDS& nds, float viewWidth, float zoom, std::vector<NightLight>& out)
+    {
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        const uint32_t fs = Read32(FieldSystemPtr);
+        if (Land.empty() || !InRam(fs)) return;
+        const uint32_t matrix = Read32(fs + 0x30);
+        if (!InRam(matrix) || Read32(fs + 0x70) != 0) return;
+        const int width = Read8(matrix), height = Read8(matrix + 1);
+        if (width < 1 || height < 1 || width * height > 799) return;
+        const uint32_t models = ((matrix + 4 + 2 + 799 * 2 + 799 + 1) & ~1u);
+        const int cx = ((int32_t)Read32(Glb + 0x258) >> 16) / 32, cz = ((int32_t)Read32(Glb + 0x260) >> 16) / 32;
+        double cam[12], proj[16];
+        for (int i = 0; i < 12; i++) cam[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
+        for (int i = 0; i < 16; i++) proj[i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
+        const double sx = 256.0 / std::max(256.0f, viewWidth) * zoom;
+        // World units (a tile is 16) to a place in the wide picture; false behind the camera.
+        auto place = [&](double x, double y, double z, float& u, float& v) {
+            double c[3], clip[4];
+            for (int j = 0; j < 3; j++) c[j] = x * cam[j] + y * cam[3 + j] + z * cam[6 + j] + cam[9 + j];
+            for (int j = 0; j < 4; j++) clip[j] = c[0] * proj[j] + c[1] * proj[4 + j] + c[2] * proj[8 + j] + proj[12 + j];
+            if (clip[3] <= 0) return false;
+            u = (float)((sx * clip[0] / clip[3] + 1) / 2);
+            v = (float)((1 - zoom * clip[1] / clip[3]) / 2);
+            return true;
+        };
+        for (int z = cz - Radius; z <= cz + Radius; z++)
+            for (int x = cx - Radius; x <= cx + Radius; x++)
+            {
+                if (x < 0 || z < 0 || x >= width || z >= height) continue;
+                const Block* b = GetBlock(Read16(models + 2 * (z * width + x)));
+                if (!b) continue;
+                for (const PropPlace& p : b->props)
+                {
+                    if (!IsLamp(p.buildModel)) continue;
+                    const double wx = (x * 0x200000 + 0x100000 + p.pos[0]) / 4096.0, wy = p.pos[1] / 4096.0,
+                                 wz = (z * 0x200000 + 0x100000 + p.pos[2]) / 4096.0;
+                    const double reach = 16 * 3.2; // light reaches about 3 tiles
+                    NightLight l;
+                    float u0, v0, u1, v1, u2, v2, u3, v3;
+                    if (!place(wx, wy, wz, l.u, l.v) || !place(wx - reach, wy, wz, u0, v0) || !place(wx + reach, wy, wz, u1, v1)
+                        || !place(wx, wy, wz - reach, u2, v2) || !place(wx, wy, wz + reach, u3, v3)
+                        || !place(wx, wy + 16 * 1.6, wz, l.hu, l.hv))
+                        continue;
+                    l.ru = std::fabs(u1 - u0) / 2;
+                    l.rv = std::fabs(v3 - v2) / 2;
+                    if (l.u + l.ru < 0 || l.u - l.ru > 1 || l.v + l.rv < 0 || l.v - l.rv > 1) continue;
+                    out.push_back(l);
+                }
+            }
+    }
+
 private:
+    // Build models that are lamps (pokeheartgold files/fielddata/build_model/bm_field.narc):
+    // kk_tourou (Violet's stone lanterns), d15_light, yado_light, ko_light, poke_c_light,
+    // d17_light, kbc_sl, en_light, as_light, cl_slht, tafl_light and the Kanto towns' *_sl.
+    static bool IsLamp(uint32_t id)
+    {
+        switch (id)
+        {
+        case 55: case 68: case 73: case 95: case 182: case 186: case 223: case 227: case 248:
+        case 302: case 327: case 329: case 330: case 331: case 332: case 333: case 334:
+            return true;
+        }
+        return false;
+    }
+
     static constexpr uint32_t FieldSystemPtr = 0x021D1110; // the game's FieldSystem pointer
     static constexpr uint32_t MapHeaders = 0x020F6BE0;     // sMapHeaders: 24 bytes per map
     static constexpr uint32_t SpriteGfx = 0x022074A8;      // overlay 1: sprite id -> overworld graphics

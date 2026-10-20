@@ -300,6 +300,10 @@ picture: their map's event data (ROM `a/0/3/2`) gives where they stand, their sp
 `WideState::ExternalTextures`) and the flag that hides them (read from the save in
 memory); each is a quad facing the screen like the game's, on the ground the player
 stands on. The game creates the real ones at the same places when the player enters.
+"BLUR" (`blur`: 0 off, 1 light, 2 strong; `frontend/focusblur.h`) blurs a quarter-size
+copy of the wide picture and blends it over the world with an alpha that is clear in a
+circle around the middle (where the camera puts the player) and opaque at the edges;
+the CPU compositor bakes it in the same way. About 1 ms per frame at any resolution.
 "NIGHT EFFECTS" (`night_fx`, `frontend/nightfx.h`) works out two small layers per
 frame from the wide picture (bright warm pixels become a glow and wider, lower light
 pools; fireflies are placed on tall-grass and headbutt-tree tiles from the map data and

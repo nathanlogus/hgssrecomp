@@ -6,6 +6,7 @@
 // and panels appear. Which pieces are used depends on what the game is doing; see
 // pickScene in main.cpp.
 #pragma once
+#include "focusblur.h"
 #include "nightfx.h"
 #include <cstdint>
 #include <algorithm>
@@ -146,6 +147,9 @@ struct WideImage
     // Night effects (nightfx.h), when on: two layers stretched over the world, which is
     // multiplied by one and then has the other added.
     const NightFx* fx = nullptr;
+    // Focus blur (focusblur.h), when on: a blurred layer blended over the world, under
+    // the night effects.
+    const FocusBlur* blur = nullptr;
 };
 
 struct ScreenImage
@@ -337,12 +341,20 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
     const bool useWide = scene.wide && wide && wide->pixels && wide->w > 0 && wide->h > 0;
     // Night effects: baked into a copy of the world here (the graphics card blends them).
     WideImage baked;
-    static std::vector<uint32_t> bakedPixels;
-    if (useWide && !wide->placed && wide->fx)
+    static std::vector<uint32_t> bakedPixels, blurredPixels;
+    if (useWide && !wide->placed && (wide->fx || wide->blur))
     {
-        NightFxBake(wide->pixels, wide->w, wide->h, *wide->fx, bakedPixels);
         baked = *wide;
-        baked.pixels = bakedPixels.data();
+        if (wide->blur)
+        {
+            FocusBlurBake(baked.pixels, wide->w, wide->h, *wide->blur, blurredPixels);
+            baked.pixels = blurredPixels.data();
+        }
+        if (wide->fx)
+        {
+            NightFxBake(baked.pixels, wide->w, wide->h, *wide->fx, bakedPixels);
+            baked.pixels = bakedPixels.data();
+        }
         wide = &baked;
     }
     out.resize((size_t)outW * outH);

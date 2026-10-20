@@ -951,6 +951,7 @@ struct Settings
     int zoom = 100;       // world zoom, percent (one of ZoomSteps)
     bool voidFill = true; // haze instead of black where the world reaches past the loaded map
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
+    int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
     bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
     int windowH = 0;      // window height chosen in the menu; 0 = from --scale
 
@@ -976,6 +977,7 @@ struct Settings
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "void_fill") voidFill = v == "1";
             else if (k == "night_fx") nightFx = v == "1";
+            else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v == "1";
             else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), ZoomSteps[0], ZoomSteps[ZoomCount - 1]);
             else if (k == "window_height") windowH = std::clamp(atoi(v.c_str()), 0, 4320);
@@ -1002,6 +1004,7 @@ struct Settings
         f << "zoom=" << zoom << "\n";
         f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
+        f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
         f << "window_height=" << windowH << "\n";
     }
@@ -2183,7 +2186,9 @@ int main(int argc, char** argv)
     // 3D is flushed (inside the emulated frame, with that frame's camera).
     WorldBlocks worldBlocks;
     NightFx nightFx;
+    FocusBlur focusBlur;
     std::vector<NightFly> fireflies;
+    std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
     melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
         if (cfg.farMap) worldBlocks.Build(*nds, commands);
@@ -2323,7 +2328,7 @@ int main(int argc, char** argv)
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_ASPECT, M_WINDOWSIZE, M_WIDE, M_ZOOM, M_FARMAP, M_VOIDFILL, M_NIGHTFX, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_ASPECT, M_WINDOWSIZE, M_WIDE, M_ZOOM, M_FARMAP, M_VOIDFILL, M_NIGHTFX, M_BLUR, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
     };
     bool fastLock = false;
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
@@ -2350,6 +2355,7 @@ int main(int argc, char** argv)
             { "FAR MAP", cfg.farMap ? "ON" : "OFF" },
             { "VOID FILL", cfg.voidFill ? "ON" : "OFF" },
             { "NIGHT EFFECTS", cfg.nightFx ? "ON" : "OFF" },
+            { "BLUR", cfg.blur == 2 ? "STRONG" : cfg.blur == 1 ? "LIGHT" : "OFF" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
             { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
@@ -2826,6 +2832,9 @@ int main(int argc, char** argv)
             case M_FARMAP:
                 cfg.farMap = !cfg.farMap;
                 break;
+            case M_BLUR:
+                cfg.blur = (cfg.blur + (dir < 0 ? 2 : 1)) % 3;
+                break;
             case M_NIGHTFX:
                 cfg.nightFx = !cfg.nightFx;
                 break;
@@ -2974,6 +2983,11 @@ int main(int argc, char** argv)
                         std::min(1.0f, 256 * zoom / std::max(256.0f, melonDS::Wide.ViewWidth)), std::min(1.0f, zoom),
                         melonDS::Wide.FrontSerial);
                 }
+                if (cfg.blur)
+                {
+                    focusBlur.Build(wideImage.pixels, wideImage.w, wideImage.h, cfg.blur);
+                    wideImage.blur = &focusBlur;
+                }
                 if (cfg.nightFx)
                 {
                     // Evening and night by the game's clock.
@@ -2984,7 +2998,9 @@ int main(int argc, char** argv)
                     {
                         fireflies.clear();
                         worldBlocks.Fireflies(*nds, frame / 60.0f, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, fireflies);
-                        nightFx.Build(wideImage.pixels, wideImage.w, wideImage.h, strength, fireflies);
+                        lamps.clear();
+                        worldBlocks.Lights(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, lamps);
+                        nightFx.Build(wideImage.pixels, wideImage.w, wideImage.h, strength, fireflies, lamps);
                         wideImage.fx = &nightFx;
                     }
                 }
