@@ -29,6 +29,8 @@ extern u32 SubmitPolygonLimit, SubmitVertexLimit;
 void MatrixLoad4x4(s32* m, s32* s);
 void MatrixLoad4x3(s32* m, s32* s);
 void MatrixMult4x3(s32* m, s32* s);
+void MatrixMult3x3(s32* m, s32* s);
+void MatrixLoadIdentity(s32* m);
 void MatrixScale(s32* m, s32* s);
 void MatrixTranslate(s32* m, s32* s);
 
@@ -499,6 +501,7 @@ struct WideAccess
             1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
             3,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,
         };
+        static s32 stackPos[32][16], stackVec[32][16];
         Wide.Capturing = true;
         u32 i = 0;
         while (i < count)
@@ -515,8 +518,22 @@ struct WideAccess
             case 0x16:
             case 0x17:
             case 0x19:
-                if (g.MatrixMode == 3) break; // texture matrices are not used here
-                if (cmd == 0x16) { if (g.MatrixMode == 0) MatrixLoad4x4(g.ProjMatrix, params); else MatrixLoad4x4(g.PosMatrix, params); }
+            case 0x1A:
+                if (g.MatrixMode == 3)
+                {
+                    if (cmd == 0x16) MatrixLoad4x4(g.TexMatrix, params);
+                    else if (cmd == 0x17) MatrixLoad4x3(g.TexMatrix, params);
+                    else if (cmd == 0x19) MatrixMult4x3(g.TexMatrix, params);
+                    else MatrixMult3x3(g.TexMatrix, params);
+                    break;
+                }
+                if (cmd == 0x1A)
+                {
+                    if (g.MatrixMode == 0) MatrixMult3x3(g.ProjMatrix, params);
+                    else MatrixMult3x3(g.PosMatrix, params);
+                    if (g.MatrixMode == 2) MatrixMult3x3(g.VecMatrix, params);
+                }
+                else if (cmd == 0x16) { if (g.MatrixMode == 0) MatrixLoad4x4(g.ProjMatrix, params); else MatrixLoad4x4(g.PosMatrix, params); }
                 else if (cmd == 0x17) { if (g.MatrixMode == 0) MatrixLoad4x3(g.ProjMatrix, params); else MatrixLoad4x3(g.PosMatrix, params); }
                 else { if (g.MatrixMode == 0) MatrixMult4x3(g.ProjMatrix, params); else MatrixMult4x3(g.PosMatrix, params); }
                 if (g.MatrixMode == 2)
@@ -530,11 +547,38 @@ struct WideAccess
             case 0x1B:
                 if (g.MatrixMode == 0) MatrixScale(g.ProjMatrix, params);
                 else if (g.MatrixMode != 3) MatrixScale(g.PosMatrix, params);
+                else MatrixScale(g.TexMatrix, params);
+                g.ClipMatrixDirty = true;
+                break;
+            case 0x13: // store and restore use a stack of their own: the game's is not touched
+                if (g.MatrixMode == 1 || g.MatrixMode == 2)
+                {
+                    memcpy(stackPos[p & 31], g.PosMatrix, 64);
+                    memcpy(stackVec[p & 31], g.VecMatrix, 64);
+                }
+                break;
+            case 0x14:
+                if (g.MatrixMode == 1 || g.MatrixMode == 2)
+                {
+                    memcpy(g.PosMatrix, stackPos[p & 31], 64);
+                    memcpy(g.VecMatrix, stackVec[p & 31], 64);
+                    g.ClipMatrixDirty = true;
+                }
+                break;
+            case 0x15:
+                if (g.MatrixMode == 0) MatrixLoadIdentity(g.ProjMatrix);
+                else if (g.MatrixMode == 3) MatrixLoadIdentity(g.TexMatrix);
+                else
+                {
+                    MatrixLoadIdentity(g.PosMatrix);
+                    if (g.MatrixMode == 2) MatrixLoadIdentity(g.VecMatrix);
+                }
                 g.ClipMatrixDirty = true;
                 break;
             case 0x1C:
                 if (g.MatrixMode == 0) MatrixTranslate(g.ProjMatrix, params);
-                else if (g.MatrixMode != 3)
+                else if (g.MatrixMode == 3) MatrixTranslate(g.TexMatrix, params);
+                else
                 {
                     MatrixTranslate(g.PosMatrix, params);
                     if (g.MatrixMode == 2) MatrixTranslate(g.VecMatrix, params);

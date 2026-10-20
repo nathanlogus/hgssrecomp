@@ -998,6 +998,12 @@ void GPU3D::SubmitPolygon() noexcept
         raw.StripStart = LastStripPolygon == nullptr;
     }
     if (Wide.Capturing) return;
+    if (Wide.Owner == this && !InReplay && (TexParam >> 30))
+    {
+        std::array<s32, 17>& anim = Wide.TexAnim[TexParam & 0x3FFFFFFF];
+        anim[0] = (s32)TexParam;
+        memcpy(&anim[1], TexMatrix, 64);
+    }
 
     Vertex *v0, *v1, *v2, *v3;
     s64 normalX, normalY, normalZ;
@@ -2557,7 +2563,11 @@ void GPU3D::VBlank() noexcept
                 // while the 3D image is being captured into video memory.
                 InterpPending = false;
                 InterpShowReal = false;
-                if (Wide.Owner == this && Wide.Extra) WideRunExtra(*this);
+                if (Wide.Owner == this)
+                {
+                    if (Wide.Extra) WideRunExtra(*this);
+                    Wide.TexAnim.clear();
+                }
                 if (InterpolationEnabled || Wide.Owner == this)
                 {
                     const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;

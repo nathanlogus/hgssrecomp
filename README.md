@@ -289,7 +289,11 @@ flushed, it reads the map matrix, the loaded blocks, the camera and the area's t
 placement from the game's memory, takes the missing blocks' models from the ROM, and
 runs their display lists through melonDS's vertex pipeline in capture mode
 (`WideState::Extra`), which only records the polygons and puts the pipeline state back.
-The game never sees them. Props (buildings, signs) of those blocks are not drawn yet.
+The game never sees them. Their props (buildings, signs) are drawn with the game's own
+copies of the models (already in memory, with their textures bound, for the whole
+area); textures the game scrolls (the sea) take the texture matrix the game used for
+the same texture that frame (`WideState::TexAnim`). Checked by drawing the loaded
+blocks a second time (`SSR_FARMAP_ALL=1`), which must leave the picture unchanged.
 Where even that leaves ground empty, "VOID FILL" (`void_fill`) fills it with the
 nearby ground's colours, blurred and dimmed (`frontend/voidfill.h`, checked by
 `tests/voidfill_test.cpp`). It is left out when the DS's own view has empty parts

@@ -7,7 +7,9 @@
 // is not touched: the game sees exactly the polygon counts and results it would see
 // without any of this.
 #pragma once
+#include <array>
 #include <functional>
+#include <map>
 #include <vector>
 #include "types.h"
 
@@ -30,6 +32,10 @@ struct WideState
     // added to the frame's recorded ones; the game and the DS's own picture never see them.
     std::function<void(std::vector<u32>& commands)> Extra;
     bool Capturing = false;   // set while Extra's commands run
+    // Textures the game drew this frame with generated texture coordinates (scrolling
+    // water): texture parameters without the generation bits -> the full parameters and
+    // the texture matrix, so that Extra can animate the same textures the same way.
+    std::map<u32, std::array<s32, 17>> TexAnim;
 
     // The image that belongs to the frame the 2D renderer has just output: XRGB, with
     // the top byte 0 where no polygon was drawn.

@@ -748,7 +748,7 @@ index 1204741d..b3332a5d 100644
  using Platform::Log;
  using Platform::LogLevel;
  
-@@ -971,6 +985,20 @@
+@@ -971,6 +985,26 @@
      // TODO: work out how it works on the real thing
      // the normalization part is a wild guess
  
@@ -765,11 +765,17 @@ index 1204741d..b3332a5d 100644
 +        raw.StripStart = LastStripPolygon == nullptr;
 +    }
 +    if (Wide.Capturing) return;
++    if (Wide.Owner == this && !InReplay && (TexParam >> 30))
++    {
++        std::array<s32, 17>& anim = Wide.TexAnim[TexParam & 0x3FFFFFFF];
++        anim[0] = (s32)TexParam;
++        memcpy(&anim[1], TexMatrix, 64);
++    }
 +
      Vertex *v0, *v1, *v2, *v3;
      s64 normalX, normalY, normalZ;
      s64 dot;
-@@ -1092,7 +1120,7 @@
+@@ -1092,7 +1126,7 @@
  
      // reject the polygon if it's not going to fit in polygon/vertex RAM
  
@@ -778,7 +784,7 @@ index 1204741d..b3332a5d 100644
      {
          LastStripPolygon = NULL;
          DispCnt |= (1<<13);
-@@ -1589,6 +1617,23 @@
+@@ -1589,6 +1623,23 @@
          cube[i].Position[3] = ((s64)x*ClipMatrix[3] + (s64)y*ClipMatrix[7] + (s64)z*ClipMatrix[11] + (s64)0x1000*ClipMatrix[15]) >> 12;
      }
  
@@ -802,7 +808,7 @@ index 1204741d..b3332a5d 100644
      // front face (-Z)
      face[0] = cube[0]; face[1] = cube[1]; face[2] = cube[2]; face[3] = cube[3];
      res = ClipPolygon<false>(*this, face, 4, 0);
-@@ -2456,8 +2501,28 @@
+@@ -2456,8 +2507,28 @@
      return a->SortKey < b->SortKey;
  }
  
@@ -831,7 +837,7 @@ index 1204741d..b3332a5d 100644
      if (GeometryEnabled)
      {
          if (RenderingEnabled)
-@@ -2487,6 +2552,21 @@
+@@ -2487,6 +2558,25 @@
  
                  RenderNumPolygons = NumPolygons;
                  RenderFrameIdentical = false;
@@ -840,7 +846,11 @@ index 1204741d..b3332a5d 100644
 +                // while the 3D image is being captured into video memory.
 +                InterpPending = false;
 +                InterpShowReal = false;
-+                if (Wide.Owner == this && Wide.Extra) WideRunExtra(*this);
++                if (Wide.Owner == this)
++                {
++                    if (Wide.Extra) WideRunExtra(*this);
++                    Wide.TexAnim.clear();
++                }
 +                if (InterpolationEnabled || Wide.Owner == this)
 +                {
 +                    const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;
@@ -853,7 +863,7 @@ index 1204741d..b3332a5d 100644
              }
              else
              {
-@@ -2499,6 +2579,13 @@
+@@ -2499,6 +2589,13 @@
                      && memcmp(RenderEdgeTable, EdgeTable, 8*2) == 0
                      && memcmp(RenderFogDensityTable + 1, FogDensityTable, 32) == 0
                      && memcmp(RenderToonTable, ToonTable, 32*2) == 0;
@@ -867,7 +877,7 @@ index 1204741d..b3332a5d 100644
              }
  
              RenderDispCnt = DispCnt;
-@@ -2535,7 +2622,27 @@
+@@ -2535,7 +2632,27 @@
  
  void GPU3D::VCount215(GPU& gpu) noexcept
  {

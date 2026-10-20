@@ -47,6 +47,7 @@ target_compile_options(gamecode PRIVATE -O1 -g0 -fno-exceptions -fno-rtti "$<$<C
 set(SSRECOMP_SOURCES
     frontend/main.cpp
     frontend/platform.cpp
+    frontend/party.cpp
     runtime/recomp_rt.cpp
     runtime/recomp_mem.cpp
     "${SSR_GENERATED_DIR}/apps_table.cpp"
@@ -87,4 +88,7 @@ else()
         target_link_libraries(ssrecomp PRIVATE ${SDL2_LIBRARIES})
     endif()
     target_link_libraries(ssrecomp PRIVATE core PNG::PNG Threads::Threads)
+    if(WIN32)
+        target_link_libraries(ssrecomp PRIVATE ws2_32)
+    endif()
 endif()

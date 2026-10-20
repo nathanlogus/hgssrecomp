@@ -198,6 +198,48 @@
         ]
       ],
       "check": "a cave: darkness and the edges of a small map"
+    },
+    {
+      "name": "ilex_forest",
+      "map": 117,
+      "x": 16,
+      "y": 56,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          80
+        ]
+      ],
+      "check": "a forest map of several blocks: far trees, darkness under the canopy"
+    },
+    {
+      "name": "dark_cave",
+      "map": 123,
+      "x": 14,
+      "y": 10,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          60
+        ]
+      ],
+      "check": "a cave of several blocks: far blocks, the dark around the walls"
+    },
+    {
+      "name": "safari_zone",
+      "map": 357,
+      "x": 79,
+      "y": 98,
+      "dir": 0,
+      "walk": [
+        [
+          "UP",
+          80
+        ]
+      ],
+      "check": "the Safari Zone: its blocks are the areas placed in the save; far blocks get ground only"
     }
   ]
 }

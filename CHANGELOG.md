@@ -15,8 +15,10 @@
 - **FAR MAP** in the pause menu (on by default): the game only keeps the map around the
   player loaded, so a zoomed-out or very wide view used to show black (or haze) past it.
   The map blocks around it are now read from the game and drawn there too, with the
-  game's own textures and time-of-day lighting: trees, paths, water and cliffs carry on
-  to the edge of the screen. Buildings and signs in those far blocks are not drawn yet.
+  game's own textures and time-of-day lighting: trees, paths, cliffs, buildings, signs
+  and lamps carry on to the edge of the screen, and the sea there flows like the sea
+  nearby. It works in towns, on routes, in caves and forests, and in the Safari Zone
+  (there without the objects you placed, which come from your save).
 - **VOID FILL** in the pause menu (on by default): when a far zoom or a wide screen
   shows ground the game has not loaded yet, that corner is filled with a dimmed haze
   continuing the nearby ground instead of black. The black around rooms indoors is
