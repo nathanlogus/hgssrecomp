@@ -204,7 +204,29 @@ public:
         Ram = nds.MainRAM;
         RamMask = nds.MainRAMMask;
         if (Sprites.empty() || !InRam(Read32(FieldSystemPtr)) || Read16(SpriteGfx) != 1) return false;
-        const int tex = GetSpriteTexture(sprite, facing & 3);
+        return TextureImage(GetSpriteTexture(sprite, facing & 3), out);
+    }
+
+    // The same from the ROM alone (before the game runs): the sprite whose textures are
+    // named `stem` (".1" to ".16"): "hero" is the boy, "heroine" the girl.
+    bool RomSpriteImage(const std::string& stem, int facing, Image& out)
+    {
+        for (uint32_t m = 0; m < Sprites.size(); m++)
+        {
+            const uint8_t* b = Rom + Sprites[m].first;
+            const uint32_t size = Sprites[m].second;
+            if (size < 0x40 || memcmp(b, "BTX0", 4) != 0 || Get32(b + 0x10) + 0x3C > size) continue;
+            const uint8_t* t = b + Get32(b + 0x10);
+            const auto names = Dict(t + Get16(t + 0x0E));
+            if (!names.empty() && names[0].first.rfind(stem + ".", 0) == 0 && names[0].first.find('.') == stem.size())
+                return TextureImage(MemberTexture(m, facing & 3, 0), out);
+        }
+        return false;
+    }
+
+    // An external texture as a picture.
+    static bool TextureImage(int tex, Image& out)
+    {
         if (tex < 0) return false;
         const auto& t = melonDS::Wide.ExternalTextures[tex];
         out.w = t.W;
@@ -393,6 +415,11 @@ private:
                 break;
             }
         }
+        return MemberTexture(member, facing, frame);
+    }
+
+    int MemberTexture(uint32_t member, int facing, int frame)
+    {
         if (member >= Sprites.size() || member > 0x3FFF) return -1;
         const uint32_t key = member << 4 | (uint32_t)facing << 2 | (uint32_t)frame;
         auto it = SpriteTex.find(key);

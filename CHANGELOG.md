@@ -68,8 +68,13 @@
   partner Pokémon, money, Pokédex, play time and the badges you have, and while playing
   together the session's link battles and trades. NEW SCREENS in the Display tab turns
   it off. More of the game's screens may follow.
-- A **start screen** before the game: Play, Online, Settings, Quit (Play is already
-  chosen, so one press starts the game). It can be turned off in the Game tab.
+- A **start screen** before the game, with the game's logo: Continue, New game, Online,
+  Settings, Quit, and your save below (your trainer, first Pokémon, Pokédex, money,
+  play time and badges). Continue is already chosen, so one press starts the game.
+  It can be turned off in the Game tab.
+- **No more intro**: after Continue the opening, the title screen and the game's own
+  Continue menu are passed for you, behind a loading picture, and you start in the
+  world a few seconds later. New game goes straight to the professor's first words.
 - Fewer flashes when the view changes: the world no longer starts at normal size and
   then jumps to your WORLD ZOOM after Continue, no longer jumps to 100% zoom for a few
   frames now and then after a battle, and opening the save screen (or another screen

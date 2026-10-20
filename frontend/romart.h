@@ -53,6 +53,61 @@ inline Image NdsTiles(const uint8_t* d, uint32_t size, int w, int h, const uint3
     return img;
 }
 
+// Nintendo's "backwards LZ" (BLZ): read from the end towards the start; the last 8 bytes
+// give how much is compressed and how much larger the result is (as tools/ndsrom.py).
+inline std::vector<uint8_t> BlzDecompress(const uint8_t* d, size_t n)
+{
+    std::vector<uint8_t> out(d, d + n);
+    if (n < 8) return out;
+    const uint32_t bounds = RomGet32(d + n - 8), extra = RomGet32(d + n - 4);
+    const size_t headerLen = bounds >> 24, packedLen = bounds & 0xFFFFFF;
+    if (!extra || headerLen > n || packedLen > n) return out;
+    out.resize(n + extra);
+    size_t src = n - headerLen, dst = n + extra;
+    const size_t stop = n - packedLen;
+    while (src > stop)
+    {
+        uint8_t flags = d[--src];
+        for (int k = 0; k < 8 && src > stop; k++, flags <<= 1)
+            if (flags & 0x80)
+            {
+                if (src < 2) return out;
+                src -= 2;
+                const uint32_t info = d[src] | d[src + 1] << 8;
+                const size_t len = (info >> 12) + 3, disp = (info & 0xFFF) + 3;
+                for (size_t i = 0; i < len && dst > 0; i++, dst--)
+                    if (dst - 1 + disp < out.size()) out[dst - 1] = out[dst - 1 + disp];
+            }
+            else if (dst > 0)
+                out[--dst] = d[--src];
+    }
+    return out;
+}
+
+// The ARM9 main program as it is in memory (decompressed), from the ROM.
+inline std::vector<uint8_t> NdsArm9(const uint8_t* rom, size_t size)
+{
+    if (size < 0x30) return {};
+    const uint32_t off = RomGet32(rom + 0x20), ram = RomGet32(rom + 0x28), len = RomGet32(rom + 0x2C);
+    if ((size_t)off + len > size) return {};
+    std::vector<uint8_t> main(rom + off, rom + off + len);
+    // The module parameters, found by the "nitrocode" marker, say where the compressed
+    // part ends (0: not compressed).
+    for (size_t pos = 0x1C; pos + 4 <= main.size(); pos += 4)
+        if (RomGet32(main.data() + pos) == 0xDEC00621)
+        {
+            const uint32_t end = RomGet32(main.data() + pos - 0x1C + 0x14);
+            if (end > ram && end <= ram + main.size())
+            {
+                std::vector<uint8_t> out = BlzDecompress(main.data(), end - ram);
+                out.insert(out.end(), main.begin() + (end - ram), main.end());
+                return out;
+            }
+            break;
+        }
+    return main;
+}
+
 class RomArt
 {
 public:
@@ -63,6 +118,16 @@ public:
         icons = NdsNarcFiles(rom, size, "a/0/2/0");
         if (!icons.empty()) iconPal = NdsPalette(rom + icons[0].first, icons[0].second);
         cache.clear();
+        // The palette table, from the game's code in the ROM (so icons have their colours
+        // before the game has started).
+        const std::vector<uint8_t> arm9 = NdsArm9(rom, size);
+        palTable = nullptr;
+        SetRam(arm9.data(), (uint32_t)arm9.size());
+        if (palTable)
+        {
+            ownTable.assign(palTable, palTable + 544);
+            palTable = ownTable.data();
+        }
     }
 
     // The game's code in memory, for the palette table (call when it has started).
@@ -79,6 +144,7 @@ public:
                 if (ok)
                 {
                     palTable = ram + a;
+                    cache.clear(); // icons made before used the first palette
                     return;
                 }
             }
@@ -108,6 +174,7 @@ private:
     std::vector<std::pair<uint32_t, uint32_t>> icons;
     std::vector<uint32_t> iconPal;
     const uint8_t* palTable = nullptr;
+    std::vector<uint8_t> ownTable; // the table, when read from the ROM
     std::map<int, Image> cache;
 };
 

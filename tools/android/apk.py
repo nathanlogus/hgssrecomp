@@ -228,6 +228,10 @@ def build(skeleton, abi, libmain, libsdl, rom, key_path, out):
                 if f.endswith('.png') or f == 'manifest.json':
                     rel = os.path.relpath(os.path.join(folder, f), ui).replace(os.sep, '/')
                     write_aligned(z, 'assets/ui/' + rel, open(os.path.join(folder, f), 'rb').read(), True, 4)
+        # The start screen's logo (read as logo.png).
+        logo = os.path.join(os.path.dirname(ui), 'logo.png')
+        if os.path.exists(logo):
+            write_aligned(z, 'assets/logo.png', open(logo, 'rb').read(), True, 4)
     signed = sign_v2(open(tmp, 'rb').read(), load_key(key_path))
     with open(out, 'wb') as f:
         f.write(signed)

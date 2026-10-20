@@ -269,20 +269,78 @@ struct StartItem
 {
     std::string label, icon;
 };
+// The game's logo (assets/logo.png) centred at the top, `h` design pixels tall, or the
+// title in text without it.
+inline float DrawLogo(Canvas& c, const Ui& ui, const RomFont& f, const Image* logo, const std::string& title, float y, float h)
+{
+    const float wd = ui.W / ui.s;
+    if (!logo || logo->px.empty())
+    {
+        HudText(c, ui, f, wd / 2, y + h / 2 - 40, 80, title, HudColour::Ink, 1, true);
+        return y + h;
+    }
+    const float w = h * logo->w / logo->h;
+    Blit(c, *logo, 0, 0, (float)logo->w, (float)logo->h, ui(wd / 2 - w / 2), ui(y), ui(w), ui(h));
+    return y + h;
+}
+
+// The save on the start screen (17-save): the trainer and their first Pokemon on the
+// left, the numbers in rows, the badges on the right.
+inline void SaveCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x, float y, float w, const std::string& name,
+    const PartyCard& card, const Image* trainer, const Image* partner)
+{
+    const float h = 400, lw = 260;
+    HudPanel(c, ui, sp, "panels/card", x, y, w, h);
+    FillBlend(c, ui(x + 24), ui(y + 24), ui(lw), ui(h - 48), 0xFFFDF6E4);
+    if (trainer) HudPixelArt(c, ui, trainer, x + 24 + lw / 2 - 96, y + 40, 192, 192);
+    if (partner) HudPixelArt(c, ui, partner, x + 24 + lw / 2 - 64, y + 236, 128, 128);
+    char id[16], time[16];
+    snprintf(id, sizeof id, "%05u", card.id & 0xFFFF);
+    snprintf(time, sizeof time, "%d:%02d", card.hours, card.minutes);
+    std::string money = std::to_string(card.money);
+    for (int i = (int)money.size() - 3; i > 0; i -= 3) money.insert((size_t)i, ",");
+    const std::pair<std::string, std::string> rows[] = { { "Name", name }, { "ID No.", id },
+        { "Pok\xC3\xA9" "dex", std::to_string(std::max(0, card.dex)) + " Pok\xC3\xA9mon" }, { "Money", "$" + money }, { "Play time", time } };
+    const float rx = x + 24 + lw + 30, rw = w - lw - 30 - 24 - 300;
+    float ry = y + 34;
+    for (const auto& r : rows)
+    {
+        HudText(c, ui, f, rx, ry, 32, r.first, HudColour::Muted);
+        HudText(c, ui, f, rx + rw, ry, 32, r.second, HudColour::Ink, 2);
+        FillBlend(c, ui(rx), ui(ry + 50), ui(rw), ui(2), 0xFFF1E3C8);
+        ry += 68;
+    }
+    // Johto's badges, two by four.
+    const float bx = x + w - 24 - 260;
+    HudText(c, ui, f, bx + 130, y + 30, 32, "Badges", HudColour::Muted, 1);
+    for (int i = 0; i < 8; i++)
+    {
+        const float cx = bx + 20 + (i % 2) * 120, cy = y + 76 + (i / 2) * 76, s = 68;
+        if (card.johto >> i & 1)
+        {
+            HudSprite(c, ui, sp, "people/chip_ring_orange", cx + 10, cy, s, s);
+            HudSprite(c, ui, sp, "icons/icon_star", cx + 10 + s / 2 - 20, cy + s / 2 - 20, 40, 40);
+        }
+        else
+            HudSprite(c, ui, sp, "people/chip_ring_grey", cx + 10, cy, s, s, 0x80FFFFFF);
+    }
+}
+
 inline void StartScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const std::vector<StartItem>& items, int sel,
-    const std::string& title, const std::string& sub, const std::vector<HudHint>& hints, const std::string& footer)
+    const Image* logo, const std::string& title, const std::string& sub, const std::vector<HudHint>& hints, const std::string& footer,
+    const std::function<void(float y)>& below = nullptr)
 {
     DrawBackdrop(c, sp, "backgrounds/bg_sunny", 0xFFFFFFFF);
     const float wd = ui.W / ui.s;
-    HudText(c, ui, f, wd / 2, 60, 80, title, HudColour::Ink, 1, true);
-    HudText(c, ui, f, wd / 2, 160, 32, sub, 0xFF5B6270, 1);
-    const float pitch = 260, x0 = wd / 2 - pitch * (items.size() - 1) / 2;
+    const float top = DrawLogo(c, ui, f, logo, title, 20, 230);
+    HudText(c, ui, f, wd / 2, top + 4, 32, sub, 0xFF5B6270, 1);
+    const float pitch = 260, x0 = wd / 2 - pitch * (items.size() - 1) / 2, iy = top + 150;
     for (size_t i = 0; i < items.size(); i++)
     {
         const bool s = (int)i == sel;
-        const float d = s ? 176 : 136, cx = x0 + pitch * i;
-        HudSprite(c, ui, sp, items[i].icon + (s ? "_selected" : ""), cx - d / 2, 350 - d / 2, d, d);
-        const float ly = 350 + 136 / 2 + (s ? 34 : 18);
+        const float d = s ? 150 : 116, cx = x0 + pitch * i;
+        HudSprite(c, ui, sp, items[i].icon + (s ? "_selected" : ""), cx - d / 2, iy - d / 2, d, d);
+        const float ly = iy + 116 / 2 + (s ? 26 : 12);
         if (s)
         {
             const float lw = HudTextWidth(ui, f, 32, items[i].label) + 32;
@@ -290,8 +348,19 @@ inline void StartScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
         }
         HudText(c, ui, f, cx, ly, 32, items[i].label, HudColour::Ink, 1);
     }
+    if (below) below(iy + 116 / 2 + 70);
     DrawHintBar(c, ui, sp, f, hints);
     if (!footer.empty()) HudText(c, ui, f, 32, 1080 - 56 + 12, 32, footer, HudColour::Muted);
+}
+
+// While the game starts behind it: the logo and a line about what is happening.
+inline void LoadingScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Image* logo, const std::string& title,
+    const std::string& text, uint32_t frame)
+{
+    DrawBackdrop(c, sp, "backgrounds/bg_sunny", 0xFFFFFFFF);
+    const float wd = ui.W / ui.s;
+    const float y = DrawLogo(c, ui, f, logo, title, 200, 380);
+    HudText(c, ui, f, wd / 2, y + 60, 32, text + std::string((frame / 20) % 4, '.'), 0xFF5B6270, 1);
 }
 
 struct SessionStats

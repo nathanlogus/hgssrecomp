@@ -132,6 +132,35 @@ uint8_t TrainerName[16] = {};
 u32 TrainerId = 0, DexDelta = 0;
 bool HaveTrainer = false;
 u32 ProfileAt = 0;
+PartyCard SaveCard; // from the save file
+std::vector<int> SpeciesOfParty(const uint8_t* general)
+{
+    // The party in the save data: at 0x90 of the general block (PlayerProfile is at 0x64):
+    // the most, the count, then 236 bytes each, whose first 136 are a BoxPokemon: its
+    // personality value, a checksum and four 32-byte blocks, shuffled by the personality
+    // and encrypted with the checksum as the seed. The species is the first word of block A.
+    std::vector<int> out;
+    const uint8_t* ram = general;
+    const u32 party = 0x90;
+    const u32 count = std::min<u32>(RomGet32(ram + party + 4), 6);
+    static const char* orders[24] = { "ABCD", "ABDC", "ACBD", "ACDB", "ADBC", "ADCB", "BACD", "BADC", "BCAD", "BCDA", "BDAC", "BDCA",
+        "CABD", "CADB", "CBAD", "CBDA", "CDAB", "CDBA", "DABC", "DACB", "DBAC", "DBCA", "DCAB", "DCBA" };
+    for (u32 i = 0; i < count; i++)
+    {
+        const uint8_t* m = ram + party + 8 + i * 236;
+        const u32 pid = RomGet32(m), check = RomGet16(m + 6);
+        const int posA = (int)(strchr(orders[((pid >> 13) & 31) % 24], 'A') - orders[((pid >> 13) & 31) % 24]);
+        u32 seed = check;
+        int species = 0;
+        for (int w = 0; w <= posA * 16; w++)
+        {
+            seed = seed * 0x41C64E6D + 0x6073;
+            if (w == posA * 16) species = (RomGet16(m + 8 + 2 * w) ^ (seed >> 16)) & 0xFFFF;
+        }
+        if (species > 0 && species <= 493) out.push_back(species);
+    }
+    return out;
+}
 uint8_t DexCaught[64];
 bool DexKnown = false;
 int Badges = -1, CaughtSession = 0;
@@ -1218,6 +1247,8 @@ void Party_SendEmote(int emote)
 
 uint32_t Party_Now() { return Ms(); }
 
+PartyCard Party_SaveCard() { return SaveCard; }
+
 PartyCard Party_MyCard()
 {
     // PlayerProfile: name, id (+0x10), money (+0x14), gender (+0x18), Johto's badges (+0x1A),
@@ -1267,34 +1298,10 @@ int Party_DexCount()
 
 std::vector<int> Party_MySpecies()
 {
-    // The party in the save data: at 0x90 of the general block (PlayerProfile is at 0x64):
-    // the most, the count, then 236 bytes each, whose first 136 are a BoxPokemon: its
-    // personality value, a checksum and four 32-byte blocks, shuffled by the personality
-    // and encrypted with the checksum as the seed. The species is the first word of block A.
-    std::vector<int> out;
-    if (!Nds || !ProfileAt) return out;
-    const uint8_t* ram = Nds->MainRAM;
-    const u32 size = Nds->MainRAMMask + 1, party = ProfileAt - 0x64 + 0x90;
-    if (party + 8 + 6 * 236 > size) return out;
-    const u32 count = std::min<u32>(RomGet32(ram + party + 4), 6);
-    static const char* orders[24] = { "ABCD", "ABDC", "ACBD", "ACDB", "ADBC", "ADCB", "BACD", "BADC", "BCAD", "BCDA", "BDAC", "BDCA",
-        "CABD", "CADB", "CBAD", "CBDA", "CDAB", "CDBA", "DABC", "DACB", "DBAC", "DBCA", "DCAB", "DCBA" };
-    for (u32 i = 0; i < count; i++)
-    {
-        const uint8_t* m = ram + party + 8 + i * 236;
-        const u32 pid = RomGet32(m), check = RomGet16(m + 6);
-        const int posA = (int)(strchr(orders[((pid >> 13) & 31) % 24], 'A') - orders[((pid >> 13) & 31) % 24]);
-        u32 seed = check;
-        int species = 0;
-        for (int w = 0; w <= posA * 16; w++)
-        {
-            seed = seed * 0x41C64E6D + 0x6073;
-            if (w == posA * 16) species = (RomGet16(m + 8 + 2 * w) ^ (seed >> 16)) & 0xFFFF;
-        }
-        if (species > 0 && species <= 493) out.push_back(species);
-    }
-    return out;
+    if (!Nds || !ProfileAt || ProfileAt - 0x64 + 0x90 + 8 + 6 * 236 > Nds->MainRAMMask + 1) return {};
+    return SpeciesOfParty(Nds->MainRAM + ProfileAt - 0x64);
 }
+
 
 PartyLink Party_Link() { return Link; }
 int Party_Me() { return Me; }
@@ -1360,6 +1367,20 @@ void Party_SetSave(const uint8_t* sav, size_t size)
             TrainerId = RomGet32(sav + best + 0x74);
             DexDelta = o - 0x64;
             HaveTrainer = true;
+            // The card, read the same way as from memory (see Party_MyCard).
+            const uint8_t* p = sav + best + 0x64;
+            SaveCard = PartyCard();
+            SaveCard.known = true;
+            SaveCard.id = RomGet32(p + 0x10);
+            SaveCard.money = RomGet32(p + 0x14);
+            SaveCard.gender = p[0x18] & 1;
+            SaveCard.johto = p[0x1A];
+            SaveCard.kanto = p[0x1F];
+            SaveCard.hours = RomGet16(p + 0x22);
+            SaveCard.minutes = p[0x24];
+            SaveCard.dex = 0;
+            for (int i = 0; i < 64; i++) SaveCard.dex += __builtin_popcount(sav[best + o + 4 + i]);
+            SaveCard.party = SpeciesOfParty(sav + best);
             return;
         }
 }

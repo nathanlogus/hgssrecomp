@@ -2361,6 +2361,16 @@ int main(int argc, char** argv)
     const bool spritesOk = sprites.Load(ReadUiFile);
     const bool fontOk = font.Load(rom.data(), rom.size());
     fprintf(stderr, "[hud] sprites %s, font %s\n", spritesOk ? g_uiDir.c_str() : "missing (plain menu)", fontOk ? "from the ROM" : "missing");
+    // The logo on the start screen: assets/logo.png (beside the HUD's folder), if it is there.
+    Image logo;
+    {
+#ifdef __ANDROID__
+        const std::vector<uint8_t> f = ReadFile("logo.png");
+#else
+        const std::vector<uint8_t> f = ReadFile(g_uiDir + "../logo.png");
+#endif
+        if (f.empty() || !DecodePng(f.data(), f.size(), logo)) logo = Image();
+    }
     // Other players' trainers near this one (online), moved smoothly towards where they
     // were last heard and drawn into the widescreen world as the far map's people are.
     struct RemoteTrainer
@@ -2564,6 +2574,19 @@ int main(int argc, char** argv)
     // snapshot from the command line).
     bool startOpen = spritesOk && ((cfg.startScreen && !opt.headless && opt.party.empty() && opt.stateLoad.empty()) || getenv("SSR_START_SCREEN"));
     int startSel = 0;
+    enum { ST_CONTINUE, ST_NEW, ST_ONLINE, ST_SETTINGS, ST_QUIT };
+    const bool haveSave = Party_SaveCard().known;
+    std::vector<int> startActions = { ST_NEW, ST_ONLINE, ST_SETTINGS, ST_QUIT };
+    if (haveSave) startActions.insert(startActions.begin(), ST_CONTINUE);
+    // Starting the game: its intro, title screen and own Continue / New game menu are
+    // passed by pressing A (fast, behind a loading picture) until the player stands in
+    // the world, or the new game's first scene starts. Not in tests, which script the boot.
+    enum { BOOT_NONE, BOOT_CONTINUE, BOOT_NEW };
+    const bool bootSkipOk = (!opt.headless && opt.stateLoad.empty() && opt.script.empty()) || getenv("SSR_BOOT_SKIP");
+    int bootMode = !startOpen && bootSkipOk ? (haveSave ? BOOT_CONTINUE : BOOT_NEW) : BOOT_NONE;
+    uint32_t bootFrames = 0;
+    bool bootSawMenu = false;
+    uint32_t bootMenuFrames = 0;
     // Typing a text: the nickname, the server's address or a party's code.
     enum { E_NAME, E_SERVER, E_CODE };
     struct TextEdit
@@ -3338,16 +3361,23 @@ int main(int argc, char** argv)
         }
         else if (startOpen && !menu.open && !toggleMenu)
         {
-            if (nav.left) startSel = (startSel + 3) % 4;
-            if (nav.right) startSel = (startSel + 1) % 4;
+            const int n = (int)startActions.size();
+            if (nav.left) startSel = (startSel + n - 1) % n;
+            if (nav.right) startSel = (startSel + 1) % n;
             if (nav.accept || pressed(PAD_START))
             {
-                if (startSel == 0) startOpen = false, swallowMenuButtons = true;
-                else if (startSel == 3) running = false;
+                const int act = startActions[startSel];
+                if (act == ST_CONTINUE || act == ST_NEW)
+                {
+                    startOpen = false;
+                    swallowMenuButtons = true;
+                    if (bootSkipOk) bootMode = act == ST_CONTINUE ? BOOT_CONTINUE : BOOT_NEW;
+                }
+                else if (act == ST_QUIT) running = false;
                 else
                 {
                     menu.open = true;
-                    menu.tab = startSel == 1 ? T_ONLINE : T_DISPLAY;
+                    menu.tab = act == ST_ONLINE ? T_ONLINE : T_DISPLAY;
                     menu.selected = 0;
                     buildMenu();
                 }
@@ -3635,6 +3665,32 @@ int main(int argc, char** argv)
             wheelPrev = emoteWheel ? dpad : 0;
         }
         if (!paused && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
+        if (bootMode != BOOT_NONE && !paused)
+        {
+            // Past the intro (see bootMode): the player's own presses wait meanwhile.
+            keys = 0;
+            speed = 8;
+            bootFrames++;
+            const bool mainMenu = appRunning("MainMenu");
+            const bool pulse = bootFrames % 12 < 3;
+            if (mainMenu)
+            {
+                // Continue is the first choice, New game the next one when there is a save.
+                bootSawMenu = true;
+                const uint32_t m = ++bootMenuFrames;
+                const bool down = bootMode == BOOT_NEW && haveSave;
+                if (down && m >= 30 && m < 34) keys |= 1u << KEY_DOWN;
+                else if (m >= (down ? 50u : 30u) && pulse) keys |= 1u << KEY_A;
+            }
+            else if (!bootSawMenu && pulse)
+                keys |= 1u << KEY_A; // the intro and the title screen
+            // After the menu: no more presses, only waiting for the world (or the new game).
+            if ((bootSawMenu && !mainMenu && (bootMode == BOOT_NEW || fieldActive())) || bootFrames > 60 * 120)
+            {
+                bootMode = BOOT_NONE;
+                speed = 1;
+            }
+        }
         prevPad = ps;
 
         SDL_Rect rects[2];
@@ -4524,6 +4580,12 @@ int main(int argc, char** argv)
                 overlayUsed = true;
             }
         }
+        if (spritesOk && bootMode != BOOT_NONE && !menu.open && screen == SCR_NONE)
+        {
+            HudOnline::LoadingScreen(canvas, ui, sprites, font, logo.px.empty() ? nullptr : &logo, "POK\xC3\xA9MON",
+                bootMode == BOOT_CONTINUE ? "Loading your adventure" : "Starting a new adventure", frame);
+            overlayUsed = true;
+        }
         if (spritesOk && (screen != SCR_NONE || (startOpen && !menu.open)))
         {
             const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
@@ -4571,15 +4633,35 @@ int main(int argc, char** argv)
             }
             else
             {
-                const std::vector<HudOnline::StartItem> items = { { "PLAY", "menu/menu_resume" }, { "ONLINE", "menu/menu_online" },
-                    { "SETTINGS", "menu/menu_options" }, { "QUIT", "menu/menu_quit" } };
+                std::vector<HudOnline::StartItem> items;
+                for (int act : startActions)
+                    items.push_back(act == ST_CONTINUE ? HudOnline::StartItem { "CONTINUE", "menu/menu_resume" }
+                        : act == ST_NEW ? HudOnline::StartItem { "NEW GAME", "menu/menu_states" }
+                        : act == ST_ONLINE ? HudOnline::StartItem { "ONLINE", "menu/menu_online" }
+                        : act == ST_SETTINGS ? HudOnline::StartItem { "SETTINGS", "menu/menu_options" }
+                        : HudOnline::StartItem { "QUIT", "menu/menu_quit" });
+                // The save: the trainer (boy or girl) and the first Pokemon, from the ROM.
+                static Image saveTrainer;
+                static bool saveArt = false;
+                const PartyCard saveCard = Party_SaveCard();
+                if (!saveArt && saveCard.known)
+                {
+                    saveArt = true;
+                    worldBlocks.RomSpriteImage(saveCard.gender ? "heroine" : "hero", 1, saveTrainer);
+                }
+                auto drawSave = [&](float y) {
+                    if (!saveCard.known) return;
+                    const Image* partner = romArt.PokemonIcon(cfg.onlinePartner ? cfg.onlinePartner : saveCard.party.empty() ? 0 : saveCard.party[0]);
+                    HudOnline::SaveCard(canvas, ui, sprites, font, ui.W / ui.s / 2 - 700, y, 1400, onlineName(), saveCard,
+                        saveTrainer.px.empty() ? nullptr : &saveTrainer, partner);
+                };
                 const PartyLink link = Party_Link();
                 std::string footer = onlineName() + (link == PartyLink::Online ? " \xC2\xB7 online, " + Party_Code() : link == PartyLink::Connecting ? " \xC2\xB7 joining..." : "");
                 // HeartGold's game codes are IPK*, SoulSilver's IPG*.
                 const bool heartGold = rom.size() > 0x10 && rom[0x0C] == 'I' && rom[0x0D] == 'P' && rom[0x0E] == 'K';
-                HudOnline::StartScreen(canvas, ui, sprites, font, items, startSel,
+                HudOnline::StartScreen(canvas, ui, sprites, font, items, startSel, logo.px.empty() ? nullptr : &logo,
                     heartGold ? "POK\xC3\xA9MON HEARTGOLD" : "POK\xC3\xA9MON SOULSILVER", "ssrecomp \xC2\xB7 widescreen build",
-                    { { { accept }, "Select" } }, footer);
+                    { { { accept }, "Select" } }, footer, drawSave);
             }
             overlayUsed = true;
         }

@@ -61,8 +61,11 @@ struct PartyCard
     int gender = 0;            // 0 boy, 1 girl
     int johto = 0, kanto = 0;  // badges, one bit each
     int hours = 0, minutes = 0;
+    int dex = -1;              // Pokemon caught (Party_SaveCard only)
+    std::vector<int> party;    // the party's species (Party_SaveCard only)
 };
 PartyCard Party_MyCard();
+PartyCard Party_SaveCard();  // the same from the save file (known is false without a save)
 
 // Invites from one player to another, and their answers.
 enum PartyInvite { PI_BATTLE = 1, PI_TRADE = 2, PI_YES = 0x10, PI_NO = 0x20, PI_BUSY = 0x40 }; // answers: PI_YES | PI_BATTLE...
