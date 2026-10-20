@@ -231,6 +231,10 @@ On the overworld you see the others' trainers walking around with their names
 over them (with the widescreen world on), and an arrow at the edge of the screen
 points to anyone out of view. Hold **R** and press the D-pad for an emote over your
 trainer: up Hi!, left a question mark, right a heart, down thanks.
+**Friends** in the Online tab lists who is in your session: choose Battle or Trade
+with left and right and press A to ask them. They get a card to say yes or not
+now (it goes away by itself after 20 seconds); then meet at a Pokemon Center's
+wireless counters. Its second tab lists everyone you have played with before.
 
 `run.sh` also writes what the game prints to `game.log` next to it; a bug report
 about a controller should include it (it lists every controller SDL sees).

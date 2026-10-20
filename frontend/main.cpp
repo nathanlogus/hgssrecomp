@@ -1027,6 +1027,7 @@ struct Settings
     // Playing online (party.cpp): the relay server, and who this player is to the others.
     std::string onlineServer;
     std::string onlineName; // empty: the trainer's name
+    std::string friends;    // players met in sessions: "name:colour:last seen (Unix time)," ...
     int onlineColour = -1;  // -1: by player number
     int hostMax = 4;        // players a hosted session allows
     int onlinePartner = 0;  // the Pokemon shown with this player (species, 0 none)
@@ -1055,6 +1056,7 @@ struct Settings
             else if (k == "online_name") onlineName = v.substr(0, 10);
             else if (k == "online_colour") onlineColour = std::clamp(atoi(v.c_str()), -1, 3);
             else if (k == "host_max") hostMax = std::clamp(atoi(v.c_str()), 2, 4);
+            else if (k == "friends") friends = v;
             else if (k == "online_partner") onlinePartner = std::clamp(atoi(v.c_str()), 0, 493);
             else if (k == "show_ping") showPing = v == "1";
             else if (k == "online_toasts") onlineToasts = v == "1";
@@ -1099,6 +1101,7 @@ struct Settings
         f << "online_colour=" << onlineColour << "\n";
         f << "host_max=" << hostMax << "\n";
         f << "online_partner=" << onlinePartner << "\n";
+        f << "friends=" << friends << "\n";
         f << "show_ping=" << (showPing ? 1 : 0) << "\n";
         f << "online_toasts=" << (onlineToasts ? 1 : 0) << "\n";
         f << "start_screen=" << (startScreen ? 1 : 0) << "\n";
@@ -2510,6 +2513,8 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
+        M_FRIENDS, M_ACCEPT, M_DECLINE,
+        M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
     enum { T_RESUME, T_GAME, T_DISPLAY, T_CONTROLS, T_ONLINE, T_PROFILE, T_STATES };
@@ -2518,10 +2523,39 @@ int main(int argc, char** argv)
         { "STATES", "menu/menu_states" } };
     menu.tab = T_DISPLAY;
     // Screens of the online HUD over (or instead of) the pause menu.
-    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT };
+    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE };
     int screen = SCR_NONE;
     Menu sessionMenu;
     sessionMenu.open = true;
+    // The friends panel: the players here now, and the players met before (kept in the
+    // settings: name -> colour and when last seen). Its rows, as drawn.
+    struct Friend
+    {
+        int colour = 0;
+        long long seen = 0;
+    };
+    std::map<std::string, Friend> friends;
+    {
+        std::istringstream ss(cfg.friends);
+        std::string e;
+        while (std::getline(ss, e, ','))
+        {
+            const size_t a = e.find(':'), b = e.rfind(':');
+            if (a == std::string::npos || b == a || a == 0) continue;
+            friends[e.substr(0, a)] = { atoi(e.substr(a + 1, b - a - 1).c_str()) & 3, atoll(e.substr(b + 1).c_str()) };
+        }
+    }
+    Menu friendsMenu;
+    friendsMenu.open = true;
+    friendsMenu.tabs = { { "Session", "" }, { "Friends", "" } };
+    std::vector<HudOnline::FriendRow> friendRows;
+    int inviteChoice[4] = { PI_BATTLE, PI_BATTLE, PI_BATTLE, PI_BATTLE };
+    // An invite being answered: from whom, what, since when.
+    Menu inviteMenu;
+    inviteMenu.open = true;
+    int inviteFrom = -1, inviteKind = 0;
+    uint32_t inviteAt = 0;
+    int partyMap = -1; // this player's map, as last given to the party
     // The frontend's own start screen, before the game runs (not for tests or a party or
     // snapshot from the command line).
     bool startOpen = spritesOk && ((cfg.startScreen && !opt.headless && opt.party.empty() && opt.stateLoad.empty()) || getenv("SSR_START_SCREEN"));
@@ -2620,6 +2654,8 @@ int main(int argc, char** argv)
                 "Who is here, and the code to give to anyone who wants to join.");
             add(T_ONLINE, M_LEAVE, "Leave session", "", "Leaves the session and plays on alone. Your game is not affected.")->danger = true;
         }
+        add(T_ONLINE, M_FRIENDS, "Friends", friends.empty() ? "" : std::to_string(friends.size()),
+            "The players here now, to ask for a battle or a trade, and the players you have met before.");
         add(T_ONLINE, M_SERVER, "Server", server,
             "The address of the party server everyone uses (it runs tools/party_server.py), e.g. 203.0.113.5 or play.example.org:7373.");
         add(T_ONLINE, M_SHOWPING, "Show ping", onOff(cfg.showPing), "Shows the time a message takes to the server and back, beside the session badge.");
@@ -2650,6 +2686,54 @@ int main(int argc, char** argv)
         leave.danger = true;
         sessionMenu.items.push_back(leave);
         if (sessionMenu.selected >= (int)sessionMenu.items.size()) sessionMenu.selected = 0;
+    };
+    auto buildFriends = [&]() {
+        friendsMenu.items.clear();
+        friendRows.clear();
+        const PartyPeer* peers = Party_Peers();
+        const long long now = (long long)time(nullptr);
+        if (friendsMenu.tab == 0)
+            for (int i = 0; i < 4; i++)
+            {
+                if (!peers[i].present || i == Party_Me() || Party_Link() == PartyLink::Off) continue;
+                const PartyPeer& p = peers[i];
+                HudOnline::FriendRow r;
+                r.who = p;
+                const std::string place = Party_PlaceName(p.walk.map >= 0 ? p.walk.map : p.map);
+                r.info = (place.empty() ? "" : place + " \xC2\xB7 ") + std::to_string(p.badges) + (p.badges == 1 ? " badge" : " badges") +
+                    (p.state == PS_BATTLE ? " \xC2\xB7 in a battle" : p.rtt >= 0 ? " \xC2\xB7 " + std::to_string(p.rtt) + " ms" : "");
+                r.action = p.state == PS_BATTLE ? "" : inviteChoice[i] == PI_TRADE ? "Trade" : "Battle";
+                friendRows.push_back(r);
+                MenuItem it;
+                it.id = M_FRIEND + i;
+                it.tab = 0;
+                it.value = r.action;
+                it.disabled = r.action.empty();
+                friendsMenu.items.push_back(it);
+            }
+        else
+        {
+            // The most recently seen first.
+            std::vector<std::pair<std::string, Friend>> list(friends.begin(), friends.end());
+            std::sort(list.begin(), list.end(), [](const auto& a, const auto& b) { return a.second.seen > b.second.seen; });
+            for (const auto& fr : list)
+            {
+                bool here = false;
+                for (int i = 0; i < 4; i++) here |= peers[i].present && i != Party_Me() && peers[i].name == fr.first;
+                HudOnline::FriendRow r;
+                r.who.name = fr.first;
+                r.who.colour = fr.second.colour;
+                const long long days = (now - fr.second.seen) / 86400;
+                r.info = here ? "In your session" : days <= 0 ? "Last seen today" : days == 1 ? "Last seen yesterday" : "Last seen " + std::to_string(days) + " days ago";
+                r.dim = !here;
+                friendRows.push_back(r);
+                MenuItem it;
+                it.id = M_FRIEND + (int)friendsMenu.items.size();
+                it.tab = 1;
+                friendsMenu.items.push_back(it);
+            }
+        }
+        if (friendsMenu.selected >= (int)friendsMenu.items.size()) friendsMenu.selected = 0;
     };
     auto startEdit = [&](int purpose) {
         edit = TextEdit();
@@ -2691,6 +2775,14 @@ int main(int argc, char** argv)
         t.lead = icon;
         t.frames = frames;
         toasts.Push(t);
+    };
+    auto answerInvite = [&](bool yes) {
+        Party_SendInvite(inviteFrom, (yes ? PI_YES : PI_NO) | inviteKind);
+        if (yes)
+            say(inviteKind == PI_TRADE ? "Meet in the Union Room: a Pok\xC3\xA9mon Center's wireless counters" : "Meet in the Colosseum: a Pok\xC3\xA9mon Center's wireless counters",
+                "icons/icon_wifi", 300);
+        screen = SCR_NONE;
+        inviteFrom = -1;
     };
 #ifdef __ANDROID__
     bool updateSaid = false;
@@ -3187,6 +3279,36 @@ int main(int argc, char** argv)
             if (nav.accept && (edit.purpose != E_CODE || edit.text.size() == 4)) finishEdit();
             else if (nav.back) screen = SCR_NONE;
         }
+        else if (screen == SCR_INVITE && (Party_Link() != PartyLink::Online || inviteFrom < 0 || !Party_Peers()[inviteFrom].present))
+            screen = SCR_NONE; // the session or the player has gone
+        else if (screen == SCR_INVITE && Party_Now() - inviteAt > 20000)
+            answerInvite(false); // no answer in time
+        else if (screen == SCR_INVITE && !toggleMenu)
+        {
+            int dir = 0;
+            const int hit = inviteMenu.Update(nav, dir);
+            if (hit >= 0 && dir == 0) answerInvite(hit == M_ACCEPT);
+            else if (nav.back) answerInvite(false);
+        }
+        else if (screen == SCR_FRIENDS && !toggleMenu)
+        {
+            buildFriends();
+            int dir = 0;
+            const int hit = friendsMenu.Update(nav, dir);
+            if (nav.tabPrev || nav.tabNext) friendsMenu.selected = 0;
+            const int who = hit - M_FRIEND;
+            if (friendsMenu.tab == 0 && who >= 0 && who < 4)
+            {
+                if (dir) inviteChoice[who] = inviteChoice[who] == PI_BATTLE ? PI_TRADE : PI_BATTLE;
+                else
+                {
+                    Party_SendInvite(who, inviteChoice[who]);
+                    say("Asked " + Party_Peers()[who].name + (inviteChoice[who] == PI_TRADE ? " for a trade" : " for a battle"), "icons/icon_wifi");
+                    screen = SCR_NONE;
+                }
+            }
+            if (nav.back) screen = SCR_NONE;
+        }
         else if (screen == SCR_SESSION && Party_Link() == PartyLink::Off)
             screen = SCR_NONE; // the session has ended
         else if (screen == SCR_SESSION && !toggleMenu)
@@ -3393,6 +3515,11 @@ int main(int argc, char** argv)
                 break;
             case M_SESSION:
                 screen = SCR_SESSION;
+                break;
+            case M_FRIENDS:
+                friendsMenu.tab = Party_Link() == PartyLink::Off && !friends.empty() ? 1 : 0;
+                friendsMenu.selected = 0;
+                screen = SCR_FRIENDS;
                 break;
             case M_LEAVE:
                 screen = SCR_SUMMARY;
@@ -3821,6 +3948,30 @@ int main(int argc, char** argv)
                 wasTrade = trade;
                 if (Party_Me() >= 0) sessionStats.caught[Party_Me()] = Party_CaughtThisSession();
             }
+            partyMap = pmap;
+            // The players met: remembered as friends (every few seconds while together).
+            if (Party_Link() == PartyLink::Online && frame % 300 == 0)
+            {
+                const PartyPeer* peers = Party_Peers();
+                bool changed = false;
+                for (int i = 0; i < 4; i++)
+                    if (peers[i].present && i != Party_Me() && !peers[i].name.empty() && peers[i].name.find_first_of(":,") == std::string::npos)
+                    {
+                        friends[peers[i].name] = { peers[i].colour, (long long)time(nullptr) };
+                        changed = true;
+                    }
+                // shortcut: friends are told apart by name only, and at most 30 are kept (the oldest go); give
+                // players an id from the server if names start to clash.
+                while (friends.size() > 30)
+                    friends.erase(std::min_element(friends.begin(), friends.end(),
+                        [](const auto& a, const auto& b) { return a.second.seen < b.second.seen; }));
+                if (changed)
+                {
+                    cfg.friends.clear();
+                    for (const auto& fr : friends)
+                        cfg.friends += fr.first + ":" + std::to_string(fr.second.colour) + ":" + std::to_string(fr.second.seen) + ",";
+                }
+            }
             PartyEvent pe;
             while (Party_PopEvent(pe))
             {
@@ -3870,6 +4021,43 @@ int main(int argc, char** argv)
                     t.text = pe.text;
                     t.lead = "icons/icon_wifi";
                     t.frames = 300;
+                    break;
+                case PartyEvent::Invite:
+                    if (pe.arg == PI_BATTLE || pe.arg == PI_TRADE)
+                    {
+                        // Asked: the card takes the focus, unless this player is busy.
+                        if (screen != SCR_NONE || menu.open || startOpen || pstate != PS_FIELD)
+                            Party_SendInvite(pe.player, PI_BUSY | pe.arg);
+                        else
+                        {
+                            inviteFrom = pe.player;
+                            inviteKind = pe.arg;
+                            inviteAt = Party_Now();
+                            inviteMenu.items.clear();
+                            MenuItem yes, no;
+                            yes.id = M_ACCEPT;
+                            yes.label = pe.arg == PI_TRADE ? "Trade" : "Battle";
+                            no.id = M_DECLINE;
+                            no.label = "Not now";
+                            no.danger = true;
+                            inviteMenu.items = { yes, no };
+                            inviteMenu.selected = 0;
+                            screen = SCR_INVITE;
+                        }
+                        continue;
+                    }
+                    t.waits = false;
+                    t.frames = 300;
+                    if (pe.arg & PI_YES)
+                    {
+                        t.text = (pe.arg & PI_TRADE) ? " said yes: meet in the Union Room" : " said yes: meet in the Colosseum";
+                        t.trail = "emotes/emote_thanks";
+                    }
+                    else
+                    {
+                        t.text = (pe.arg & PI_BUSY) ? " is busy right now" : " can't right now";
+                        t.trail = "emotes/emote_sweat";
+                    }
                     break;
                 default:
                     continue;
@@ -4185,6 +4373,15 @@ int main(int argc, char** argv)
                 else HudOnline::NamePill(canvas, ui, sprites, font, u * W, v * H, peers[me], emoteOf(peers[me]));
             }
         }
+        if (online && Party_Me() >= 0 && appRunning("Battle") && (partyMap == 2 || partyMap == 4 || partyMap == 5))
+        {
+            // A link battle: who against whom (the others in the same room, in a battle too).
+            const PartyPeer* peers = Party_Peers();
+            std::vector<PartyPeer> them;
+            for (int i = 0; i < 4; i++)
+                if (i != Party_Me() && peers[i].present && peers[i].state == PS_BATTLE && peers[i].map == partyMap) them.push_back(peers[i]);
+            HudOnline::VsBanner(canvas, ui, sprites, font, peers[Party_Me()], them);
+        }
         if (online)
         {
             HudOnline::SessionBadge(canvas, ui, sprites, font, 32, 32 + cornerY / ui.s, cfg.showPing);
@@ -4311,6 +4508,24 @@ int main(int argc, char** argv)
                 buildSession();
                 HudOnline::SessionScreen(canvas, ui, sprites, font, sessionMenu,
                     { { { "buttons/button_dpad" }, "Change" }, { { accept }, "Select" }, { { back }, "Back" } }, monIcon);
+            }
+            else if (screen == SCR_FRIENDS)
+            {
+                buildFriends();
+                std::vector<HudHint> hints = { { { "buttons/button_l", "buttons/button_r" }, "Tab" } };
+                if (friendsMenu.tab == 0 && !friendRows.empty())
+                {
+                    hints.push_back({ { "buttons/button_dpad" }, "Battle or trade" });
+                    hints.push_back({ { accept }, "Ask" });
+                }
+                hints.push_back({ { back }, "Close" });
+                HudOnline::FriendsPanel(canvas, ui, sprites, font, friendsMenu, friendRows, hints);
+            }
+            else if (screen == SCR_INVITE && inviteFrom >= 0)
+            {
+                const float left = 20 - (Party_Now() - inviteAt) / 1000.0f;
+                HudOnline::InviteCard(canvas, ui, sprites, font, inviteMenu, Party_Peers()[inviteFrom], inviteKind, left / 20, left,
+                    { { { accept }, "Choose" }, { { back }, "Not now" } });
             }
             else if (screen == SCR_SUMMARY)
                 HudOnline::Summary(canvas, ui, sprites, font, { { { accept }, "Leave" }, { { back }, "Stay" } }, sessionStats, monIcon);

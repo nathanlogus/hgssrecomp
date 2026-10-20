@@ -60,6 +60,10 @@
   their names over them, and an arrow at the edge of the screen shows the way to
   anyone out of view, with where they are. Hold R and press the D-pad for an emote
   over your trainer (Hi!, ?, a heart, thanks) that the others see.
+- **Friends** in the Online tab: ask anyone in your session for a battle or a trade,
+  and they get a card to answer it (yes or not now, within 20 seconds). It also lists
+  the players you have met before and when you last saw them. During a link battle a
+  banner at the top shows who is battling whom.
 - A **start screen** before the game: Play, Online, Settings, Quit (Play is already
   chosen, so one press starts the game). It can be turned off in the Game tab.
 - Fewer flashes when the view changes: the world no longer starts at normal size and

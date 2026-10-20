@@ -370,6 +370,130 @@ inline void EmoteWheel(Canvas& c, const Ui& ui, Sprites& sp, float x, float y)
     HudSprite(c, ui, sp, EmoteSprite(3), x - s / 2, y + r - s / 2, s, s);
 }
 
+// The friends panel (05-friends): a teal band with the tabs, then a row for each player.
+struct FriendRow
+{
+    PartyPeer who;          // name and colour (for the chip)
+    std::string info;       // the second line
+    std::string action;     // a button on the right ("Battle"), or empty
+    bool dim = false;       // not online: greyed
+};
+inline void FriendsPanel(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Menu& m, const std::vector<FriendRow>& rows,
+    const std::vector<HudHint>& hints)
+{
+    FillBlend(c, 0, 0, (float)c.w, (float)c.h, 0x80000000);
+    const float wd = ui.W / ui.s, w = 1200, x = wd / 2 - w / 2, y = 60;
+    const float h = 24 + 72 + 12 + std::max<size_t>(rows.size(), 1) * 102.0f + 12 + 64 + 24;
+    HudPanel(c, ui, sp, "panels/card", x, y, w, h);
+    FillBlend(c, ui(x + 24), ui(y + 24), ui(w - 48), ui(72), 0xFF2EC4C6);
+    HudSprite(c, ui, sp, "icons/white/icon_wifi", x + 48, y + 36, 48, 48);
+    HudText(c, ui, f, x + 112, y + 36, 48, "FRIENDS", HudColour::White, 0, true);
+    // The tabs, the chosen one in a white pill.
+    float tx = x + w - 48;
+    for (int t = (int)m.tabs.size() - 1; t >= 0; t--)
+    {
+        const float tw = HudTextWidth(ui, f, 32, m.tabs[t].name) + 40;
+        tx -= tw;
+        if (t == m.tab) DrawSprite(c, sp.Get("panels/toast"), ui(tx), ui(y + 38), ui(tw), ui(46), ui.s);
+        HudText(c, ui, f, tx + tw / 2, y + 44, 32, m.tabs[t].name, t == m.tab ? 0xFF1F9C9E : HudColour::White, 1);
+        tx -= 16;
+    }
+    float ry = y + 24 + 72 + 12;
+    if (rows.empty())
+        HudText(c, ui, f, wd / 2, ry + 30, 32, m.tab == 0 ? "No one else is here yet: share your code" : "Players you meet in a session show up here",
+            HudColour::Muted, 1);
+    for (int k = 0; k < (int)rows.size(); k++)
+    {
+        const FriendRow& r = rows[k];
+        const bool sel = k == m.selected;
+        HudPanel(c, ui, sp, sel ? "panels/row_selected" : r.dim ? "panels/row_disabled" : "panels/row", x + 24, ry, w - 48, 90);
+        if (sel) HudSprite(c, ui, sp, "cursor/cursor", x + 36, ry + 25, 36, 40);
+        HudSprite(c, ui, sp, r.dim ? "people/chip_ring_grey" : RingOf(r.who.colour), x + 84, ry + 9, 72, 72);
+        HudText(c, ui, f, x + 120, ry + 29, 32, Initials(r.who.name), r.dim ? HudColour::Muted : HudColour::Ink, 1);
+        HudText(c, ui, f, x + 176, ry + 10, 32, r.who.name, r.dim ? HudColour::Muted : HudColour::Ink);
+        HudText(c, ui, f, x + 176, ry + 46, 32, r.info, HudColour::Muted);
+        if (!r.action.empty())
+        {
+            const float bw = HudTextWidth(ui, f, 32, r.action) + 100;
+            DrawSprite(c, sp.Get("panels/toast"), ui(x + w - 48 - bw), ui(ry + 18), ui(bw), ui(54), ui.s);
+            if (sel) HudSprite(c, ui, sp, "icons/icon_arrow_left", x + w - 48 - bw + 8, ry + 27, 36, 36);
+            HudText(c, ui, f, x + w - 48 - bw / 2, ry + 29, 32, r.action, HudColour::Ink, 1);
+            if (sel) HudSprite(c, ui, sp, "icons/icon_arrow_right", x + w - 48 - 44, ry + 27, 36, 36);
+        }
+        else if (r.who.state == PS_BATTLE && !r.dim)
+            HudSprite(c, ui, sp, "emotes/emote_battle", x + w - 48 - 80, ry + 10, 72, 72);
+        else if (r.dim)
+            HudSprite(c, ui, sp, "emotes/emote_sleep", x + w - 48 - 80, ry + 10, 72, 72);
+        ry += 102;
+    }
+    if (rows.empty()) ry += 102;
+    // The session's code, on navy.
+    FillBlend(c, ui(x + 24), ui(ry + 12), ui(w - 48), ui(64), 0xFF1C2A44);
+    HudText(c, ui, f, x + 52, ry + 28, 32, Party_Link() == PartyLink::Off ? "Not in a session" : "Your session code", 0xFFC8D0E0);
+    if (Party_Link() != PartyLink::Off) HudText(c, ui, f, x + 340, ry + 18, 48, Party_Code().empty() ? "..." : Party_Code(), 0xFFFFD75E);
+    DrawHintBar(c, ui, sp, f, hints);
+}
+
+// An invite from another player (09-invite): a card that takes the focus, with what they
+// ask, the answers (m) and a bar for the time left (0 to 1).
+inline void InviteCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Menu& m, const PartyPeer& from, int invite,
+    float left, float seconds, const std::vector<HudHint>& hints)
+{
+    const float w = 740, x = 180, y = 250;
+    const std::vector<int> rows = m.Rows();
+    const float h = 24 + 90 + 16 + rows.size() * 64.0f + 70;
+    HudPanel(c, ui, sp, "panels/dialogue_box", x, y, w, h);
+    HudSprite(c, ui, sp, RingOf(from.colour), x + 26, y + 26, 76, 76);
+    HudText(c, ui, f, x + 64, y + 48, 32, Initials(from.name), HudColour::Ink, 1);
+    HudText(c, ui, f, x + 120, y + 26, 48, from.name + (invite == PI_TRADE ? " wants to trade!" : " wants to battle!"), HudColour::Ink);
+    HudText(c, ui, f, x + 120, y + 76, 32, invite == PI_TRADE ? "In the Union Room" : "In the Colosseum", HudColour::Muted);
+    float ry = y + 24 + 90 + 16;
+    for (int k = 0; k < (int)rows.size(); k++)
+    {
+        const MenuItem& it = m.items[rows[k]];
+        const bool sel = k == m.selected;
+        HudPanel(c, ui, sp, sel ? "panels/row_selected" : "panels/row", x + 26, ry, w - 52, 52);
+        if (sel) HudSprite(c, ui, sp, "cursor/cursor", x + 36, ry + 6, 36, 40);
+        HudText(c, ui, f, x + 26 + 60, ry + 10, 32, it.label, it.danger ? HudColour::Danger : HudColour::Ink);
+        ry += 64;
+    }
+    HudSprite(c, ui, sp, "icons/icon_clock", x + 30, ry + 6, 40, 40);
+    FillBlend(c, ui(x + 86), ui(ry + 18), ui(300), ui(16), 0xFF1C2A44);
+    FillBlend(c, ui(x + 86), ui(ry + 18), ui(300 * std::clamp(left, 0.0f, 1.0f)), ui(16), 0xFF9C7CF0);
+    HudText(c, ui, f, x + 406, ry + 10, 32, std::to_string((int)std::ceil(seconds)) + " s", HudColour::Muted);
+    DrawHintBar(c, ui, sp, f, hints);
+}
+
+// The link battle's banner (08-battle): this player VS the others, in white at the top.
+inline void VsBanner(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const PartyPeer& me, const std::vector<PartyPeer>& them)
+{
+    if (them.empty()) return;
+    std::vector<float> widths;
+    float w = 24;
+    auto pill = [&](const PartyPeer& p) { return HudTextWidth(ui, f, 32, p.name) + 48; };
+    w += pill(me) + 20 + HudTextWidth(ui, f, 32, "VS") + 20;
+    for (const PartyPeer& p : them) w += pill(p) + 8;
+    w += 16;
+    const float wd = ui.W / ui.s, x = wd / 2 - w / 2, y = 20, h = 72;
+    HudPanel(c, ui, sp, "panels/toast", x, y, w, h);
+    float px = x + 24;
+    auto draw = [&](const PartyPeer& p) {
+        const float pw = pill(p);
+        DrawSprite(c, sp.Get(PillOf(p.colour)), ui(px), ui(y + 12), ui(pw), ui(48), ui.s);
+        HudText(c, ui, f, px + pw / 2, y + 20, 32, p.name, HudColour::White, 1);
+        px += pw;
+    };
+    draw(me);
+    px += 20;
+    HudText(c, ui, f, px, y + 20, 32, "VS", 0xFFE0457B);
+    px += HudTextWidth(ui, f, 32, "VS") + 20;
+    for (const PartyPeer& p : them)
+    {
+        draw(p);
+        px += 8;
+    }
+}
+
 // The Profile tab's preview of what the others see (15-menu-profile's trainer card).
 inline void TrainerCardPreview(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const HudRect& r, const PartyPeer& me, int dex,
     int badges, const SessionStats& st, const IconFn& icon)

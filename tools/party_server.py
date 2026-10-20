@@ -146,6 +146,11 @@ class Relay:
             p.status = body[:6]
             for q in self.others(p):
                 self.send(q, 'S', bytes([p.slot]) + p.status)
+        elif kind == 'V' and len(body) >= 2 and body[0] < MAX_PLAYERS:
+            # An invite (or its answer) to one player.
+            q = p.party.slots[body[0]]
+            if q and q is not p:
+                self.send(q, 'V', bytes([p.slot, body[1]]))
         elif kind in 'OW' and len(body) >= 1:
             # Where a trainer is on the overworld, and emotes: to the others as they are.
             for q in self.others(p):

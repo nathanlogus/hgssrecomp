@@ -432,6 +432,10 @@ void Message(char kind, const u8* p, size_t n)
             w.at = Ms();
         }
         break;
+    case 'V': // an invite or its answer: player, PartyInvite
+        if (n >= 2 && p[0] < 4 && Peers[p[0]].present)
+            Events.push_back({ PartyEvent::Invite, p[0], p[1] });
+        break;
     case 'W': // an emote: player, emote
         if (n >= 2 && p[0] < 4)
         {
@@ -1066,8 +1070,17 @@ u32 LastWalk = 0, LastWalkSent = 0;
 std::vector<u8> SentWalk;
 void SendWalk(u32 now, int state, bool send)
 {
-    // In a battle or a menu the others keep seeing the trainer where it was.
-    if (state != PS_FIELD && state != PS_LINK) return;
+    // In a battle or a menu the others keep seeing the trainer where it was (sent again
+    // every second, for anyone who joins meanwhile).
+    if (state != PS_FIELD && state != PS_LINK)
+    {
+        if (send && !SentWalk.empty() && now - LastWalkSent >= 1000)
+        {
+            Send('O', SentWalk);
+            LastWalk = LastWalkSent = now;
+        }
+        return;
+    }
     const u32 fs = R32(FieldSystemPtr), loc = R32(fs + 0x20), obj = R32(R32(fs + 0x40) + 0x30);
     const u32 map = R32(loc);
     const bool shown = state == PS_FIELD && fs && obj && map < 540 && !(R32(obj) & 0x200);
@@ -1195,6 +1208,11 @@ void Party_SendEmote(int emote)
 }
 
 uint32_t Party_Now() { return Ms(); }
+
+void Party_SendInvite(int player, int invite)
+{
+    if (Link == PartyLink::Online && player >= 0 && player < 4 && player != Me) Send('V', { (u8)player, (u8)invite });
+}
 
 std::string Party_PlaceName(int map)
 {

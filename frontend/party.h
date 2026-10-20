@@ -47,11 +47,14 @@ struct PartyPeer
 // What happened in the party, for the HUD's toasts.
 struct PartyEvent
 {
-    enum Kind { Joined, Left, Caught, Badge, Reconnecting, Reconnected, Failed } kind;
+    enum Kind { Joined, Left, Caught, Badge, Reconnecting, Reconnected, Failed, Invite } kind;
     int player = -1;
-    int arg = 0;           // Caught: species; Badge: badges now
+    int arg = 0;           // Caught: species; Badge: badges now; Invite: PartyInvite
     std::string text;      // Failed: why
 };
+
+// Invites from one player to another, and their answers.
+enum PartyInvite { PI_BATTLE = 1, PI_TRADE = 2, PI_YES = 0x10, PI_NO = 0x20, PI_BUSY = 0x40 }; // answers: PI_YES | PI_BATTLE...
 
 // Who this player is to the others: a name (up to 10 characters) and a colour (0-3, or
 // -1 for one by player number).
@@ -87,6 +90,7 @@ int Party_DexCount();                // Pokemon caught in the Pokedex (-1 not kn
 std::vector<int> Party_MySpecies();  // the species in this player's party
 void Party_SetPartner(int species);  // the Pokemon shown with this player
 void Party_SendEmote(int emote);     // shows an emote over this player's trainer to the others
+void Party_SendInvite(int player, int invite); // a PartyInvite to one player
 uint32_t Party_Now();                // the clock of PartyWalker::at (ms)
 // A map's place name ("Route 30"), from the ROM's text.
 std::string Party_PlaceName(int map);
