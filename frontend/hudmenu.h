@@ -108,10 +108,26 @@ inline void DrawBackdrop(Canvas& c, Sprites& sp, const std::string& name, uint32
 {
     const Sprite* s = sp.Get(name);
     if (!s) return;
-    // Cover the canvas, cropping the picture's sides or top and bottom.
-    const float k = std::max((float)c.w / s->img.w, (float)c.h / s->img.h);
-    const float sw = c.w / k, sh = c.h / k;
-    Blit(c, s->img, (s->img.w - sw) / 2, (s->img.h - sh) / 2, sw, sh, 0, 0, (float)c.w, (float)c.h, true, tint);
+    // Cover the canvas, cropping the picture's sides or top and bottom. Scaled once for the
+    // canvas's size and kept: smoothing a whole screen every frame took about 30 ms.
+    static std::map<std::tuple<const Sprite*, int, int, uint32_t>, std::vector<uint32_t>> made;
+    if (made.size() > 16) made.clear();
+    std::vector<uint32_t>& px = made[{ s, c.w, c.h, tint }];
+    if (px.size() != c.px.size())
+    {
+        Canvas t;
+        t.Resize(c.w, c.h);
+        const float k = std::max((float)c.w / s->img.w, (float)c.h / s->img.h);
+        const float sw = c.w / k, sh = c.h / k;
+        Blit(t, s->img, (s->img.w - sw) / 2, (s->img.h - sh) / 2, sw, sh, 0, 0, (float)c.w, (float)c.h, true, tint);
+        px = t.px;
+    }
+    // Opaque pictures are copied; see-through ones blended over what is there.
+    c.Mark(0, 0, c.w, c.h);
+    if ((tint >> 24) == 255 && !px.empty() && (px[0] >> 24) == 255)
+        std::copy(px.begin(), px.end(), c.px.begin());
+    else
+        for (size_t i = 0; i < px.size(); i++) c.px[i] = BlendOver(c.px[i], px[i]);
 }
 
 // The pause menu (Menu in ui.h) as the online-HUD design draws it.
