@@ -4852,7 +4852,23 @@ int main(int argc, char** argv)
             else if (sel && !sel->disabled)
                 hints.push_back({ { accept }, "Select" });
             if (remapping < 0) hints.push_back({ { back }, "Back" });
-            if (menu.tab == T_PROFILE)
+            // The menu drawn again only when something on it changes (drawing its panels takes
+            // a good part of a frame): otherwise the last drawing is put back.
+            std::string key = std::to_string(menu.tab) + "|" + std::to_string(menu.selected) + "|" + std::to_string(canvas.w) + "x" +
+                std::to_string(canvas.h) + "|" + std::to_string(remapping) + "|" + std::to_string(Party_DexCount()) + "|" +
+                std::to_string(Party_MyBadges()) + "|" + std::to_string(sessionStats.linkBattles) + "|" + std::to_string(sessionStats.trades);
+            for (const MenuItem& it : menu.items)
+                key += "|" + it.label + "=" + it.value + it.glyph + (it.disabled ? "!" : "") + std::to_string((int)(it.bar * 1000));
+            for (const HudHint& h : hints)
+                for (const std::string& g : h.glyphs) key += "|" + g + h.label;
+            static std::string menuKey;
+            static std::vector<uint32_t> menuPicture;
+            if (key == menuKey && menuPicture.size() == canvas.px.size())
+            {
+                std::copy(menuPicture.begin(), menuPicture.end(), canvas.px.begin());
+                canvas.Mark(0, 0, canvas.w, canvas.h);
+            }
+            else if (menu.tab == T_PROFILE)
             {
                 HudRect side;
                 DrawPauseMenu(canvas, ui, sprites, font, menu, hints, 560, &side);
@@ -4864,6 +4880,11 @@ int main(int argc, char** argv)
             }
             else
                 DrawPauseMenu(canvas, ui, sprites, font, menu, hints);
+            if (key != menuKey)
+            {
+                menuKey = key;
+                menuPicture = canvas.px;
+            }
             overlayUsed = true;
         }
         else if (menu.open)

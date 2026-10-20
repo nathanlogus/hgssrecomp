@@ -18,6 +18,7 @@
   pictures), while the game keeps its normal speed.
 - The **+ button** (Start) opens and closes the pause menu while you walk around; in the
   game's own screens it is still the game's Start. Guide works as before.
+- The pause menu runs at full speed again (it was drawn anew every frame).
 - The pause menu and the online screens no longer stop the game: the world stays live
   behind them (dimmed), its music keeps playing, and display changes such as WORLD ZOOM
   show at once. Your buttons go to the menu meanwhile, not to the game.

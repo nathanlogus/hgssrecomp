@@ -127,9 +127,23 @@ inline void DrawPauseMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
 {
     using namespace HudColour;
     const float wd = ui.W / ui.s; // design width: 1920 at 16:9, more on wider screens
-    // Over the game, dimmed and lightly tinted, so changes to the view show behind it.
-    FillBlend(c, 0, 0, (float)c.w, (float)c.h, 0x59000000);
-    DrawBackdrop(c, sp, "backgrounds/bg_lime", 0x48FFFFFF);
+    // Over the game, dimmed and lightly tinted, so changes to the view show behind it. The
+    // same every frame: made once for the canvas's size and copied (blending it each frame
+    // took most of a frame's time).
+    static std::vector<uint32_t> backdrop;
+    static int backdropW = 0, backdropH = 0;
+    if (backdropW != c.w || backdropH != c.h)
+    {
+        Canvas t;
+        t.Resize(c.w, c.h);
+        FillBlend(t, 0, 0, (float)c.w, (float)c.h, 0x59000000);
+        DrawBackdrop(t, sp, "backgrounds/bg_lime", 0x48FFFFFF);
+        backdrop = t.px;
+        backdropW = c.w;
+        backdropH = c.h;
+    }
+    std::copy(backdrop.begin(), backdrop.end(), c.px.begin());
+    c.Mark(0, 0, c.w, c.h);
 
     // Tabs: a column of menu discs; the current one larger, with its name on a yellow pill.
     const float colX = 60, colY = 40, colW = 250, colH = 960;
