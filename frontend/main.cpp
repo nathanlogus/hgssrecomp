@@ -51,6 +51,8 @@
 #include "hudmenu.h"
 #include "hudtoast.h"
 #include "hudscreens.h"
+#define DR_MP3_IMPLEMENTATION
+#include "songs.h"
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
@@ -334,14 +336,15 @@ static std::vector<uint8_t> ReadFile(const std::string& path)
     }
     return data;
 #endif
-    FILE* f = fopen(path.c_str(), "rb");
+    // Through a UTF-8 path: fopen takes the Windows code page and misses names such as
+    // "Pokémon" there.
+    std::ifstream f(std::filesystem::u8path(path), std::ios::binary | std::ios::ate);
     if (!f) return data;
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    data.resize(len);
-    if (fread(data.data(), 1, len, f) != (size_t)len) data.clear();
-    fclose(f);
+    const std::streamsize len = f.tellg();
+    if (len <= 0) return data;
+    data.resize((size_t)len);
+    f.seekg(0);
+    if (!f.read((char*)data.data(), len)) data.clear();
     return data;
 }
 
@@ -349,6 +352,9 @@ static std::vector<uint8_t> ReadFile(const std::string& path)
 // the APK's assets on Android.
 static std::string g_uiDir;
 static std::vector<uint8_t> ReadUiFile(const std::string& name) { return ReadFile(g_uiDir + name); }
+// The player's own songs (songs.h): assets/songs, beside the HUD's folder.
+static std::vector<uint8_t> ReadSongFile(const std::string& name) { return ReadFile(g_uiDir + "../songs/" + name); }
+namespace melonDS { extern u16 ssr_SpuHearMute; } // SPU.cpp: channels left out of what is heard
 static void FindUiDir()
 {
 #ifdef __ANDROID__
@@ -1022,7 +1028,8 @@ struct Settings
     int zoom = 100;       // world zoom, percent (one of ZoomSteps)
     bool voidFill = true; // haze instead of black where the world reaches past the loaded map
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
-    bool redrawn = true;  // the game's screens redrawn in the HUD style (so far the trainer card)
+    bool redrawn = true;
+    bool newSongs = true; // Music: the player's songs (songs.h) instead of the game's music, where there is one  // the game's screens redrawn in the HUD style (so far the trainer card)
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
     bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
     int windowH = 0;      // window height chosen in the menu; 0 = from --scale
@@ -1080,6 +1087,7 @@ struct Settings
             else if (k == "void_fill") voidFill = v == "1";
             else if (k == "night_fx") nightFx = v == "1";
             else if (k == "redrawn_screens") redrawn = v == "1";
+            else if (k == "music") newSongs = v != "original";
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v == "1";
             else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), ZoomSteps[0], ZoomSteps[ZoomCount - 1]);
@@ -1120,6 +1128,7 @@ struct Settings
         f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
+        f << "music=" << (newSongs ? "new" : "original") << "\n";
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
         f << "window_height=" << windowH << "\n";
@@ -2364,6 +2373,8 @@ int main(int argc, char** argv)
     const bool spritesOk = sprites.Load(ReadUiFile);
     const bool fontOk = font.Load(rom.data(), rom.size());
     fprintf(stderr, "[hud] sprites %s, font %s\n", spritesOk ? g_uiDir.c_str() : "missing (plain menu)", fontOk ? "from the ROM" : "missing");
+    SongPlayer songs;
+    if (songs.Load(ReadSongFile)) fprintf(stderr, "[songs] a list of songs in %s../songs\n", g_uiDir.c_str());
     // The logo on the start screen: assets/logo.png (beside the HUD's folder), if it is there.
     Image logo;
     {
@@ -2603,7 +2614,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2707,6 +2718,9 @@ int main(int argc, char** argv)
         add(T_RESUME, M_RESUME, "Back to the game", "", "Close this menu and carry on playing.");
 
         add(T_GAME, M_FPS60, "60 fps", onOff(cfg.fps60), "Draws a picture between each two of the game's, so the world moves at 60 frames a second.");
+        add(T_GAME, M_MUSIC, "Music", !songs.Any() ? "Original" : cfg.newSongs ? "New songs" : "Original",
+            songs.Any() ? "New songs: your own music files (assets/songs, listed in songs.txt) in place of the game's tunes. Sound effects stay."
+                        : "Put music files and a songs.txt in assets/songs to hear your own songs in place of the game's tunes.")->disabled = !songs.Any();
         add(T_GAME, M_FPSMAX, "Frame rate", cfg.fpsUnlimited ? "Unlimited" : "60",
             "Unlimited: as many pictures of the world as your computer can draw, for screens faster than 60 Hz. The game runs at its normal speed either way.");
         add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
@@ -3601,6 +3615,9 @@ int main(int argc, char** argv)
             case M_NIGHTFX:
                 cfg.nightFx = !cfg.nightFx;
                 break;
+            case M_MUSIC:
+                cfg.newSongs = !cfg.newSongs;
+                break;
             case M_REDRAWN:
                 cfg.redrawn = !cfg.redrawn;
                 break;
@@ -4493,6 +4510,19 @@ int main(int argc, char** argv)
             }
         }
 
+        {
+            // The game's music now (sSoundWork.currentSeqNo), a jingle on (its wait after a
+            // fanfare), and whether its music channels sound (SOUNDxCNT busy).
+            const uint32_t soundWork = 0x02111958;
+            const int seq = (int)(readRam(soundWork + 0xBEBFC) & 0xFFFF);
+            const bool jingle = (readRam(soundWork + 0xBEC00) >> 16 & 0xFFFF) != 0;
+            bool busy = false;
+            for (int i = 0; i < 16; i++)
+                if ((SongPlayer::MusicChannels >> i & 1) && (nds->SPU.Read32(0x04000400 + 16 * i) >> 31)) busy = true;
+            songs.Update(cfg.newSongs && !opt.lockstep, seq, busy, jingle, frame);
+            melonDS::ssr_SpuHearMute = songs.Mute();
+            if (got > 0) songs.Mix(audioBuf.data(), got);
+        }
         if (audio && got > 0)
         {
             // Drop audio rather than let latency grow if the queue backs up.
@@ -4529,6 +4559,16 @@ int main(int argc, char** argv)
             };
             uint32_t fs = rd(0x021D4158), loc = rd(fs + 0x20), obj = rd(rd(fs + 0x40) + 0x30);
             printf("pos %u map %u x %u z %u\n", frame, rd(loc), rd(obj + 0x64), rd(obj + 0x6C));
+        }
+        // Development aid: SSR_DUMP_RAM=<frame> writes main RAM to ram_<frame>.bin in the shot folder.
+        if (const char* dump = getenv("SSR_DUMP_RAM"); dump && (uint32_t)atoi(dump) == frame)
+        {
+            const std::string path = (opt.shotDir.empty() ? std::string(".") : opt.shotDir) + "/ram_" + std::to_string(frame) + ".bin";
+            if (FILE* f = fopen(path.c_str(), "wb"))
+            {
+                fwrite(nds->MainRAM, 1, nds->MainRAMMask + 1, f);
+                fclose(f);
+            }
         }
         if (opt.hashEvery && frame % opt.hashEvery == 0)
         {

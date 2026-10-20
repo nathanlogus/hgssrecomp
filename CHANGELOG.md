@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Your own music**: put MP3 files in `assets/songs` and list them in `songs.txt` there
+  ("1022 = my goldenrod song.mp3", the number being the game's music); while the game
+  plays a tune that has a song, the song plays instead, looping, at the game's loudness.
+  Sound effects, cries and jingles stay. MUSIC in the Game tab switches back to the
+  original tunes.
+- Files and folders with letters such as "é" in their names (a ROM in "Pokémon") can be
+  read on Windows.
 - **FRAME RATE: UNLIMITED** in the Game tab: on screens faster than 60 Hz the world is
   drawn as many times a second as your computer manages (in between the game's own
   pictures), while the game keeps its normal speed.

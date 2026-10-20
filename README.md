@@ -244,6 +244,19 @@ controller does nothing that way, setting the shortcut's compatibility tool to
 Proton Experimental (Properties → Compatibility) has been reported to make it
 work.
 
+### Your own music
+
+Songs can replace the game's tunes. Put MP3 files in `assets/songs` (beside `assets/ui`)
+and list them in `assets/songs/songs.txt`, one per line: the game's music number, `=`, the
+file name (`1022 = goldenrod.mp3`; `#` starts a note). The numbers are the game's sequence
+numbers (1018 New Bark Town, 1022 Goldenrod City, 1028 Route 29, 1063 Pokémon Center,
+1116 wild battle, 1117 trainer battle, 1119 rival battle; the full list is
+`include/constants/sndseq.h` in the decompilation). While the game plays a tune that has a
+song, its music channels are left out of what you hear and the song plays in a loop,
+brought to about the loudness of the game's music; sound effects, cries and jingles stay
+the game's own. **Music** in the Game tab switches between the songs and the original
+tunes. The songs are yours: they are not part of this project and are never uploaded with it.
+
 ### Single-screen view
 
 The default view (`merged`) shows one picture, with no second screen beside it

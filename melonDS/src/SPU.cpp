@@ -850,10 +850,16 @@ void SPUCaptureUnit::Run(u32 cycles, s32 sample)
 }
 
 
+// ssrecomp: channels (one bit each) left out of what is heard, not of sound capture: the
+// game's own music while the frontend plays a song in its place. A global, not a member, so
+// that SPU.h (which the recompiled code includes) stays as it is.
+u16 ssr_SpuHearMute = 0;
+
 void SPU::Mix(u32 spucycles)
 {
     s32 left = 0, right = 0;
     s32 leftoutput = 0, rightoutput = 0;
+    s32 mutedLeft = 0, mutedRight = 0; // ssrecomp: what of the mix is not heard (ssr_SpuHearMute)
 
     if (Cnt & (1<<15))
     {
@@ -869,12 +875,21 @@ void SPU::Mix(u32 spucycles)
         if (!(Cnt & (1<<12))) Channels[1].PanOutput(ch1, left, right);
         if (!(Cnt & (1<<13))) Channels[3].PanOutput(ch3, left, right);
 
+        if (ssr_SpuHearMute)
+        {
+            if (ssr_SpuHearMute & 1) Channels[0].PanOutput(ch0, mutedLeft, mutedRight);
+            if (ssr_SpuHearMute & 4) Channels[2].PanOutput(ch2, mutedLeft, mutedRight);
+            if ((ssr_SpuHearMute & 2) && !(Cnt & (1<<12))) Channels[1].PanOutput(ch1, mutedLeft, mutedRight);
+            if ((ssr_SpuHearMute & 8) && !(Cnt & (1<<13))) Channels[3].PanOutput(ch3, mutedLeft, mutedRight);
+        }
+
         for (int i = 4; i < 16; i++)
         {
             SPUChannel* chan = &Channels[i];
 
             s32 channel = chan->DoRun(spucycles);
             chan->PanOutput(channel, left, right);
+            if (ssr_SpuHearMute & (1 << i)) chan->PanOutput(channel, mutedLeft, mutedRight);
         }
 
         // sound capture
@@ -907,7 +922,7 @@ void SPU::Mix(u32 spucycles)
         switch (Cnt & 0x0300)
         {
         case 0x0000: // left mixer
-            leftoutput = left;
+            leftoutput = left - mutedLeft;
             break;
         case 0x0100: // channel 1
             {
@@ -933,7 +948,7 @@ void SPU::Mix(u32 spucycles)
         switch (Cnt & 0x0C00)
         {
         case 0x0000: // right mixer
-            rightoutput = right;
+            rightoutput = right - mutedRight;
             break;
         case 0x0400: // channel 1
             {
