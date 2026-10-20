@@ -55,6 +55,8 @@
 - **A new pause menu**: bright cards in the style of Pokémon: Let's Go, in the game's own
   font, with tabs (L and R switch them) and a sentence explaining each option. The
   new **Controls** tab lets you give any DS button another controller button.
+- Messages (state saved, controller connected and so on) and the FPS counter now
+  appear in the same style: white pills with an icon, up to four stacked at the top left.
 
 ## v0.4.2 — Faster widescreen
 

@@ -49,6 +49,7 @@
 #include "ui.h"
 #include "hud.h"
 #include "hudmenu.h"
+#include "hudtoast.h"
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
@@ -2544,9 +2545,16 @@ int main(int argc, char** argv)
     uint32_t toastUntil = 0;
     int shownFps = 0;
     uint32_t presented = 0, fpsSince = 0;
-    auto say = [&](const std::string& msg) {
+    ToastStack toasts;
+    // A message of the frontend's own, shown at once (with the plain menu: the last one).
+    auto say = [&](const std::string& msg, const std::string& icon = "", uint32_t frames = 150) {
         toast = msg;
-        toastUntil = frame + 120;
+        toastUntil = frame + frames;
+        Toast t;
+        t.text = msg;
+        t.lead = icon;
+        t.frames = frames;
+        toasts.Push(t);
     };
 #ifdef __ANDROID__
     bool updateSaid = false;
@@ -2669,10 +2677,10 @@ int main(int argc, char** argv)
                     else if (k == SDLK_TAB) layout = LayoutNext(layout);
                     else if (k == SDLK_F1) focus.manualFlip = !focus.manualFlip;
                     else if (k == SDLK_F2) focus.mode = (focus.mode + 1) % 3;
-                    else if (k == SDLK_F5) say(WriteSnapshot(*nds, quickState, frame) ? "STATE SAVED" : "SAVE STATE FAILED");
+                    else if (k == SDLK_F5) say(WriteSnapshot(*nds, quickState, frame) ? "State saved" : "The state could not be saved", "icons/icon_save");
                     else if (k == SDLK_F8)
                     {
-                        say(ReadSnapshot(*nds, quickState, nullptr) ? "STATE LOADED" : "NO STATE TO LOAD");
+                        say(ReadSnapshot(*nds, quickState, nullptr) ? "State loaded" : "No state to load", "icons/icon_layers");
                         SetClock(*nds, false);
                     }
                     else if (k == SDLK_F11
@@ -2694,13 +2702,13 @@ int main(int argc, char** argv)
                 // by SDL_CONTROLLERDEVICEADDED; Open takes each once.)
                 else if (ev.type == SDL_JOYDEVICEADDED || ev.type == SDL_CONTROLLERDEVICEADDED)
                 {
-                    if (pads.Open(ev.jdevice.which)) say("CONTROLLER CONNECTED");
+                    if (pads.Open(ev.jdevice.which)) say("Controller connected", "icons/icon_gamepad");
                 }
                 else if (ev.type == SDL_JOYDEVICEREMOVED && pads.Close(ev.jdevice.which))
                 {
                     // Pause rather than leave the game running with nobody at the controls.
                     if (pads.Empty() && !menu.open) toggleMenu = true;
-                    say("CONTROLLER DISCONNECTED");
+                    say("Controller disconnected", "icons/icon_gamepad");
                 }
             }
             SDL_GetMouseState(&mouseX, &mouseY);
@@ -3131,18 +3139,18 @@ int main(int argc, char** argv)
                 break;
             case M_REMAP_RESET:
                 for (int& b : cfg.padMap) b = -1;
-                say("USUAL BUTTONS");
+                say("The usual buttons are back", "icons/icon_gamepad");
                 break;
             case M_FAST:
                 fastLock = !fastLock;
                 break;
             case M_SAVESTATE:
-                say(WriteSnapshot(*nds, quickState, frame) ? "STATE SAVED" : "SAVE STATE FAILED");
+                say(WriteSnapshot(*nds, quickState, frame) ? "State saved" : "The state could not be saved", "icons/icon_save");
                 menu.open = false;
                 swallowMenuButtons = true;
                 break;
             case M_LOADSTATE:
-                say(ReadSnapshot(*nds, quickState, nullptr) ? "STATE LOADED" : "NO STATE TO LOAD");
+                say(ReadSnapshot(*nds, quickState, nullptr) ? "State loaded" : "No state to load", "icons/icon_layers");
                 SetClock(*nds, false);
                 menu.open = false;
                 swallowMenuButtons = true;
@@ -3152,7 +3160,7 @@ int main(int argc, char** argv)
                 nds->SetupDirectBoot("game.nds");
                 nds->Start();
                 rc_reset();
-                say("GAME RESET");
+                say("Game reset", "icons/icon_refresh");
                 menu.open = false;
                 swallowMenuButtons = true;
                 break;
@@ -3705,7 +3713,14 @@ int main(int argc, char** argv)
         // The top right corner, below the on-screen R button when those controls are shown
         // (their top row ends at 12% of the height).
         int cornerY = touchPadUsed && touchPad.visible ? outH * 13 / 100 : 0;
-        if (cfg.showFps && !opt.headless)
+        // (With the HUD's sprites: pills, in design units below the corner.)
+        float pillY = 32 + cornerY / ui.s;
+        if (cfg.showFps && !opt.headless && spritesOk)
+        {
+            pillY = DrawCornerPill(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, std::to_string(shownFps) + " fps");
+            overlayUsed = true;
+        }
+        else if (cfg.showFps && !opt.headless)
         {
             int sc = outH / 240 < 1 ? 1 : outH / 240;
             const std::string text = std::to_string(shownFps) + " FPS";
@@ -3715,7 +3730,12 @@ int main(int argc, char** argv)
             cornerY += 13 * sc;
             overlayUsed = true;
         }
-        if (speed > 1)
+        if (speed > 1 && spritesOk)
+        {
+            DrawCornerPill(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, ">> Fast forward");
+            overlayUsed = true;
+        }
+        else if (speed > 1)
         {
             int sc = outH / 240 < 1 ? 1 : outH / 240;
             canvas.Text(outW - Canvas::TextWidth(">>", sc) - 4 * sc, cornerY + 4 * sc, ">>", sc, 0xFFFFFFFF);
@@ -3727,12 +3747,28 @@ int main(int argc, char** argv)
             updateSaid = true;
             if (!UpdateCheck::g_newer.empty())
             {
-                say("VERSION " + UpdateCheck::g_newer + " IS OUT - REBUILD THE APP ON YOUR PC");
-                toastUntil = frame + 600;
+                say("Version " + UpdateCheck::g_newer + " is out: rebuild the app on your PC", "icons/icon_info", 600);
             }
         }
 #endif
-        if (frame < toastUntil)
+        if (spritesOk)
+        {
+            // Toasts about other players wait while the game wants attention: a battle, a
+            // text box (FieldSystem.textbox_open) or a menu.
+            const u32 fs = readRam(0x021D4158);
+            const bool textbox = fs && (readRam(fs + 0xD0) >> 16 & 0x40);
+            toasts.Update(frame, menu.open || !fieldActive() || textbox);
+            if (toasts.Any() && !menu.open)
+            {
+                // Below the on-screen controls' top row when they are shown; two at most on a
+                // narrow view.
+                const bool controls = touchPadUsed && touchPad.visible;
+                const float ty = controls ? outH * 13 / 100 / ui.s : 32;
+                toasts.Draw(canvas, ui, sprites, font, frame, 32, ty, view.width >= 300 ? 4 : 2);
+                overlayUsed = true;
+            }
+        }
+        else if (frame < toastUntil)
         {
             int sc = outH / 240 < 1 ? 1 : outH / 240;
             const int tw = Canvas::TextWidth(toast, sc) + 8 * sc;
