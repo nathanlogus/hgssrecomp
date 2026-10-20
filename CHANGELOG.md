@@ -50,6 +50,8 @@
   frames now and then after a battle, and opening the save screen (or another screen
   that fades in on the touch screen) keeps the world on show instead of blinking to
   black first.
+- The setup program's package now includes the `assets` folder: the Windows build
+  needs the program icon from it.
 
 ## v0.4.2 — Faster widescreen
 

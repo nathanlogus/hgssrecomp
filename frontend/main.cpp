@@ -47,6 +47,7 @@
 #include "host.h"
 #include "layout.h"
 #include "ui.h"
+#include "hud.h"
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
@@ -339,6 +340,31 @@ static std::vector<uint8_t> ReadFile(const std::string& path)
     if (fread(data.data(), 1, len, f) != (size_t)len) data.clear();
     fclose(f);
     return data;
+}
+
+// The HUD's sprite folder (assets/ui): next to the source tree's build folder on PCs, in
+// the APK's assets on Android.
+static std::string g_uiDir;
+static std::vector<uint8_t> ReadUiFile(const std::string& name) { return ReadFile(g_uiDir + name); }
+static void FindUiDir()
+{
+#ifdef __ANDROID__
+    g_uiDir = "ui/";
+#else
+    namespace fs = std::filesystem;
+    char* base = SDL_GetBasePath();
+    const fs::path exe = base ? fs::u8path(base) : fs::current_path();
+    SDL_free(base);
+    for (const fs::path& d : { exe / ".." / "assets" / "ui", exe / "assets" / "ui", fs::current_path() / "assets" / "ui" })
+    {
+        std::error_code ec;
+        if (fs::exists(d / "manifest.json", ec))
+        {
+            g_uiDir = (d / "").u8string();
+            return;
+        }
+    }
+#endif
 }
 
 static void FlushSave(const std::string& path)
@@ -2238,6 +2264,13 @@ int main(int argc, char** argv)
     std::vector<NightFly> fireflies;
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
+    // The HUD: its sprites and the game's own font.
+    Sprites sprites;
+    RomFont font;
+    FindUiDir();
+    const bool spritesOk = sprites.Load(ReadUiFile);
+    const bool fontOk = font.Load(rom.data(), rom.size());
+    fprintf(stderr, "[hud] sprites %s, font %s\n", spritesOk ? g_uiDir.c_str() : "missing (plain menu)", fontOk ? "from the ROM" : "missing");
     melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
         if (cfg.farMap) worldBlocks.Build(*nds, commands);
     };

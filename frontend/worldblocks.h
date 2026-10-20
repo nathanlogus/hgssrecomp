@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include "NDS.h"
+#include "ndsrom.h"
 #include "GPU3D_Wide.h"
 #include "nightfx.h"
 
@@ -36,18 +37,8 @@ public:
         RomSize = rom.size();
         Land.clear();
         Blocks.clear();
-        uint32_t off, size;
-        if (!RomFile("a/0/6/5", off, size) || size < 16 || memcmp(Rom + off, "NARC", 4) != 0) return;
-        // NARC: file allocation table (BTAF), name table (BTNF), then the data (GMIF).
-        const uint8_t* n = Rom + off;
-        const uint32_t fatSize = Get32(n + 16 + 4), count = Get32(n + 16 + 8);
-        const uint32_t fnt = 16 + fatSize;
-        const uint32_t gmif = fnt + Get32(n + fnt + 4) + 8;
-        for (uint32_t i = 0; i < count; i++)
-        {
-            const uint32_t a = Get32(n + 16 + 12 + 8 * i), b = Get32(n + 16 + 16 + 8 * i);
-            Land.push_back({ off + gmif + a, b - a });
-        }
+        Land = NdsNarcFiles(Rom, RomSize, "a/0/6/5");
+        if (Land.empty()) return;
         DrawLoadedToo = getenv("SSR_FARMAP_ALL") != nullptr;
         Events = NarcMembers("a/0/3/2");
         Sprites = NarcMembers("a/0/8/1");
@@ -284,23 +275,7 @@ private:
     std::map<uint16_t, std::vector<Person>> ZoneObjects;         // by events bank
     std::map<uint32_t, int> SpriteTex;                           // (member << 2 | facing) -> external texture, -1 if none
 
-    std::vector<std::pair<uint32_t, uint32_t>> NarcMembers(const char* path) const
-    {
-        std::vector<std::pair<uint32_t, uint32_t>> out;
-        uint32_t off, size;
-        if (!RomFile(path, off, size) || size < 16 || memcmp(Rom + off, "NARC", 4) != 0) return out;
-        const uint8_t* n = Rom + off;
-        const uint32_t fatSize = Get32(n + 16 + 4), count = Get32(n + 16 + 8);
-        const uint32_t fnt = 16 + fatSize;
-        const uint32_t gmif = fnt + Get32(n + fnt + 4) + 8;
-        for (uint32_t i = 0; i < count; i++)
-        {
-            const uint32_t a = Get32(n + 16 + 12 + 8 * i), b = Get32(n + 16 + 16 + 8 * i);
-            if (b < a || off + gmif + b > RomSize) break;
-            out.push_back({ off + gmif + a, b - a });
-        }
-        return out;
-    }
+    std::vector<std::pair<uint32_t, uint32_t>> NarcMembers(const char* path) const { return NdsNarcFiles(Rom, RomSize, path); }
 
     // The people of a map, from its zone event file: background events, then the objects
     // (32 bytes each: id, sprite, movement, type, flag, script, facing, ..., x, z, y).
@@ -548,49 +523,7 @@ private:
     uint8_t Read8(uint32_t a) const { return Ram[a & RamMask]; }
 
     // A file of the ROM's file system by path.
-    bool RomFile(const char* path, uint32_t& off, uint32_t& size) const
-    {
-        if (RomSize < 0x200) return false;
-        const uint32_t fnt = Get32(Rom + 0x40), fat = Get32(Rom + 0x48);
-        uint32_t dir = 0xF000;
-        std::string rest = path;
-        while (true)
-        {
-            const size_t slash = rest.find('/');
-            const std::string name = rest.substr(0, slash);
-            const uint32_t sub = fnt + Get32(Rom + fnt + (dir & 0xFFF) * 8);
-            uint32_t fid = Get16(Rom + fnt + (dir & 0xFFF) * 8 + 4);
-            uint32_t p = sub;
-            bool found = false;
-            while (p < RomSize && Rom[p])
-            {
-                const uint8_t t = Rom[p++];
-                const uint32_t len = t & 0x7F;
-                const std::string entry((const char*)Rom + p, len);
-                p += len;
-                if (t & 0x80)
-                {
-                    const uint16_t subdir = Get16(Rom + p);
-                    p += 2;
-                    if (entry == name && slash != std::string::npos) { dir = subdir; found = true; break; }
-                }
-                else
-                {
-                    if (entry == name && slash == std::string::npos)
-                    {
-                        const uint32_t s = Get32(Rom + fat + fid * 8), e = Get32(Rom + fat + fid * 8 + 4);
-                        if (e < s || e > RomSize) return false;
-                        off = s;
-                        size = e - s;
-                        return true;
-                    }
-                    fid++;
-                }
-            }
-            if (!found) return false;
-            rest = rest.substr(slash + 1);
-        }
-    }
+    bool RomFile(const char* path, uint32_t& off, uint32_t& size) const { return NdsRomFile(Rom, RomSize, path, off, size); }
 
     // NitroSystem resource dictionary at `d`: (name, entry data) pairs.
     static std::vector<std::pair<std::string, const uint8_t*>> Dict(const uint8_t* d)

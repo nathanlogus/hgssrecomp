@@ -221,6 +221,13 @@ def build(skeleton, abi, libmain, libsdl, rom, key_path, out):
         for path, name in ((libsdl, f'lib/{abi}/libSDL2.so'), (libmain, f'lib/{abi}/libmain.so')):
             write_aligned(z, name, open(path, 'rb').read(), True, 4)
         write_aligned(z, 'assets/rom.nds', open(rom, 'rb').read(), True, 4)
+        # The HUD's sprites (frontend/hud.h reads them from the APK's assets as ui/...).
+        ui = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'assets', 'ui')
+        for folder, _dirs, files in os.walk(ui):
+            for f in sorted(files):
+                if f.endswith('.png') or f == 'manifest.json':
+                    rel = os.path.relpath(os.path.join(folder, f), ui).replace(os.sep, '/')
+                    write_aligned(z, 'assets/ui/' + rel, open(os.path.join(folder, f), 'rb').read(), True, 4)
     signed = sign_v2(open(tmp, 'rb').read(), load_key(key_path))
     with open(out, 'wb') as f:
         f.write(signed)

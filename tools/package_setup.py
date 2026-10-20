@@ -21,7 +21,7 @@ import PyInstaller.__main__
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # What the build needs; build output, generated code and anything of the game stay out.
 INCLUDE = ['CMakeLists.txt', 'LICENSE', 'README.md', 'CHANGELOG.md', 'run.sh', 'cmake', 'frontend', 'runtime', 'tools', 'layouts',
-           'melonDS']
+           'melonDS', 'assets']
 SKIP_DIRS = {'.git', '.github', '__pycache__', 'build', 'gen', '.DS_Store'}
 
 def skip_payload(_directory, names):

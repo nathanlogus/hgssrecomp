@@ -38,15 +38,21 @@ struct Canvas
         x1d = y1d = 0;
     }
 
+    // Adds the (clipped) rectangle x0..x1, y0..y1 to the area drawn into.
+    void Mark(int x0, int y0, int x1, int y1)
+    {
+        if (x0 < x0d) x0d = x0;
+        if (y0 < y0d) y0d = y0;
+        if (x1 > x1d) x1d = x1;
+        if (y1 > y1d) y1d = y1;
+    }
+
     void Fill(int x, int y, int rw, int rh, uint32_t argb)
     {
         int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
         int x1 = x + rw > w ? w : x + rw, y1 = y + rh > h ? h : y + rh;
         if (x1 <= x0 || y1 <= y0) return;
-        if (x0 < x0d) x0d = x0;
-        if (y0 < y0d) y0d = y0;
-        if (x1 > x1d) x1d = x1;
-        if (y1 > y1d) y1d = y1;
+        Mark(x0, y0, x1, y1);
         for (int yy = y0; yy < y1; yy++)
             for (int xx = x0; xx < x1; xx++)
                 px[(size_t)yy * w + xx] = argb;

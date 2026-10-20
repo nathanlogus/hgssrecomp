@@ -1,0 +1,3647 @@
+{
+ "note": "Sizes are 1x pixels for a 1920x1080 screen; @2x files are double. nine_slice = [top, right, bottom, left] insets in 1x pixels.",
+ "palette": {
+  "ink": "#3B3F4A",
+  "muted": "#8A93A3",
+  "line": "#DCE3EC",
+  "lavender": "#B9A6F2",
+  "yellow": "#FFE04A",
+  "yellow_dark": "#E8B400",
+  "teal": "#2EC4C6",
+  "green": "#5BD15B",
+  "red": "#F0505A",
+  "orange": "#F79A2B",
+  "blue": "#3E8EF0",
+  "purple": "#8E6BE8",
+  "pink": "#F25C8A",
+  "navy": "#1C2A44",
+  "players": {
+   "blue": "#3D6FD1",
+   "green": "#4CAF50",
+   "orange": "#F2A33A",
+   "red": "#E05252"
+  }
+ },
+ "sprites": [
+  {
+   "name": "icon_book",
+   "folder": "icons",
+   "files": [
+    "icons/icon_book.svg",
+    "icons/icon_book.png",
+    "icons/icon_book@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "book icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_book",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_book.svg",
+    "icons/white/icon_book.png",
+    "icons/white/icon_book@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "book icon, white"
+  },
+  {
+   "name": "icon_bag",
+   "folder": "icons",
+   "files": [
+    "icons/icon_bag.svg",
+    "icons/icon_bag.png",
+    "icons/icon_bag@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "bag icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_bag",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_bag.svg",
+    "icons/white/icon_bag.png",
+    "icons/white/icon_bag@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "bag icon, white"
+  },
+  {
+   "name": "icon_party",
+   "folder": "icons",
+   "files": [
+    "icons/icon_party.svg",
+    "icons/icon_party.png",
+    "icons/icon_party@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "party icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_party",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_party.svg",
+    "icons/white/icon_party.png",
+    "icons/white/icon_party@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "party icon, white"
+  },
+  {
+   "name": "icon_chat",
+   "folder": "icons",
+   "files": [
+    "icons/icon_chat.svg",
+    "icons/icon_chat.png",
+    "icons/icon_chat@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "chat icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_chat",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_chat.svg",
+    "icons/white/icon_chat.png",
+    "icons/white/icon_chat@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "chat icon, white"
+  },
+  {
+   "name": "icon_save",
+   "folder": "icons",
+   "files": [
+    "icons/icon_save.svg",
+    "icons/icon_save.png",
+    "icons/icon_save@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "save icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_save",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_save.svg",
+    "icons/white/icon_save.png",
+    "icons/white/icon_save@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "save icon, white"
+  },
+  {
+   "name": "icon_cog",
+   "folder": "icons",
+   "files": [
+    "icons/icon_cog.svg",
+    "icons/icon_cog.png",
+    "icons/icon_cog@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "cog icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_cog",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_cog.svg",
+    "icons/white/icon_cog.png",
+    "icons/white/icon_cog@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "cog icon, white"
+  },
+  {
+   "name": "icon_map",
+   "folder": "icons",
+   "files": [
+    "icons/icon_map.svg",
+    "icons/icon_map.png",
+    "icons/icon_map@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "map icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_map",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_map.svg",
+    "icons/white/icon_map.png",
+    "icons/white/icon_map@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "map icon, white"
+  },
+  {
+   "name": "icon_wifi",
+   "folder": "icons",
+   "files": [
+    "icons/icon_wifi.svg",
+    "icons/icon_wifi.png",
+    "icons/icon_wifi@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "wifi icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_wifi",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_wifi.svg",
+    "icons/white/icon_wifi.png",
+    "icons/white/icon_wifi@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "wifi icon, white"
+  },
+  {
+   "name": "icon_card",
+   "folder": "icons",
+   "files": [
+    "icons/icon_card.svg",
+    "icons/icon_card.png",
+    "icons/icon_card@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "card icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_card",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_card.svg",
+    "icons/white/icon_card.png",
+    "icons/white/icon_card@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "card icon, white"
+  },
+  {
+   "name": "icon_gamepad",
+   "folder": "icons",
+   "files": [
+    "icons/icon_gamepad.svg",
+    "icons/icon_gamepad.png",
+    "icons/icon_gamepad@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "gamepad icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_gamepad",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_gamepad.svg",
+    "icons/white/icon_gamepad.png",
+    "icons/white/icon_gamepad@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "gamepad icon, white"
+  },
+  {
+   "name": "icon_play",
+   "folder": "icons",
+   "files": [
+    "icons/icon_play.svg",
+    "icons/icon_play.png",
+    "icons/icon_play@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "play icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_play",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_play.svg",
+    "icons/white/icon_play.png",
+    "icons/white/icon_play@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "play icon, white"
+  },
+  {
+   "name": "icon_layers",
+   "folder": "icons",
+   "files": [
+    "icons/icon_layers.svg",
+    "icons/icon_layers.png",
+    "icons/icon_layers@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "layers icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_layers",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_layers.svg",
+    "icons/white/icon_layers.png",
+    "icons/white/icon_layers@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "layers icon, white"
+  },
+  {
+   "name": "icon_fight",
+   "folder": "icons",
+   "files": [
+    "icons/icon_fight.svg",
+    "icons/icon_fight.png",
+    "icons/icon_fight@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "fight icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_fight",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_fight.svg",
+    "icons/white/icon_fight.png",
+    "icons/white/icon_fight@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "fight icon, white"
+  },
+  {
+   "name": "icon_run",
+   "folder": "icons",
+   "files": [
+    "icons/icon_run.svg",
+    "icons/icon_run.png",
+    "icons/icon_run@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "run icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_run",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_run.svg",
+    "icons/white/icon_run.png",
+    "icons/white/icon_run@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "run icon, white"
+  },
+  {
+   "name": "icon_check",
+   "folder": "icons",
+   "files": [
+    "icons/icon_check.svg",
+    "icons/icon_check.png",
+    "icons/icon_check@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "check icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_check",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_check.svg",
+    "icons/white/icon_check.png",
+    "icons/white/icon_check@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "check icon, white"
+  },
+  {
+   "name": "icon_cross",
+   "folder": "icons",
+   "files": [
+    "icons/icon_cross.svg",
+    "icons/icon_cross.png",
+    "icons/icon_cross@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "cross icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_cross",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_cross.svg",
+    "icons/white/icon_cross.png",
+    "icons/white/icon_cross@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "cross icon, white"
+  },
+  {
+   "name": "icon_question",
+   "folder": "icons",
+   "files": [
+    "icons/icon_question.svg",
+    "icons/icon_question.png",
+    "icons/icon_question@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "question icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_question",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_question.svg",
+    "icons/white/icon_question.png",
+    "icons/white/icon_question@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "question icon, white"
+  },
+  {
+   "name": "icon_info",
+   "folder": "icons",
+   "files": [
+    "icons/icon_info.svg",
+    "icons/icon_info.png",
+    "icons/icon_info@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "info icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_info",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_info.svg",
+    "icons/white/icon_info.png",
+    "icons/white/icon_info@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "info icon, white"
+  },
+  {
+   "name": "icon_search",
+   "folder": "icons",
+   "files": [
+    "icons/icon_search.svg",
+    "icons/icon_search.png",
+    "icons/icon_search@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "search icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_search",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_search.svg",
+    "icons/white/icon_search.png",
+    "icons/white/icon_search@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "search icon, white"
+  },
+  {
+   "name": "icon_eye",
+   "folder": "icons",
+   "files": [
+    "icons/icon_eye.svg",
+    "icons/icon_eye.png",
+    "icons/icon_eye@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "eye icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_eye",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_eye.svg",
+    "icons/white/icon_eye.png",
+    "icons/white/icon_eye@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "eye icon, white"
+  },
+  {
+   "name": "icon_lock",
+   "folder": "icons",
+   "files": [
+    "icons/icon_lock.svg",
+    "icons/icon_lock.png",
+    "icons/icon_lock@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "lock icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_lock",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_lock.svg",
+    "icons/white/icon_lock.png",
+    "icons/white/icon_lock@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "lock icon, white"
+  },
+  {
+   "name": "icon_star",
+   "folder": "icons",
+   "files": [
+    "icons/icon_star.svg",
+    "icons/icon_star.png",
+    "icons/icon_star@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "star icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_star",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_star.svg",
+    "icons/white/icon_star.png",
+    "icons/white/icon_star@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "star icon, white"
+  },
+  {
+   "name": "icon_refresh",
+   "folder": "icons",
+   "files": [
+    "icons/icon_refresh.svg",
+    "icons/icon_refresh.png",
+    "icons/icon_refresh@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "refresh icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_refresh",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_refresh.svg",
+    "icons/white/icon_refresh.png",
+    "icons/white/icon_refresh@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "refresh icon, white"
+  },
+  {
+   "name": "icon_arrow_left",
+   "folder": "icons",
+   "files": [
+    "icons/icon_arrow_left.svg",
+    "icons/icon_arrow_left.png",
+    "icons/icon_arrow_left@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_left icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_arrow_left",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_arrow_left.svg",
+    "icons/white/icon_arrow_left.png",
+    "icons/white/icon_arrow_left@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_left icon, white"
+  },
+  {
+   "name": "icon_arrow_right",
+   "folder": "icons",
+   "files": [
+    "icons/icon_arrow_right.svg",
+    "icons/icon_arrow_right.png",
+    "icons/icon_arrow_right@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_right icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_arrow_right",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_arrow_right.svg",
+    "icons/white/icon_arrow_right.png",
+    "icons/white/icon_arrow_right@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_right icon, white"
+  },
+  {
+   "name": "icon_arrow_up",
+   "folder": "icons",
+   "files": [
+    "icons/icon_arrow_up.svg",
+    "icons/icon_arrow_up.png",
+    "icons/icon_arrow_up@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_up icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_arrow_up",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_arrow_up.svg",
+    "icons/white/icon_arrow_up.png",
+    "icons/white/icon_arrow_up@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_up icon, white"
+  },
+  {
+   "name": "icon_arrow_down",
+   "folder": "icons",
+   "files": [
+    "icons/icon_arrow_down.svg",
+    "icons/icon_arrow_down.png",
+    "icons/icon_arrow_down@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_down icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_arrow_down",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_arrow_down.svg",
+    "icons/white/icon_arrow_down.png",
+    "icons/white/icon_arrow_down@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "arrow_down icon, white"
+  },
+  {
+   "name": "icon_phone",
+   "folder": "icons",
+   "files": [
+    "icons/icon_phone.svg",
+    "icons/icon_phone.png",
+    "icons/icon_phone@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "phone icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_phone",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_phone.svg",
+    "icons/white/icon_phone.png",
+    "icons/white/icon_phone@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "phone icon, white"
+  },
+  {
+   "name": "icon_radio",
+   "folder": "icons",
+   "files": [
+    "icons/icon_radio.svg",
+    "icons/icon_radio.png",
+    "icons/icon_radio@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "radio icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_radio",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_radio.svg",
+    "icons/white/icon_radio.png",
+    "icons/white/icon_radio@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "radio icon, white"
+  },
+  {
+   "name": "icon_box",
+   "folder": "icons",
+   "files": [
+    "icons/icon_box.svg",
+    "icons/icon_box.png",
+    "icons/icon_box@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "box icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_box",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_box.svg",
+    "icons/white/icon_box.png",
+    "icons/white/icon_box@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "box icon, white"
+  },
+  {
+   "name": "icon_trade",
+   "folder": "icons",
+   "files": [
+    "icons/icon_trade.svg",
+    "icons/icon_trade.png",
+    "icons/icon_trade@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "trade icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_trade",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_trade.svg",
+    "icons/white/icon_trade.png",
+    "icons/white/icon_trade@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "trade icon, white"
+  },
+  {
+   "name": "icon_footprint",
+   "folder": "icons",
+   "files": [
+    "icons/icon_footprint.svg",
+    "icons/icon_footprint.png",
+    "icons/icon_footprint@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "footprint icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_footprint",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_footprint.svg",
+    "icons/white/icon_footprint.png",
+    "icons/white/icon_footprint@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "footprint icon, white"
+  },
+  {
+   "name": "icon_bell",
+   "folder": "icons",
+   "files": [
+    "icons/icon_bell.svg",
+    "icons/icon_bell.png",
+    "icons/icon_bell@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "bell icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_bell",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_bell.svg",
+    "icons/white/icon_bell.png",
+    "icons/white/icon_bell@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "bell icon, white"
+  },
+  {
+   "name": "icon_user_plus",
+   "folder": "icons",
+   "files": [
+    "icons/icon_user_plus.svg",
+    "icons/icon_user_plus.png",
+    "icons/icon_user_plus@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "user_plus icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_user_plus",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_user_plus.svg",
+    "icons/white/icon_user_plus.png",
+    "icons/white/icon_user_plus@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "user_plus icon, white"
+  },
+  {
+   "name": "icon_exit",
+   "folder": "icons",
+   "files": [
+    "icons/icon_exit.svg",
+    "icons/icon_exit.png",
+    "icons/icon_exit@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "exit icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_exit",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_exit.svg",
+    "icons/white/icon_exit.png",
+    "icons/white/icon_exit@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "exit icon, white"
+  },
+  {
+   "name": "icon_clock",
+   "folder": "icons",
+   "files": [
+    "icons/icon_clock.svg",
+    "icons/icon_clock.png",
+    "icons/icon_clock@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "clock icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_clock",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_clock.svg",
+    "icons/white/icon_clock.png",
+    "icons/white/icon_clock@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "clock icon, white"
+  },
+  {
+   "name": "icon_dex",
+   "folder": "icons",
+   "files": [
+    "icons/icon_dex.svg",
+    "icons/icon_dex.png",
+    "icons/icon_dex@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "dex icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_dex",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_dex.svg",
+    "icons/white/icon_dex.png",
+    "icons/white/icon_dex@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "dex icon, white"
+  },
+  {
+   "name": "icon_flag",
+   "folder": "icons",
+   "files": [
+    "icons/icon_flag.svg",
+    "icons/icon_flag.png",
+    "icons/icon_flag@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "flag icon, ink colour (recolour freely)"
+  },
+  {
+   "name": "icon_flag",
+   "folder": "icons/white",
+   "files": [
+    "icons/white/icon_flag.svg",
+    "icons/white/icon_flag.png",
+    "icons/white/icon_flag@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "flag icon, white"
+  },
+  {
+   "name": "card",
+   "folder": "panels",
+   "files": [
+    "panels/card.svg",
+    "panels/card.png",
+    "panels/card@2x.png"
+   ],
+   "size": [
+    240,
+    160
+   ],
+   "nine_slice": [
+    36,
+    36,
+    36,
+    36
+   ],
+   "description": "Main white card. 9-slice."
+  },
+  {
+   "name": "card_glass",
+   "folder": "panels",
+   "files": [
+    "panels/card_glass.svg",
+    "panels/card_glass.png",
+    "panels/card_glass@2x.png"
+   ],
+   "size": [
+    240,
+    160
+   ],
+   "nine_slice": [
+    36,
+    36,
+    36,
+    36
+   ],
+   "description": "Translucent card over the world. 9-slice."
+  },
+  {
+   "name": "card_header_teal",
+   "folder": "panels",
+   "files": [
+    "panels/card_header_teal.svg",
+    "panels/card_header_teal.png",
+    "panels/card_header_teal@2x.png"
+   ],
+   "size": [
+    240,
+    180
+   ],
+   "nine_slice": [
+    66,
+    36,
+    36,
+    36
+   ],
+   "description": "Card with a teal title band (stat boxes, Pokédex entry). 9-slice; title band is the top 66 px."
+  },
+  {
+   "name": "card_header_yellow",
+   "folder": "panels",
+   "files": [
+    "panels/card_header_yellow.svg",
+    "panels/card_header_yellow.png",
+    "panels/card_header_yellow@2x.png"
+   ],
+   "size": [
+    240,
+    180
+   ],
+   "nine_slice": [
+    66,
+    36,
+    36,
+    36
+   ],
+   "description": "Card with a yellow title band. 9-slice."
+  },
+  {
+   "name": "dialogue_box",
+   "folder": "panels",
+   "files": [
+    "panels/dialogue_box.svg",
+    "panels/dialogue_box.png",
+    "panels/dialogue_box@2x.png"
+   ],
+   "size": [
+    480,
+    160
+   ],
+   "nine_slice": [
+    40,
+    40,
+    40,
+    40
+   ],
+   "description": "Dialogue / message box with the lavender rim. 9-slice."
+  },
+  {
+   "name": "frame_yellow",
+   "folder": "panels",
+   "files": [
+    "panels/frame_yellow.svg",
+    "panels/frame_yellow.png",
+    "panels/frame_yellow@2x.png"
+   ],
+   "size": [
+    480,
+    320
+   ],
+   "nine_slice": [
+    60,
+    60,
+    60,
+    60
+   ],
+   "description": "Thick yellow frame with a cream field (bag, menus). 9-slice."
+  },
+  {
+   "name": "frame_aqua",
+   "folder": "panels",
+   "files": [
+    "panels/frame_aqua.svg",
+    "panels/frame_aqua.png",
+    "panels/frame_aqua@2x.png"
+   ],
+   "size": [
+    480,
+    320
+   ],
+   "nine_slice": [
+    60,
+    60,
+    60,
+    60
+   ],
+   "description": "Thick aqua frame (Pokédex, PC box). 9-slice."
+  },
+  {
+   "name": "row",
+   "folder": "panels",
+   "files": [
+    "panels/row.svg",
+    "panels/row.png",
+    "panels/row@2x.png"
+   ],
+   "size": [
+    360,
+    76
+   ],
+   "nine_slice": [
+    28,
+    30,
+    28,
+    30
+   ],
+   "description": "List row. 9-slice."
+  },
+  {
+   "name": "row_selected",
+   "folder": "panels",
+   "files": [
+    "panels/row_selected.svg",
+    "panels/row_selected.png",
+    "panels/row_selected@2x.png"
+   ],
+   "size": [
+    360,
+    76
+   ],
+   "nine_slice": [
+    28,
+    30,
+    28,
+    30
+   ],
+   "description": "Selected list row (yellow). 9-slice."
+  },
+  {
+   "name": "row_disabled",
+   "folder": "panels",
+   "files": [
+    "panels/row_disabled.svg",
+    "panels/row_disabled.png",
+    "panels/row_disabled@2x.png"
+   ],
+   "size": [
+    360,
+    76
+   ],
+   "nine_slice": [
+    28,
+    30,
+    28,
+    30
+   ],
+   "description": "Disabled / empty row. 9-slice."
+  },
+  {
+   "name": "row_teal",
+   "folder": "panels",
+   "files": [
+    "panels/row_teal.svg",
+    "panels/row_teal.png",
+    "panels/row_teal@2x.png"
+   ],
+   "size": [
+    360,
+    76
+   ],
+   "nine_slice": [
+    28,
+    30,
+    28,
+    30
+   ],
+   "description": "Highlighted row, teal (you / your entry). 9-slice."
+  },
+  {
+   "name": "row_gold",
+   "folder": "panels",
+   "files": [
+    "panels/row_gold.svg",
+    "panels/row_gold.png",
+    "panels/row_gold@2x.png"
+   ],
+   "size": [
+    360,
+    76
+   ],
+   "nine_slice": [
+    28,
+    30,
+    28,
+    30
+   ],
+   "description": "Host row, gold. 9-slice."
+  },
+  {
+   "name": "row_red",
+   "folder": "panels",
+   "files": [
+    "panels/row_red.svg",
+    "panels/row_red.png",
+    "panels/row_red@2x.png"
+   ],
+   "size": [
+    360,
+    76
+   ],
+   "nine_slice": [
+    28,
+    30,
+    28,
+    30
+   ],
+   "description": "Selected row, red (shops, destructive). 9-slice."
+  },
+  {
+   "name": "button_yellow",
+   "folder": "panels",
+   "files": [
+    "panels/button_yellow.svg",
+    "panels/button_yellow.png",
+    "panels/button_yellow@2x.png"
+   ],
+   "size": [
+    320,
+    72
+   ],
+   "nine_slice": [
+    30,
+    36,
+    30,
+    36
+   ],
+   "description": "Primary action button (yellow pill). 9-slice."
+  },
+  {
+   "name": "button_white",
+   "folder": "panels",
+   "files": [
+    "panels/button_white.svg",
+    "panels/button_white.png",
+    "panels/button_white@2x.png"
+   ],
+   "size": [
+    320,
+    72
+   ],
+   "nine_slice": [
+    30,
+    36,
+    30,
+    36
+   ],
+   "description": "Secondary action button (white pill). 9-slice."
+  },
+  {
+   "name": "button_lavender",
+   "folder": "panels",
+   "files": [
+    "panels/button_lavender.svg",
+    "panels/button_lavender.png",
+    "panels/button_lavender@2x.png"
+   ],
+   "size": [
+    320,
+    72
+   ],
+   "nine_slice": [
+    30,
+    36,
+    30,
+    36
+   ],
+   "description": "Focused secondary button (lavender rim). 9-slice."
+  },
+  {
+   "name": "toast",
+   "folder": "panels",
+   "files": [
+    "panels/toast.svg",
+    "panels/toast.png",
+    "panels/toast@2x.png"
+   ],
+   "size": [
+    400,
+    80
+   ],
+   "nine_slice": [
+    32,
+    40,
+    32,
+    40
+   ],
+   "description": "Notification toast pill. 9-slice."
+  },
+  {
+   "name": "tab",
+   "folder": "panels",
+   "files": [
+    "panels/tab.svg",
+    "panels/tab.png",
+    "panels/tab@2x.png"
+   ],
+   "size": [
+    180,
+    72
+   ],
+   "nine_slice": [
+    30,
+    30,
+    30,
+    30
+   ],
+   "description": "Tab, idle. 9-slice."
+  },
+  {
+   "name": "tab_selected",
+   "folder": "panels",
+   "files": [
+    "panels/tab_selected.svg",
+    "panels/tab_selected.png",
+    "panels/tab_selected@2x.png"
+   ],
+   "size": [
+    180,
+    72
+   ],
+   "nine_slice": [
+    30,
+    30,
+    30,
+    30
+   ],
+   "description": "Tab, selected (teal). 9-slice."
+  },
+  {
+   "name": "hint_bar",
+   "folder": "panels",
+   "files": [
+    "panels/hint_bar.svg",
+    "panels/hint_bar.png",
+    "panels/hint_bar@2x.png"
+   ],
+   "size": [
+    64,
+    52
+   ],
+   "nine_slice": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "description": "Bottom button-hint strip. Stretch horizontally."
+  },
+  {
+   "name": "code_cell",
+   "folder": "panels",
+   "files": [
+    "panels/code_cell.svg",
+    "panels/code_cell.png",
+    "panels/code_cell@2x.png"
+   ],
+   "size": [
+    80,
+    96
+   ],
+   "nine_slice": null,
+   "description": "One character cell for code entry."
+  },
+  {
+   "name": "code_cell_selected",
+   "folder": "panels",
+   "files": [
+    "panels/code_cell_selected.svg",
+    "panels/code_cell_selected.png",
+    "panels/code_cell_selected@2x.png"
+   ],
+   "size": [
+    80,
+    96
+   ],
+   "nine_slice": null,
+   "description": "Code cell under the cursor."
+  },
+  {
+   "name": "session_badge",
+   "folder": "panels",
+   "files": [
+    "panels/session_badge.svg",
+    "panels/session_badge.png",
+    "panels/session_badge@2x.png"
+   ],
+   "size": [
+    240,
+    72
+   ],
+   "nine_slice": [
+    18,
+    18,
+    18,
+    18
+   ],
+   "description": "Session badge background, kept as before (navy). 9-slice."
+  },
+  {
+   "name": "slot_grid",
+   "folder": "panels",
+   "files": [
+    "panels/slot_grid.svg",
+    "panels/slot_grid.png",
+    "panels/slot_grid@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": [
+    24,
+    24,
+    24,
+    24
+   ],
+   "description": "Grid slot (party, box, bag pockets)."
+  },
+  {
+   "name": "slot_grid_selected",
+   "folder": "panels",
+   "files": [
+    "panels/slot_grid_selected.svg",
+    "panels/slot_grid_selected.png",
+    "panels/slot_grid_selected@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": [
+    24,
+    24,
+    24,
+    24
+   ],
+   "description": "Grid slot under the cursor."
+  },
+  {
+   "name": "slot_grid_empty",
+   "folder": "panels",
+   "files": [
+    "panels/slot_grid_empty.svg",
+    "panels/slot_grid_empty.png",
+    "panels/slot_grid_empty@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": [
+    24,
+    24,
+    24,
+    24
+   ],
+   "description": "Empty grid slot."
+  },
+  {
+   "name": "party_card",
+   "folder": "panels",
+   "files": [
+    "panels/party_card.svg",
+    "panels/party_card.png",
+    "panels/party_card@2x.png"
+   ],
+   "size": [
+    300,
+    140
+   ],
+   "nine_slice": [
+    36,
+    36,
+    36,
+    36
+   ],
+   "description": "Party member card (light green). 9-slice."
+  },
+  {
+   "name": "party_card_selected",
+   "folder": "panels",
+   "files": [
+    "panels/party_card_selected.svg",
+    "panels/party_card_selected.png",
+    "panels/party_card_selected@2x.png"
+   ],
+   "size": [
+    300,
+    140
+   ],
+   "nine_slice": [
+    36,
+    36,
+    36,
+    36
+   ],
+   "description": "Party member card under the cursor. 9-slice."
+  },
+  {
+   "name": "cursor",
+   "folder": "cursor",
+   "files": [
+    "cursor/cursor.svg",
+    "cursor/cursor.png",
+    "cursor/cursor@2x.png"
+   ],
+   "size": [
+    44,
+    48
+   ],
+   "nine_slice": null,
+   "description": "Selection cursor (points right). Sits left of the selected row."
+  },
+  {
+   "name": "cursor_small",
+   "folder": "cursor",
+   "files": [
+    "cursor/cursor_small.svg",
+    "cursor/cursor_small.png",
+    "cursor/cursor_small@2x.png"
+   ],
+   "size": [
+    30,
+    32
+   ],
+   "nine_slice": null,
+   "description": "Small cursor for dense lists."
+  },
+  {
+   "name": "value_arrow_left",
+   "folder": "cursor",
+   "files": [
+    "cursor/value_arrow_left.svg",
+    "cursor/value_arrow_left.png",
+    "cursor/value_arrow_left@2x.png"
+   ],
+   "size": [
+    32,
+    40
+   ],
+   "nine_slice": null,
+   "description": "Value-change arrow, left."
+  },
+  {
+   "name": "value_arrow_right",
+   "folder": "cursor",
+   "files": [
+    "cursor/value_arrow_right.svg",
+    "cursor/value_arrow_right.png",
+    "cursor/value_arrow_right@2x.png"
+   ],
+   "size": [
+    32,
+    40
+   ],
+   "nine_slice": null,
+   "description": "Value-change arrow, right."
+  },
+  {
+   "name": "scrollbar_track",
+   "folder": "cursor",
+   "files": [
+    "cursor/scrollbar_track.svg",
+    "cursor/scrollbar_track.png",
+    "cursor/scrollbar_track@2x.png"
+   ],
+   "size": [
+    16,
+    120
+   ],
+   "nine_slice": [
+    10,
+    0,
+    10,
+    0
+   ],
+   "description": "Scrollbar track. 3-slice vertical."
+  },
+  {
+   "name": "scrollbar_thumb",
+   "folder": "cursor",
+   "files": [
+    "cursor/scrollbar_thumb.svg",
+    "cursor/scrollbar_thumb.png",
+    "cursor/scrollbar_thumb@2x.png"
+   ],
+   "size": [
+    16,
+    48
+   ],
+   "nine_slice": [
+    8,
+    0,
+    8,
+    0
+   ],
+   "description": "Scrollbar thumb. 3-slice vertical."
+  },
+  {
+   "name": "button_a",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_a.svg",
+    "buttons/button_a.png",
+    "buttons/button_a@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "A button glyph."
+  },
+  {
+   "name": "button_b",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_b.svg",
+    "buttons/button_b.png",
+    "buttons/button_b@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "B button glyph."
+  },
+  {
+   "name": "button_x",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_x.svg",
+    "buttons/button_x.png",
+    "buttons/button_x@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "X button glyph."
+  },
+  {
+   "name": "button_y",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_y.svg",
+    "buttons/button_y.png",
+    "buttons/button_y@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "Y button glyph."
+  },
+  {
+   "name": "button_l",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_l.svg",
+    "buttons/button_l.png",
+    "buttons/button_l@2x.png"
+   ],
+   "size": [
+    56,
+    40
+   ],
+   "nine_slice": null,
+   "description": "L shoulder button glyph."
+  },
+  {
+   "name": "button_r",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_r.svg",
+    "buttons/button_r.png",
+    "buttons/button_r@2x.png"
+   ],
+   "size": [
+    56,
+    40
+   ],
+   "nine_slice": null,
+   "description": "R shoulder button glyph."
+  },
+  {
+   "name": "button_zl",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_zl.svg",
+    "buttons/button_zl.png",
+    "buttons/button_zl@2x.png"
+   ],
+   "size": [
+    64,
+    40
+   ],
+   "nine_slice": null,
+   "description": "ZL shoulder button glyph."
+  },
+  {
+   "name": "button_zr",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_zr.svg",
+    "buttons/button_zr.png",
+    "buttons/button_zr@2x.png"
+   ],
+   "size": [
+    64,
+    40
+   ],
+   "nine_slice": null,
+   "description": "ZR shoulder button glyph."
+  },
+  {
+   "name": "button_lb",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_lb.svg",
+    "buttons/button_lb.png",
+    "buttons/button_lb@2x.png"
+   ],
+   "size": [
+    64,
+    40
+   ],
+   "nine_slice": null,
+   "description": "LB shoulder button glyph."
+  },
+  {
+   "name": "button_rb",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_rb.svg",
+    "buttons/button_rb.png",
+    "buttons/button_rb@2x.png"
+   ],
+   "size": [
+    64,
+    40
+   ],
+   "nine_slice": null,
+   "description": "RB shoulder button glyph."
+  },
+  {
+   "name": "button_lt",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_lt.svg",
+    "buttons/button_lt.png",
+    "buttons/button_lt@2x.png"
+   ],
+   "size": [
+    64,
+    40
+   ],
+   "nine_slice": null,
+   "description": "LT shoulder button glyph."
+  },
+  {
+   "name": "button_rt",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_rt.svg",
+    "buttons/button_rt.png",
+    "buttons/button_rt@2x.png"
+   ],
+   "size": [
+    64,
+    40
+   ],
+   "nine_slice": null,
+   "description": "RT shoulder button glyph."
+  },
+  {
+   "name": "button_plus",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_plus.svg",
+    "buttons/button_plus.png",
+    "buttons/button_plus@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "plus button glyph."
+  },
+  {
+   "name": "button_minus",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_minus.svg",
+    "buttons/button_minus.png",
+    "buttons/button_minus@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "minus button glyph."
+  },
+  {
+   "name": "button_dpad",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_dpad.svg",
+    "buttons/button_dpad.png",
+    "buttons/button_dpad@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "D-pad glyph."
+  },
+  {
+   "name": "button_dpad_up",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_dpad_up.svg",
+    "buttons/button_dpad_up.png",
+    "buttons/button_dpad_up@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "D-pad, up highlighted."
+  },
+  {
+   "name": "button_dpad_down",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_dpad_down.svg",
+    "buttons/button_dpad_down.png",
+    "buttons/button_dpad_down@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "D-pad, down highlighted."
+  },
+  {
+   "name": "button_dpad_left",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_dpad_left.svg",
+    "buttons/button_dpad_left.png",
+    "buttons/button_dpad_left@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "D-pad, left highlighted."
+  },
+  {
+   "name": "button_dpad_right",
+   "folder": "buttons",
+   "files": [
+    "buttons/button_dpad_right.svg",
+    "buttons/button_dpad_right.png",
+    "buttons/button_dpad_right@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "D-pad, right highlighted."
+  },
+  {
+   "name": "stick_l",
+   "folder": "buttons",
+   "files": [
+    "buttons/stick_l.svg",
+    "buttons/stick_l.png",
+    "buttons/stick_l@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "L stick glyph."
+  },
+  {
+   "name": "stick_r",
+   "folder": "buttons",
+   "files": [
+    "buttons/stick_r.svg",
+    "buttons/stick_r.png",
+    "buttons/stick_r@2x.png"
+   ],
+   "size": [
+    48,
+    48
+   ],
+   "nine_slice": null,
+   "description": "R stick glyph."
+  },
+  {
+   "name": "menu_dex",
+   "folder": "menu",
+   "files": [
+    "menu/menu_dex.svg",
+    "menu/menu_dex.png",
+    "menu/menu_dex@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: dex."
+  },
+  {
+   "name": "menu_dex_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_dex_selected.svg",
+    "menu/menu_dex_selected.png",
+    "menu/menu_dex_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: dex, selected."
+  },
+  {
+   "name": "menu_bag",
+   "folder": "menu",
+   "files": [
+    "menu/menu_bag.svg",
+    "menu/menu_bag.png",
+    "menu/menu_bag@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: bag."
+  },
+  {
+   "name": "menu_bag_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_bag_selected.svg",
+    "menu/menu_bag_selected.png",
+    "menu/menu_bag_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: bag, selected."
+  },
+  {
+   "name": "menu_party",
+   "folder": "menu",
+   "files": [
+    "menu/menu_party.svg",
+    "menu/menu_party.png",
+    "menu/menu_party@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: party."
+  },
+  {
+   "name": "menu_party_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_party_selected.svg",
+    "menu/menu_party_selected.png",
+    "menu/menu_party_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: party, selected."
+  },
+  {
+   "name": "menu_communicate",
+   "folder": "menu",
+   "files": [
+    "menu/menu_communicate.svg",
+    "menu/menu_communicate.png",
+    "menu/menu_communicate@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: communicate."
+  },
+  {
+   "name": "menu_communicate_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_communicate_selected.svg",
+    "menu/menu_communicate_selected.png",
+    "menu/menu_communicate_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: communicate, selected."
+  },
+  {
+   "name": "menu_save",
+   "folder": "menu",
+   "files": [
+    "menu/menu_save.svg",
+    "menu/menu_save.png",
+    "menu/menu_save@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: save."
+  },
+  {
+   "name": "menu_save_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_save_selected.svg",
+    "menu/menu_save_selected.png",
+    "menu/menu_save_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: save, selected."
+  },
+  {
+   "name": "menu_options",
+   "folder": "menu",
+   "files": [
+    "menu/menu_options.svg",
+    "menu/menu_options.png",
+    "menu/menu_options@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: options."
+  },
+  {
+   "name": "menu_options_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_options_selected.svg",
+    "menu/menu_options_selected.png",
+    "menu/menu_options_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: options, selected."
+  },
+  {
+   "name": "menu_map",
+   "folder": "menu",
+   "files": [
+    "menu/menu_map.svg",
+    "menu/menu_map.png",
+    "menu/menu_map@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: map."
+  },
+  {
+   "name": "menu_map_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_map_selected.svg",
+    "menu/menu_map_selected.png",
+    "menu/menu_map_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: map, selected."
+  },
+  {
+   "name": "menu_online",
+   "folder": "menu",
+   "files": [
+    "menu/menu_online.svg",
+    "menu/menu_online.png",
+    "menu/menu_online@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: online."
+  },
+  {
+   "name": "menu_online_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_online_selected.svg",
+    "menu/menu_online_selected.png",
+    "menu/menu_online_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: online, selected."
+  },
+  {
+   "name": "menu_profile",
+   "folder": "menu",
+   "files": [
+    "menu/menu_profile.svg",
+    "menu/menu_profile.png",
+    "menu/menu_profile@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: profile."
+  },
+  {
+   "name": "menu_profile_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_profile_selected.svg",
+    "menu/menu_profile_selected.png",
+    "menu/menu_profile_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: profile, selected."
+  },
+  {
+   "name": "menu_controls",
+   "folder": "menu",
+   "files": [
+    "menu/menu_controls.svg",
+    "menu/menu_controls.png",
+    "menu/menu_controls@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: controls."
+  },
+  {
+   "name": "menu_controls_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_controls_selected.svg",
+    "menu/menu_controls_selected.png",
+    "menu/menu_controls_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: controls, selected."
+  },
+  {
+   "name": "menu_resume",
+   "folder": "menu",
+   "files": [
+    "menu/menu_resume.svg",
+    "menu/menu_resume.png",
+    "menu/menu_resume@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: resume."
+  },
+  {
+   "name": "menu_resume_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_resume_selected.svg",
+    "menu/menu_resume_selected.png",
+    "menu/menu_resume_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: resume, selected."
+  },
+  {
+   "name": "menu_states",
+   "folder": "menu",
+   "files": [
+    "menu/menu_states.svg",
+    "menu/menu_states.png",
+    "menu/menu_states@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: states."
+  },
+  {
+   "name": "menu_states_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_states_selected.svg",
+    "menu/menu_states_selected.png",
+    "menu/menu_states_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: states, selected."
+  },
+  {
+   "name": "menu_friends",
+   "folder": "menu",
+   "files": [
+    "menu/menu_friends.svg",
+    "menu/menu_friends.png",
+    "menu/menu_friends@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: friends."
+  },
+  {
+   "name": "menu_friends_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_friends_selected.svg",
+    "menu/menu_friends_selected.png",
+    "menu/menu_friends_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: friends, selected."
+  },
+  {
+   "name": "menu_pokegear",
+   "folder": "menu",
+   "files": [
+    "menu/menu_pokegear.svg",
+    "menu/menu_pokegear.png",
+    "menu/menu_pokegear@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: pokegear."
+  },
+  {
+   "name": "menu_pokegear_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_pokegear_selected.svg",
+    "menu/menu_pokegear_selected.png",
+    "menu/menu_pokegear_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: pokegear, selected."
+  },
+  {
+   "name": "menu_box",
+   "folder": "menu",
+   "files": [
+    "menu/menu_box.svg",
+    "menu/menu_box.png",
+    "menu/menu_box@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: box."
+  },
+  {
+   "name": "menu_box_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_box_selected.svg",
+    "menu/menu_box_selected.png",
+    "menu/menu_box_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: box, selected."
+  },
+  {
+   "name": "menu_trainer",
+   "folder": "menu",
+   "files": [
+    "menu/menu_trainer.svg",
+    "menu/menu_trainer.png",
+    "menu/menu_trainer@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: trainer."
+  },
+  {
+   "name": "menu_trainer_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_trainer_selected.svg",
+    "menu/menu_trainer_selected.png",
+    "menu/menu_trainer_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: trainer, selected."
+  },
+  {
+   "name": "menu_quit",
+   "folder": "menu",
+   "files": [
+    "menu/menu_quit.svg",
+    "menu/menu_quit.png",
+    "menu/menu_quit@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: quit."
+  },
+  {
+   "name": "menu_quit_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_quit_selected.svg",
+    "menu/menu_quit_selected.png",
+    "menu/menu_quit_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: quit, selected."
+  },
+  {
+   "name": "menu_help",
+   "folder": "menu",
+   "files": [
+    "menu/menu_help.svg",
+    "menu/menu_help.png",
+    "menu/menu_help@2x.png"
+   ],
+   "size": [
+    148,
+    148
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: help."
+  },
+  {
+   "name": "menu_help_selected",
+   "folder": "menu",
+   "files": [
+    "menu/menu_help_selected.svg",
+    "menu/menu_help_selected.png",
+    "menu/menu_help_selected@2x.png"
+   ],
+   "size": [
+    164,
+    164
+   ],
+   "nine_slice": null,
+   "description": "Menu disc: help, selected."
+  },
+  {
+   "name": "command_fight",
+   "folder": "battle",
+   "files": [
+    "battle/command_fight.svg",
+    "battle/command_fight.png",
+    "battle/command_fight@2x.png"
+   ],
+   "size": [
+    170,
+    170
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: fight."
+  },
+  {
+   "name": "command_fight_selected",
+   "folder": "battle",
+   "files": [
+    "battle/command_fight_selected.svg",
+    "battle/command_fight_selected.png",
+    "battle/command_fight_selected@2x.png"
+   ],
+   "size": [
+    186,
+    186
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: fight, selected."
+  },
+  {
+   "name": "command_pokemon",
+   "folder": "battle",
+   "files": [
+    "battle/command_pokemon.svg",
+    "battle/command_pokemon.png",
+    "battle/command_pokemon@2x.png"
+   ],
+   "size": [
+    170,
+    170
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: pokemon."
+  },
+  {
+   "name": "command_pokemon_selected",
+   "folder": "battle",
+   "files": [
+    "battle/command_pokemon_selected.svg",
+    "battle/command_pokemon_selected.png",
+    "battle/command_pokemon_selected@2x.png"
+   ],
+   "size": [
+    186,
+    186
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: pokemon, selected."
+  },
+  {
+   "name": "command_bag",
+   "folder": "battle",
+   "files": [
+    "battle/command_bag.svg",
+    "battle/command_bag.png",
+    "battle/command_bag@2x.png"
+   ],
+   "size": [
+    170,
+    170
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: bag."
+  },
+  {
+   "name": "command_bag_selected",
+   "folder": "battle",
+   "files": [
+    "battle/command_bag_selected.svg",
+    "battle/command_bag_selected.png",
+    "battle/command_bag_selected@2x.png"
+   ],
+   "size": [
+    186,
+    186
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: bag, selected."
+  },
+  {
+   "name": "command_run",
+   "folder": "battle",
+   "files": [
+    "battle/command_run.svg",
+    "battle/command_run.png",
+    "battle/command_run@2x.png"
+   ],
+   "size": [
+    170,
+    170
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: run."
+  },
+  {
+   "name": "command_run_selected",
+   "folder": "battle",
+   "files": [
+    "battle/command_run_selected.svg",
+    "battle/command_run_selected.png",
+    "battle/command_run_selected@2x.png"
+   ],
+   "size": [
+    186,
+    186
+   ],
+   "nine_slice": null,
+   "description": "Battle command disc: run, selected."
+  },
+  {
+   "name": "hp_frame",
+   "folder": "bars",
+   "files": [
+    "bars/hp_frame.svg",
+    "bars/hp_frame.png",
+    "bars/hp_frame@2x.png"
+   ],
+   "size": [
+    260,
+    36
+   ],
+   "nine_slice": [
+    0,
+    20,
+    0,
+    60
+   ],
+   "description": "HP bar frame with the HP tag. Fill sits at x=54..252, y=10..26."
+  },
+  {
+   "name": "bar_frame",
+   "folder": "bars",
+   "files": [
+    "bars/bar_frame.svg",
+    "bars/bar_frame.png",
+    "bars/bar_frame@2x.png"
+   ],
+   "size": [
+    220,
+    28
+   ],
+   "nine_slice": [
+    0,
+    14,
+    0,
+    14
+   ],
+   "description": "Plain bar frame (PP, timer, progress). 3-slice."
+  },
+  {
+   "name": "fill_green",
+   "folder": "bars",
+   "files": [
+    "bars/fill_green.svg",
+    "bars/fill_green.png",
+    "bars/fill_green@2x.png"
+   ],
+   "size": [
+    200,
+    16
+   ],
+   "nine_slice": [
+    0,
+    8,
+    0,
+    8
+   ],
+   "description": "Bar fill, green. Stretch or crop to the value; 3-slice."
+  },
+  {
+   "name": "fill_yellow",
+   "folder": "bars",
+   "files": [
+    "bars/fill_yellow.svg",
+    "bars/fill_yellow.png",
+    "bars/fill_yellow@2x.png"
+   ],
+   "size": [
+    200,
+    16
+   ],
+   "nine_slice": [
+    0,
+    8,
+    0,
+    8
+   ],
+   "description": "Bar fill, yellow. Stretch or crop to the value; 3-slice."
+  },
+  {
+   "name": "fill_red",
+   "folder": "bars",
+   "files": [
+    "bars/fill_red.svg",
+    "bars/fill_red.png",
+    "bars/fill_red@2x.png"
+   ],
+   "size": [
+    200,
+    16
+   ],
+   "nine_slice": [
+    0,
+    8,
+    0,
+    8
+   ],
+   "description": "Bar fill, red. Stretch or crop to the value; 3-slice."
+  },
+  {
+   "name": "fill_blue",
+   "folder": "bars",
+   "files": [
+    "bars/fill_blue.svg",
+    "bars/fill_blue.png",
+    "bars/fill_blue@2x.png"
+   ],
+   "size": [
+    200,
+    16
+   ],
+   "nine_slice": [
+    0,
+    8,
+    0,
+    8
+   ],
+   "description": "Bar fill, blue. Stretch or crop to the value; 3-slice."
+  },
+  {
+   "name": "fill_teal",
+   "folder": "bars",
+   "files": [
+    "bars/fill_teal.svg",
+    "bars/fill_teal.png",
+    "bars/fill_teal@2x.png"
+   ],
+   "size": [
+    200,
+    16
+   ],
+   "nine_slice": [
+    0,
+    8,
+    0,
+    8
+   ],
+   "description": "Bar fill, teal. Stretch or crop to the value; 3-slice."
+  },
+  {
+   "name": "fill_purple",
+   "folder": "bars",
+   "files": [
+    "bars/fill_purple.svg",
+    "bars/fill_purple.png",
+    "bars/fill_purple@2x.png"
+   ],
+   "size": [
+    200,
+    16
+   ],
+   "nine_slice": [
+    0,
+    8,
+    0,
+    8
+   ],
+   "description": "Bar fill, purple. Stretch or crop to the value; 3-slice."
+  },
+  {
+   "name": "signal_good",
+   "folder": "bars",
+   "files": [
+    "bars/signal_good.svg",
+    "bars/signal_good.png",
+    "bars/signal_good@2x.png"
+   ],
+   "size": [
+    40,
+    32
+   ],
+   "nine_slice": null,
+   "description": "Signal bars, good (kept as before)."
+  },
+  {
+   "name": "signal_fair",
+   "folder": "bars",
+   "files": [
+    "bars/signal_fair.svg",
+    "bars/signal_fair.png",
+    "bars/signal_fair@2x.png"
+   ],
+   "size": [
+    40,
+    32
+   ],
+   "nine_slice": null,
+   "description": "Signal bars, fair (kept as before)."
+  },
+  {
+   "name": "signal_poor",
+   "folder": "bars",
+   "files": [
+    "bars/signal_poor.svg",
+    "bars/signal_poor.png",
+    "bars/signal_poor@2x.png"
+   ],
+   "size": [
+    40,
+    32
+   ],
+   "nine_slice": null,
+   "description": "Signal bars, poor (kept as before)."
+  },
+  {
+   "name": "signal_lost",
+   "folder": "bars",
+   "files": [
+    "bars/signal_lost.svg",
+    "bars/signal_lost.png",
+    "bars/signal_lost@2x.png"
+   ],
+   "size": [
+    40,
+    32
+   ],
+   "nine_slice": null,
+   "description": "Signal bars, lost (kept as before)."
+  },
+  {
+   "name": "hex_frame",
+   "folder": "stats",
+   "files": [
+    "stats/hex_frame.svg",
+    "stats/hex_frame.png",
+    "stats/hex_frame@2x.png"
+   ],
+   "size": [
+    340,
+    340
+   ],
+   "nine_slice": null,
+   "description": "Stat hexagon frame: HP top, then Attack, Defense, Speed, Sp. Def, Sp. Atk clockwise."
+  },
+  {
+   "name": "hex_fill_example",
+   "folder": "stats",
+   "files": [
+    "stats/hex_fill_example.svg",
+    "stats/hex_fill_example.png",
+    "stats/hex_fill_example@2x.png"
+   ],
+   "size": [
+    340,
+    340
+   ],
+   "nine_slice": null,
+   "description": "Example stat fill. Draw the polygon from real stats at runtime."
+  },
+  {
+   "name": "crown_gold",
+   "folder": "people",
+   "files": [
+    "people/crown_gold.svg",
+    "people/crown_gold.png",
+    "people/crown_gold@2x.png"
+   ],
+   "size": [
+    56,
+    52
+   ],
+   "nine_slice": null,
+   "description": "Crown, gold. Gold marks the host."
+  },
+  {
+   "name": "crown_silver",
+   "folder": "people",
+   "files": [
+    "people/crown_silver.svg",
+    "people/crown_silver.png",
+    "people/crown_silver@2x.png"
+   ],
+   "size": [
+    56,
+    52
+   ],
+   "nine_slice": null,
+   "description": "Crown, silver. Gold marks the host."
+  },
+  {
+   "name": "crown_bronze",
+   "folder": "people",
+   "files": [
+    "people/crown_bronze.svg",
+    "people/crown_bronze.png",
+    "people/crown_bronze@2x.png"
+   ],
+   "size": [
+    56,
+    52
+   ],
+   "nine_slice": null,
+   "description": "Crown, bronze. Gold marks the host."
+  },
+  {
+   "name": "crown_teal",
+   "folder": "people",
+   "files": [
+    "people/crown_teal.svg",
+    "people/crown_teal.png",
+    "people/crown_teal@2x.png"
+   ],
+   "size": [
+    56,
+    52
+   ],
+   "nine_slice": null,
+   "description": "Crown, teal. Gold marks the host."
+  },
+  {
+   "name": "crown_red",
+   "folder": "people",
+   "files": [
+    "people/crown_red.svg",
+    "people/crown_red.png",
+    "people/crown_red@2x.png"
+   ],
+   "size": [
+    56,
+    52
+   ],
+   "nine_slice": null,
+   "description": "Crown, red. Gold marks the host."
+  },
+  {
+   "name": "chip_ring_blue",
+   "folder": "people",
+   "files": [
+    "people/chip_ring_blue.svg",
+    "people/chip_ring_blue.png",
+    "people/chip_ring_blue@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": null,
+   "description": "Portrait ring, blue player colour. Portrait 64 px inside."
+  },
+  {
+   "name": "chip_ring_green",
+   "folder": "people",
+   "files": [
+    "people/chip_ring_green.svg",
+    "people/chip_ring_green.png",
+    "people/chip_ring_green@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": null,
+   "description": "Portrait ring, green player colour. Portrait 64 px inside."
+  },
+  {
+   "name": "chip_ring_orange",
+   "folder": "people",
+   "files": [
+    "people/chip_ring_orange.svg",
+    "people/chip_ring_orange.png",
+    "people/chip_ring_orange@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": null,
+   "description": "Portrait ring, orange player colour. Portrait 64 px inside."
+  },
+  {
+   "name": "chip_ring_red",
+   "folder": "people",
+   "files": [
+    "people/chip_ring_red.svg",
+    "people/chip_ring_red.png",
+    "people/chip_ring_red@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": null,
+   "description": "Portrait ring, red player colour. Portrait 64 px inside."
+  },
+  {
+   "name": "chip_ring_grey",
+   "folder": "people",
+   "files": [
+    "people/chip_ring_grey.svg",
+    "people/chip_ring_grey.png",
+    "people/chip_ring_grey@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": null,
+   "description": "Portrait ring, grey player colour. Portrait 64 px inside."
+  },
+  {
+   "name": "chip_empty",
+   "folder": "people",
+   "files": [
+    "people/chip_empty.svg",
+    "people/chip_empty.png",
+    "people/chip_empty@2x.png"
+   ],
+   "size": [
+    96,
+    96
+   ],
+   "nine_slice": null,
+   "description": "Empty player slot."
+  },
+  {
+   "name": "status_online",
+   "folder": "people",
+   "files": [
+    "people/status_online.svg",
+    "people/status_online.png",
+    "people/status_online@2x.png"
+   ],
+   "size": [
+    28,
+    28
+   ],
+   "nine_slice": null,
+   "description": "Status dot, online."
+  },
+  {
+   "name": "status_busy",
+   "folder": "people",
+   "files": [
+    "people/status_busy.svg",
+    "people/status_busy.png",
+    "people/status_busy@2x.png"
+   ],
+   "size": [
+    28,
+    28
+   ],
+   "nine_slice": null,
+   "description": "Status dot, busy."
+  },
+  {
+   "name": "status_away",
+   "folder": "people",
+   "files": [
+    "people/status_away.svg",
+    "people/status_away.png",
+    "people/status_away@2x.png"
+   ],
+   "size": [
+    28,
+    28
+   ],
+   "nine_slice": null,
+   "description": "Status dot, away."
+  },
+  {
+   "name": "status_offline",
+   "folder": "people",
+   "files": [
+    "people/status_offline.svg",
+    "people/status_offline.png",
+    "people/status_offline@2x.png"
+   ],
+   "size": [
+    28,
+    28
+   ],
+   "nine_slice": null,
+   "description": "Status dot, offline."
+  },
+  {
+   "name": "new_tag",
+   "folder": "people",
+   "files": [
+    "people/new_tag.svg",
+    "people/new_tag.png",
+    "people/new_tag@2x.png"
+   ],
+   "size": [
+    64,
+    32
+   ],
+   "nine_slice": null,
+   "description": "NEW tag."
+  },
+  {
+   "name": "name_pill_blue",
+   "folder": "people",
+   "files": [
+    "people/name_pill_blue.svg",
+    "people/name_pill_blue.png",
+    "people/name_pill_blue@2x.png"
+   ],
+   "size": [
+    160,
+    56
+   ],
+   "nine_slice": [
+    26,
+    26,
+    26,
+    26
+   ],
+   "description": "Name pill, blue player. 9-slice; text white."
+  },
+  {
+   "name": "name_pill_green",
+   "folder": "people",
+   "files": [
+    "people/name_pill_green.svg",
+    "people/name_pill_green.png",
+    "people/name_pill_green@2x.png"
+   ],
+   "size": [
+    160,
+    56
+   ],
+   "nine_slice": [
+    26,
+    26,
+    26,
+    26
+   ],
+   "description": "Name pill, green player. 9-slice; text white."
+  },
+  {
+   "name": "name_pill_orange",
+   "folder": "people",
+   "files": [
+    "people/name_pill_orange.svg",
+    "people/name_pill_orange.png",
+    "people/name_pill_orange@2x.png"
+   ],
+   "size": [
+    160,
+    56
+   ],
+   "nine_slice": [
+    26,
+    26,
+    26,
+    26
+   ],
+   "description": "Name pill, orange player. 9-slice; text white."
+  },
+  {
+   "name": "name_pill_red",
+   "folder": "people",
+   "files": [
+    "people/name_pill_red.svg",
+    "people/name_pill_red.png",
+    "people/name_pill_red@2x.png"
+   ],
+   "size": [
+    160,
+    56
+   ],
+   "nine_slice": [
+    26,
+    26,
+    26,
+    26
+   ],
+   "description": "Name pill, red player. 9-slice; text white."
+  },
+  {
+   "name": "pointer",
+   "folder": "people",
+   "files": [
+    "people/pointer.svg",
+    "people/pointer.png",
+    "people/pointer@2x.png"
+   ],
+   "size": [
+    64,
+    64
+   ],
+   "nine_slice": null,
+   "description": "Off-screen friend pointer. Rotate toward the friend; tint the arrow with their colour."
+  },
+  {
+   "name": "emote_exclaim",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_exclaim.svg",
+    "emotes/emote_exclaim.png",
+    "emotes/emote_exclaim@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: exclaim."
+  },
+  {
+   "name": "emote_question",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_question.svg",
+    "emotes/emote_question.png",
+    "emotes/emote_question@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: question."
+  },
+  {
+   "name": "emote_heart",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_heart.svg",
+    "emotes/emote_heart.png",
+    "emotes/emote_heart@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: heart."
+  },
+  {
+   "name": "emote_sweat",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_sweat.svg",
+    "emotes/emote_sweat.png",
+    "emotes/emote_sweat@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: sweat."
+  },
+  {
+   "name": "emote_sleep",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_sleep.svg",
+    "emotes/emote_sleep.png",
+    "emotes/emote_sleep@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: sleep."
+  },
+  {
+   "name": "emote_music",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_music.svg",
+    "emotes/emote_music.png",
+    "emotes/emote_music@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: music."
+  },
+  {
+   "name": "emote_hi",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_hi.svg",
+    "emotes/emote_hi.png",
+    "emotes/emote_hi@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: hi."
+  },
+  {
+   "name": "emote_angry",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_angry.svg",
+    "emotes/emote_angry.png",
+    "emotes/emote_angry@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: angry."
+  },
+  {
+   "name": "emote_dots",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_dots.svg",
+    "emotes/emote_dots.png",
+    "emotes/emote_dots@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: dots."
+  },
+  {
+   "name": "emote_sparkle",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_sparkle.svg",
+    "emotes/emote_sparkle.png",
+    "emotes/emote_sparkle@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: sparkle."
+  },
+  {
+   "name": "emote_battle",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_battle.svg",
+    "emotes/emote_battle.png",
+    "emotes/emote_battle@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: battle."
+  },
+  {
+   "name": "emote_thanks",
+   "folder": "emotes",
+   "files": [
+    "emotes/emote_thanks.svg",
+    "emotes/emote_thanks.png",
+    "emotes/emote_thanks@2x.png"
+   ],
+   "size": [
+    72,
+    72
+   ],
+   "nine_slice": null,
+   "description": "Emote bubble: thanks."
+  },
+  {
+   "name": "bg_sunny",
+   "folder": "backgrounds",
+   "files": [
+    "backgrounds/bg_sunny.svg",
+    "backgrounds/bg_sunny.png",
+    "backgrounds/bg_sunny@2x.png"
+   ],
+   "size": [
+    1920,
+    1080
+   ],
+   "nine_slice": null,
+   "description": "Menu backdrop: yellow to lime, soft circles."
+  },
+  {
+   "name": "bg_aqua",
+   "folder": "backgrounds",
+   "files": [
+    "backgrounds/bg_aqua.svg",
+    "backgrounds/bg_aqua.png",
+    "backgrounds/bg_aqua@2x.png"
+   ],
+   "size": [
+    1920,
+    1080
+   ],
+   "nine_slice": null,
+   "description": "Pokédex / box backdrop: aqua."
+  },
+  {
+   "name": "bg_lime",
+   "folder": "backgrounds",
+   "files": [
+    "backgrounds/bg_lime.svg",
+    "backgrounds/bg_lime.png",
+    "backgrounds/bg_lime@2x.png"
+   ],
+   "size": [
+    1920,
+    1080
+   ],
+   "nine_slice": null,
+   "description": "Settings backdrop: lime with stripes."
+  },
+  {
+   "name": "bg_lavender",
+   "folder": "backgrounds",
+   "files": [
+    "backgrounds/bg_lavender.svg",
+    "backgrounds/bg_lavender.png",
+    "backgrounds/bg_lavender@2x.png"
+   ],
+   "size": [
+    1920,
+    1080
+   ],
+   "nine_slice": null,
+   "description": "Online / profile backdrop: lavender."
+  },
+  {
+   "name": "bg_coral",
+   "folder": "backgrounds",
+   "files": [
+    "backgrounds/bg_coral.svg",
+    "backgrounds/bg_coral.png",
+    "backgrounds/bg_coral@2x.png"
+   ],
+   "size": [
+    1920,
+    1080
+   ],
+   "nine_slice": null,
+   "description": "Battle-menu backdrop: coral."
+  },
+  {
+   "name": "bg_dusk",
+   "folder": "backgrounds",
+   "files": [
+    "backgrounds/bg_dusk.svg",
+    "backgrounds/bg_dusk.png",
+    "backgrounds/bg_dusk@2x.png"
+   ],
+   "size": [
+    1920,
+    1080
+   ],
+   "nine_slice": null,
+   "description": "Dark backdrop for title / loading."
+  }
+ ]
+}
