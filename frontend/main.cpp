@@ -52,6 +52,7 @@
 #include "hudmenu.h"
 #include "hudtoast.h"
 #include "hudscreens.h"
+#include "hudbag.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
 #include "merged.h"
@@ -2825,7 +2826,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the trainer card.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the bag, the save screen and the trainer card.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -4935,6 +4936,30 @@ int main(int argc, char** argv)
                 overlayUsed = true;
             }
         }
+        // The bag redrawn (HudBag), read from the game's memory each frame; its sub-menus are
+        // the game's own picture.
+        static uint32_t bagManager = 0;
+        static bool bagShown = false;
+        static HudBag::Texts bagTexts(rom.data(), rom.size());
+        bool bagNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Bag"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "Bag"))
+                {
+                    HudBag::State bs;
+                    bagNow = HudBag::FindManager(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, bagManager) &&
+                        HudBag::ReadState(readRam, bagManager, bs) && HudBag::Shown(bs, bagShown);
+                    if (bagNow)
+                    {
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudBag::Draw(canvas, ui, sprites, font, romArt, bagTexts, bs,
+                            { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Pocket" }, { { "buttons/button_dpad" }, "Choose" },
+                                { { accept }, "Select" }, { { back }, "Close bag" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        bagShown = bagNow;
         if (spritesOk && bootMode != BOOT_NONE && !menu.open && screen == SCR_NONE)
         {
             HudOnline::LoadingScreen(canvas, ui, sprites, font, logo.px.empty() ? nullptr : &logo, "POK\xC3\xA9MON",

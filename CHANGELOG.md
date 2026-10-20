@@ -89,6 +89,10 @@
   and they get a card to answer it (yes or not now, within 20 seconds). It also lists
   the players you have met before and when you last saw them. During a link battle a
   banner at the top shows who is battling whom.
+- A **new bag** (NEW SCREENS): the pockets as round buttons along the top, the page of
+  items in a yellow frame and the chosen item on a card with its picture, count, price
+  and description. You use the bag's buttons as before (L and R change pocket); what to
+  do with an item, how many, and the messages are still the game's own screens.
 - A **new save screen** (NEW SCREENS): your trainer, partner, money, Pokédex, play time and
   badges on one card, with "Save your progress" or "Back to your adventure". The game's
   extra "overwrite the save?" question is answered for you, and its messages go by quickly.

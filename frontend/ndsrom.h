@@ -99,7 +99,7 @@ inline std::string NdsCharToUtf8(uint32_t code)
         { 0x1B2, '\'' }, { 0x1B3, '\'' }, { 0x1B4, '"' }, { 0x1B5, '"' }, { 0x1B9, '(' }, { 0x1BA, ')' },
         { 0x1BB, 0x2642 }, { 0x1BC, 0x2640 }, { 0x1BD, '+' }, { 0x1BE, '-' }, { 0x1BF, '*' }, { 0x1C0, '#' },
         { 0x1C1, '=' }, { 0x1C2, '&' }, { 0x1C3, '~' }, { 0x1C4, ':' }, { 0x1C5, ';' }, { 0x1D0, '@' },
-        { 0x1D2, '%' }, { 0x1DE, ' ' },
+        { 0x1D2, '%' }, { 0x1DE, ' ' }, { 0xE000, ' ' }, { 0x25BC, ' ' }, { 0x25BD, ' ' }, // line and page breaks
     };
     for (const auto& e : extra)
         if (e.first == code) return utf8(e.second);
