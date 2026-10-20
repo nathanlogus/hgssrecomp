@@ -1054,7 +1054,8 @@ struct Settings
     bool showPing = true;
     bool onlineToasts = true;
     bool startScreen = true; // the frontend's own start screen before the game
-    bool autosave = true;    // resume points and the game's own save at calm moments (autosave.h)
+    bool autosave = true;    // resume points (autosave.h): kept in the background, never a freeze
+    bool autosaveGame = false; // also the game's own save at calm moments (it stops the game while it writes)
 
     void Load(const std::string& path)
     {
@@ -1084,6 +1085,7 @@ struct Settings
             else if (k == "online_toasts") onlineToasts = v == "1";
             else if (k == "start_screen") startScreen = v == "1";
             else if (k == "autosave") autosave = v == "1";
+            else if (k == "autosave_game") autosaveGame = v == "1";
             else if (k == "pad_map")
             {
                 std::istringstream ss(v);
@@ -1135,6 +1137,7 @@ struct Settings
         f << "online_toasts=" << (onlineToasts ? 1 : 0) << "\n";
         f << "start_screen=" << (startScreen ? 1 : 0) << "\n";
         f << "autosave=" << (autosave ? 1 : 0) << "\n";
+        f << "autosave_game=" << (autosaveGame ? 1 : 0) << "\n";
         f << "pad_map=";
         for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
@@ -2755,7 +2758,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2803,6 +2806,11 @@ int main(int argc, char** argv)
     // snapshot from the command line).
     bool startOpen = spritesOk && ((cfg.startScreen && !opt.headless && opt.party.empty() && opt.stateLoad.empty()) || getenv("SSR_START_SCREEN"));
     int startSel = 0;
+    // Hosting on this computer (Host when playing, the server being localhost): its party
+    // server is started now, so that it is listening by the time the player is in the world.
+    if (cfg.autoHost && Party_IsLocalServer(cfg.onlineServer) && opt.party.empty() && !opt.headless && !opt.lockstep)
+        if (!Party_StartLocalServer(g_uiDir + "../../tools/party_server.py"))
+            fprintf(stderr, "[party] no Python to start the local party server\n");
     // Before the start screen: the title, the video with the logo, until A (or + or Enter).
     bool titleOpen = startOpen && intro.Ok();
     const uint32_t titleSince = SDL_GetTicks();
@@ -2912,7 +2920,9 @@ int main(int argc, char** argv)
             "Unlimited: as many pictures of the world as your computer can draw, for screens faster than 60 Hz. The game runs at its normal speed either way.");
         add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
         add(T_GAME, M_AUTOSAVE, "Autosave", onOff(cfg.autosave),
-            "Saves the game by itself in Pok\xC3\xA9mon Centers and after a badge, and keeps your place every few minutes and when you quit, for Continue.");
+            "Keeps your place every few minutes and when you quit, in the background, for Continue. The game never stops for it.");
+        add(T_GAME, M_AUTOSAVEGAME, "Also save the game", onOff(cfg.autosaveGame),
+            "Also saves the game itself in Pok\xC3\xA9mon Centers and after a badge. The game stops for a few seconds while it writes.")->disabled = !cfg.autosave;
         add(T_GAME, M_STARTSCREEN, "Start screen", onOff(cfg.startScreen), "Shows the start screen (play, online, settings) when the game starts.");
         add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
         add(T_GAME, M_QUIT, "Quit", "", "Closes the game. The in-game save is kept; play since your last save is not.")->danger = true;
@@ -3932,6 +3942,9 @@ int main(int argc, char** argv)
             case M_AUTOSAVE:
                 cfg.autosave = !cfg.autosave;
                 break;
+            case M_AUTOSAVEGAME:
+                cfg.autosaveGame = !cfg.autosaveGame;
+                break;
             case M_REMAP_RESET:
                 for (int& b : cfg.padMap) b = -1;
                 say("The usual buttons are back", "icons/icon_gamepad");
@@ -4025,7 +4038,7 @@ int main(int argc, char** argv)
             // Test aid: SSR_AUTOSAVE_AT=<frame> asks for a save then.
             static const char* saveAt = getenv("SSR_AUTOSAVE_AT");
             if (saveAt && frame == (uint32_t)atoi(saveAt)) gameSave.Want(frame, true);
-            if (on || gameSave.Busy())
+            if ((on && cfg.autosaveGame) || gameSave.Busy() || saveAt)
             {
                 Autosave::GameSave::In in;
                 in.frame = frame;
@@ -4040,6 +4053,8 @@ int main(int argc, char** argv)
                 in.badges = Party_MyBadges();
                 in.read = readRam;
                 gameSave.Step(in, keys, KEY_A, KEY_B, KEY_X, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT);
+                // The writing itself fast: it took most of the 17 seconds (songs keep their pace).
+                if (gameSave.Busy() && writingNow) speed = 8;
             }
             if (on && !opt.noSave && played && !gameSave.Busy() && !uiOpen && fieldIdle() && (resumeDue || frame - resumeAt >= resumeEvery))
             {
@@ -4528,7 +4543,10 @@ int main(int argc, char** argv)
                 Party_Code() != announcedCode)
             {
                 announcedCode = Party_Code();
-                say("Your session is " + announcedCode + ": share the code to play together", "icons/icon_wifi", 420);
+                // On this computer's own server, friends need its address on the network too.
+                const std::string lan = Party_IsLocalServer(cfg.onlineServer) ? Party_LanAddress() : "";
+                say("Your session is " + announcedCode + (lan.empty() ? ": share the code to play together"
+                    : ": friends join with it on server " + lan), "icons/icon_wifi", 480);
             }
             if (trainerArt.px.empty() && frame % 60 == 0 && fieldActive())
                 worldBlocks.SpriteImage(*nds, Party_MyCard().gender ? 97 : 0, 1, trainerArt); // the boy or the girl, facing south
@@ -5674,6 +5692,7 @@ int main(int argc, char** argv)
         resume.Finish();
     }
     Party_Leave();
+    Party_StopLocalServer();
     if (!opt.headless) SDL_Quit();
     if (nds->ARM9.RecompEnable) rc_print_stats();
     if (opt.lockstep)

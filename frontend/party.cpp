@@ -28,7 +28,10 @@
 #define NOMINMAX
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 #else
+#include <signal.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -37,6 +40,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -1216,6 +1220,110 @@ void Party_Process(int state, int map)
             Dialup();
         }
     }
+}
+
+// The local party server (see party.h).
+#ifdef _WIN32
+static PROCESS_INFORMATION LocalServer = {};
+#else
+static pid_t LocalServer = 0;
+#endif
+
+bool Party_IsLocalServer(const std::string& server)
+{
+    std::string host = server;
+    if (host.size() > 2 && host.front() == '[') host = host.substr(1, host.find(']') - 1);
+    else if (std::count(host.begin(), host.end(), ':') == 1) host = host.substr(0, host.find(':'));
+    return host == "localhost" || host == "127.0.0.1" || host == "::1";
+}
+
+bool Party_StartLocalServer(const std::string& script)
+{
+#ifdef _WIN32
+    if (LocalServer.hProcess) return true;
+    // pythonw has no console window; the py launcher and python are tried after it.
+    for (const char* python : { "pythonw", "pyw -3", "python" })
+    {
+        std::string cmd = std::string(python) + " \"" + script + "\"";
+        std::wstring wcmd(cmd.size() * 2 + 1, L'\0');
+        wcmd.resize(MultiByteToWideChar(CP_UTF8, 0, cmd.c_str(), -1, &wcmd[0], (int)wcmd.size()) - 1);
+        STARTUPINFOW si = {};
+        si.cb = sizeof si;
+        PROCESS_INFORMATION pi = {};
+        if (CreateProcessW(nullptr, &wcmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+        {
+            CloseHandle(pi.hThread);
+            pi.hThread = nullptr;
+            LocalServer = pi;
+            fprintf(stderr, "[party] local party server started (%s)\n", python);
+            return true;
+        }
+    }
+    return false;
+#else
+    if (LocalServer) return true;
+    const pid_t pid = fork();
+    if (pid == 0)
+    {
+        // The child: quiet, then the server (python3, else python).
+        freopen("/dev/null", "w", stdout);
+        freopen("/dev/null", "w", stderr);
+        execlp("python3", "python3", script.c_str(), (char*)nullptr);
+        execlp("python", "python", script.c_str(), (char*)nullptr);
+        _exit(127);
+    }
+    if (pid < 0) return false;
+    LocalServer = pid;
+    fprintf(stderr, "[party] local party server started\n");
+    return true;
+#endif
+}
+
+void Party_StopLocalServer()
+{
+#ifdef _WIN32
+    if (!LocalServer.hProcess) return;
+    TerminateProcess(LocalServer.hProcess, 0);
+    CloseHandle(LocalServer.hProcess);
+    LocalServer = {};
+#else
+    if (!LocalServer) return;
+    kill(LocalServer, SIGTERM);
+    waitpid(LocalServer, nullptr, 0);
+    LocalServer = 0;
+#endif
+}
+
+std::string Party_LanAddress()
+{
+#ifdef _WIN32
+    static bool started = false;
+    WSADATA wsa;
+    if (!started && WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return "";
+    started = true;
+#endif
+    // The address a connection towards the internet would leave from (nothing is sent: a
+    // UDP socket only picks its route on connect).
+    const int s = (int)socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) return "";
+    sockaddr_in to = {};
+    to.sin_family = AF_INET;
+    to.sin_port = htons(53);
+    inet_pton(AF_INET, "8.8.8.8", &to.sin_addr);
+    std::string out;
+    if (connect(s, (sockaddr*)&to, sizeof to) == 0)
+    {
+        sockaddr_in me = {};
+        socklen_t len = sizeof me;
+        char buf[64] = {};
+        if (getsockname(s, (sockaddr*)&me, &len) == 0 && inet_ntop(AF_INET, &me.sin_addr, buf, sizeof buf)) out = buf;
+    }
+#ifdef _WIN32
+    closesocket(s);
+#else
+    close(s);
+#endif
+    return out == "0.0.0.0" ? "" : out;
 }
 
 void Party_Leave()

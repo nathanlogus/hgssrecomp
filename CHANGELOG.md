@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Autosave no longer stops the game: it keeps your place in the background (for Continue).
+  The game's own save by itself in Pokémon Centers and after a badge is now ALSO SAVE THE
+  GAME in the Game tab (off by default), and its writing is much quicker.
+- With your server set to `localhost`, hosting starts the party server by itself (Python
+  needed) and the code message gives your address on the local network, so friends nearby
+  can join straight away; it stops when you quit.
 - **Host when playing** (Online tab, on by default): once you are in the game, a session is
   started by itself on your party server, and its code is shown (and stays in the badge at
   the top left while there is room), so friends can join at any time with that code.

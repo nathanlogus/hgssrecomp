@@ -74,6 +74,17 @@ enum PartyInvite { PI_BATTLE = 1, PI_TRADE = 2, PI_YES = 0x10, PI_NO = 0x20, PI_
 // -1 for one by player number).
 void Party_SetProfile(const std::string& name, int colour);
 
+// The party server on this computer (tools/party_server.py at `script`), started for hosting
+// when the server is "localhost": in the background, without a window, until StopLocalServer
+// (or the game's end). False if no Python could start it.
+bool Party_StartLocalServer(const std::string& script);
+void Party_StopLocalServer();
+// Whether `server` names this computer ("localhost", "127.0.0.1", "::1", with or without :port).
+bool Party_IsLocalServer(const std::string& server);
+// This computer's address on the local network (e.g. 192.168.1.20), for friends nearby; empty
+// if there is none.
+std::string Party_LanAddress();
+
 // Joins the party `code` (a code like SSR-7K2Q, or any name) on `server` ("host" or
 // "host:port"), or with `host` makes a new party for up to `maxPlayers` and gets its code.
 // Returns at once; Party_Link() says how it goes. False if the server cannot be found.
