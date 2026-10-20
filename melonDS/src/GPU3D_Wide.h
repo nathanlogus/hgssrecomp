@@ -55,6 +55,11 @@ struct WideState
     std::vector<u32> Front;
     int FrontW = 0, FrontH = 0;
     u64 FrontSerial = 0;      // changes whenever Front does
+    // The game's 3D frames, counted as they are flushed (before Extra runs), and the one
+    // Front shows: with FrontInterp, the in-between picture of that one and the one before
+    // (60 fps). For drawing things over the picture with the camera it was drawn with.
+    u64 FlushCount = 0, FrontFlush = 0;
+    bool FrontInterp = false;
 };
 extern WideState Wide;
 }

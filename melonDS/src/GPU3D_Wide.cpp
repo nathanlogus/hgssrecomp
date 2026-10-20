@@ -157,6 +157,9 @@ struct WideAccess
     static inline std::vector<Polygon*> ListReal, ListInterp;
     static inline u32 NumReal = 0, NumInterp = 0;
     static inline bool Dirty = false, NeedReal = false, PendingPublish = false;
+    // The flush the lists were built from, and that of the picture in Back.
+    static inline u64 ListFlush = 0, BackFlush = 0;
+    static inline bool BackInterp = false;
     static inline std::vector<u32> Back;
     static inline int BackW = 0, BackH = 0;
     // Per drawing thread, for the strip of rows it is drawing (see Draw): small enough to
@@ -710,6 +713,7 @@ struct WideAccess
         NumInterp = 0;
         if (g.InterpPending)
             Replay(g, true, xnum, ynum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices);
+        ListFlush = Wide.FlushCount;
         Dirty = true;
     }
 
@@ -725,12 +729,16 @@ struct WideAccess
             std::swap(Wide.FrontW, BackW);
             std::swap(Wide.FrontH, BackH);
             Wide.FrontSerial++;
+            Wide.FrontFlush = BackFlush;
+            Wide.FrontInterp = BackInterp;
             PendingPublish = false;
         }
         if (Wide.Width <= 0 || Wide.Height <= 0) return;
         if (showingInterp && NumInterp)
         {
             Draw(gpu, ListInterp.data(), NumInterp);
+            BackFlush = ListFlush;
+            BackInterp = true;
             NeedReal = true;
             Dirty = false;
             PendingPublish = true;
@@ -738,6 +746,8 @@ struct WideAccess
         else if (Dirty || NeedReal || BackW != Wide.Width || BackH != Wide.Height)
         {
             Draw(gpu, ListReal.data(), NumReal);
+            BackFlush = ListFlush;
+            BackInterp = false;
             NeedReal = false;
             Dirty = false;
             PendingPublish = true;

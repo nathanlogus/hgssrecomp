@@ -2565,6 +2565,7 @@ void GPU3D::VBlank() noexcept
                 InterpShowReal = false;
                 if (Wide.Owner == this)
                 {
+                    Wide.FlushCount++;
                     if (Wide.Extra) WideRunExtra(*this);
                     Wide.TexAnim.clear();
                 }

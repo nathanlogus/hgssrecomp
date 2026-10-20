@@ -150,10 +150,6 @@ public:
         if (width < 1 || height < 1 || width * height > 799) return;
         const uint32_t altitudes = matrix + 4 + 2 + 799 * 2, models = (altitudes + 799 + 1) & ~1u;
         const int tx = (int32_t)Read32(Glb + 0x258) >> 16, tz = (int32_t)Read32(Glb + 0x260) >> 16;
-        double cam[12], proj[16];
-        for (int i = 0; i < 12; i++) cam[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
-        for (int i = 0; i < 16; i++) proj[i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
-        const double sx = 256.0 / std::max(256.0f, viewWidth) * zoom;
         for (int z = tz - 22; z <= tz + 14; z++)
             for (int x = tx - 28; x <= tx + 28; x++)
             {
@@ -175,12 +171,8 @@ public:
                 const float brightness = blink * blink;
                 if (brightness < 0.05f) continue;
                 // World units: 1.0 = 0x1000, a tile is 16.
-                const double w[3] = { fx * 16, (Read8(altitudes + cell) << 15) / 4096.0 + fy * 16, fz * 16 };
-                double c[3], clip[4];
-                for (int j = 0; j < 3; j++) c[j] = w[0] * cam[j] + w[1] * cam[3 + j] + w[2] * cam[6 + j] + cam[9 + j];
-                for (int j = 0; j < 4; j++) clip[j] = c[0] * proj[j] + c[1] * proj[4 + j] + c[2] * proj[8 + j] + proj[12 + j];
-                if (clip[3] <= 0) continue;
-                const float u = (float)((sx * clip[0] / clip[3] + 1) / 2), v = (float)((1 - zoom * clip[1] / clip[3]) / 2);
+                float u, v;
+                if (!Place(viewWidth, zoom, fx * 16, (Read8(altitudes + cell) << 15) / 4096.0 + fy * 16, fz * 16, u, v)) continue;
                 if (u < 0 || u > 1 || v < 0 || v > 1) continue;
                 out.push_back({ u, v, brightness });
             }
@@ -189,8 +181,40 @@ public:
     // Street lamps and lanterns around the camera (props with a lamp's build model), as
     // places in the wide picture like Fireflies: the oval their light makes on the ground
     // and the lamp's head.
+    // The game's camera (NNS_G3dGlb's camera and projection matrices, as numbers) and the
+    // view's width and zoom: read when a frame of 3D is flushed, so that what is drawn over
+    // the picture (Place, Lights, Fireflies) uses the camera that picture was drawn with.
+    struct Camera
+    {
+        bool valid = false;
+        double cam[12] = {}, proj[16] = {};
+        float viewWidth = 256, zoom = 1;
+    };
+    Camera ReadCamera(melonDS::NDS& nds, float viewWidth, float zoom)
+    {
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        Camera c;
+        c.valid = true;
+        for (int i = 0; i < 12; i++) c.cam[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
+        for (int i = 0; i < 16; i++) c.proj[i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
+        c.viewWidth = viewWidth;
+        c.zoom = zoom;
+        return c;
+    }
+    // Halfway (t) from a to b: the camera of an in-between picture.
+    static Camera Lerp(const Camera& a, const Camera& b, double t)
+    {
+        Camera c = b;
+        for (int i = 0; i < 12; i++) c.cam[i] = a.cam[i] + (b.cam[i] - a.cam[i]) * t;
+        for (int i = 0; i < 16; i++) c.proj[i] = a.proj[i] + (b.proj[i] - a.proj[i]) * t;
+        return c;
+    }
+    // The camera of the picture on the screen; without one, the game's camera now.
+    Camera Shown;
+
     // A place in the world (world units: a tile is 16) as a place in the wide picture (0 to
-    // 1 across and down), with the camera of the frame last drawn; false behind the camera.
+    // 1 across and down), with the camera of the picture shown; false behind the camera.
     bool PlaceInView(melonDS::NDS& nds, float viewWidth, float zoom, double x, double y, double z, float& u, float& v)
     {
         Ram = nds.MainRAM;
@@ -332,9 +356,20 @@ private:
 
     bool Place(float viewWidth, float zoom, double x, double y, double z, float& u, float& v)
     {
-        double cam[12], proj[16];
-        for (int i = 0; i < 12; i++) cam[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
-        for (int i = 0; i < 16; i++) proj[i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
+        double live[28];
+        const double *cam = Shown.cam, *proj = Shown.proj;
+        if (Shown.valid)
+        {
+            viewWidth = Shown.viewWidth;
+            zoom = Shown.zoom;
+        }
+        else
+        {
+            for (int i = 0; i < 12; i++) live[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
+            for (int i = 0; i < 16; i++) live[12 + i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
+            cam = live;
+            proj = live + 12;
+        }
         const double sx = 256.0 / std::max(256.0f, viewWidth) * zoom;
         double c[3], clip[4];
         for (int j = 0; j < 3; j++) c[j] = x * cam[j] + y * cam[3 + j] + z * cam[6 + j] + cam[9 + j];

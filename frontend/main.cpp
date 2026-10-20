@@ -2381,10 +2381,60 @@ int main(int argc, char** argv)
     };
     RemoteTrainer remotes[4];
     std::vector<WorldBlocks::Trainer> remoteDraw;
+    // At each flush of the game's 3D: its camera and where the trainers were (0-3 the
+    // others, 4 this player), kept for the last few flushes. What is drawn over the picture
+    // uses those of the flush the picture shows (or halfway between two for an in-between
+    // picture), not the newest, so it stays on the world while it moves.
+    struct FlushView
+    {
+        uint64_t flush = 0;
+        WorldBlocks::Camera camera;
+        bool on[5] = {};
+        double pos[5][3] = {};
+    };
+    FlushView flushViews[4];
+    FlushView shownView; // for the picture on the screen
     bool emoteWheel = false;
     melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
         if (cfg.farMap) worldBlocks.Build(*nds, commands);
         worldBlocks.EmitTrainers(*nds, remoteDraw, commands);
+        FlushView& fv = flushViews[melonDS::Wide.FlushCount & 3];
+        fv = FlushView();
+        fv.flush = melonDS::Wide.FlushCount;
+        fv.camera = worldBlocks.ReadCamera(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom);
+        for (int i = 0; i < 4; i++)
+            if ((fv.on[i] = remotes[i].on))
+            {
+                fv.pos[i][0] = remotes[i].x;
+                fv.pos[i][1] = remotes[i].y;
+                fv.pos[i][2] = remotes[i].z;
+            }
+        // This player's trainer (sFieldSysPtr -> playerAvatar -> map object's position).
+        auto rd = [&](uint32_t a) -> uint32_t { return (a >> 24) == 0x02 ? *(uint32_t*)&nds->MainRAM[a & nds->MainRAMMask & ~3u] : 0; };
+        const uint32_t obj = rd(rd(rd(0x021D4158) + 0x40) + 0x30);
+        if ((fv.on[4] = obj != 0))
+            for (int k = 0; k < 3; k++) fv.pos[4][k] = (int32_t)rd(obj + 0x70 + 4 * k);
+    };
+    // The view of the picture now on the screen (see FlushView); none when there is no
+    // widescreen picture, and the overlays then use the game's camera as it is.
+    auto updateShownView = [&]() {
+        const FlushView& cur = flushViews[melonDS::Wide.FrontFlush & 3];
+        const FlushView& prev = flushViews[(melonDS::Wide.FrontFlush - 1) & 3];
+        shownView = FlushView();
+        if (!melonDS::Wide.Owner || cur.flush != melonDS::Wide.FrontFlush || !cur.camera.valid)
+        {
+            worldBlocks.Shown = WorldBlocks::Camera();
+            return;
+        }
+        shownView = cur;
+        if (melonDS::Wide.FrontInterp && prev.flush + 1 == cur.flush && prev.camera.valid)
+        {
+            shownView.camera = WorldBlocks::Lerp(prev.camera, cur.camera, 0.5);
+            for (int i = 0; i < 5; i++)
+                if (cur.on[i] && prev.on[i])
+                    for (int k = 0; k < 3; k++) shownView.pos[i][k] = (prev.pos[i][k] + cur.pos[i][k]) / 2;
+        }
+        worldBlocks.Shown = shownView.camera;
     };
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
@@ -3948,6 +3998,7 @@ int main(int argc, char** argv)
             }
         }
         perfMark(1);
+        updateShownView();
         {
             int pmap = -1, px = 0, pz = 0;
             if (!playerPos(pmap, px, pz)) pmap = -1;
@@ -4415,25 +4466,35 @@ int main(int argc, char** argv)
                     (z + 0x6000) / 4096, u, v);
             };
             float u, v;
+            auto posOf = [&](int i, double out[3]) {
+                const bool fromShown = shownView.camera.valid && shownView.on[i];
+                for (int k = 0; k < 3; k++)
+                    out[k] = fromShown ? shownView.pos[i][k] : i == 4 ? (k == 0 ? peers[me].walk.x : k == 1 ? peers[me].walk.y : peers[me].walk.z)
+                        : (k == 0 ? remotes[i].x : k == 1 ? remotes[i].y : remotes[i].z);
+            };
+            double mine[3] = {};
+            if (me >= 0) posOf(4, mine);
             for (int i = 0; i < 4; i++)
             {
                 if (i == me || !remotes[i].on) continue;
+                double at[3];
+                posOf(i, at);
                 const PartyPeer& p = peers[i];
-                const bool seen = headAt(remotes[i].x, remotes[i].y, remotes[i].z, u, v);
+                const bool seen = headAt(at[0], at[1], at[2], u, v);
                 if (seen && u > 0.03f && u < 0.97f && v > 0.08f && v < 0.97f)
                     HudOnline::NamePill(canvas, ui, sprites, font, u * W, v * H, p, emoteOf(p));
                 else if (me >= 0)
                 {
                     // On the edge of the screen, the way they are from this player (the camera
                     // looks north, so the world's x and z are the screen's across and down).
-                    const float ang = (float)std::atan2(remotes[i].z - peers[me].walk.z, remotes[i].x - peers[me].walk.x);
+                    const float ang = (float)std::atan2(at[2] - mine[2], at[0] - mine[0]);
                     const float ca = std::cos(ang), sa = std::sin(ang);
                     const float k = std::min((W / 2 - 80) / std::max(std::fabs(ca), 1e-3f), (H / 2 - 150) / std::max(std::fabs(sa), 1e-3f));
                     HudOnline::OffscreenPointer(canvas, ui, sprites, font, W / 2 + ca * k, H / 2 + sa * k, ang, p,
                         p.walk.map != peers[me].walk.map ? Party_PlaceName(p.walk.map) : "", W);
                 }
             }
-            if (me >= 0 && peers[me].walk.shown && headAt(peers[me].walk.x, peers[me].walk.y, peers[me].walk.z, u, v))
+            if (me >= 0 && peers[me].walk.shown && headAt(mine[0], mine[1], mine[2], u, v))
             {
                 if (emoteWheel) HudOnline::EmoteWheel(canvas, ui, sprites, u * W, v * H - 40);
                 else HudOnline::NamePill(canvas, ui, sprites, font, u * W, v * H, peers[me], emoteOf(peers[me]));

@@ -857,7 +857,7 @@ index 1204741d..b3332a5d 100644
      if (GeometryEnabled)
      {
          if (RenderingEnabled)
-@@ -2487,6 +2558,25 @@
+@@ -2487,6 +2558,26 @@
  
                  RenderNumPolygons = NumPolygons;
                  RenderFrameIdentical = false;
@@ -868,6 +868,7 @@ index 1204741d..b3332a5d 100644
 +                InterpShowReal = false;
 +                if (Wide.Owner == this)
 +                {
++                    Wide.FlushCount++;
 +                    if (Wide.Extra) WideRunExtra(*this);
 +                    Wide.TexAnim.clear();
 +                }
@@ -883,7 +884,7 @@ index 1204741d..b3332a5d 100644
              }
              else
              {
-@@ -2499,6 +2589,13 @@
+@@ -2499,6 +2590,13 @@
                      && memcmp(RenderEdgeTable, EdgeTable, 8*2) == 0
                      && memcmp(RenderFogDensityTable + 1, FogDensityTable, 32) == 0
                      && memcmp(RenderToonTable, ToonTable, 32*2) == 0;
@@ -897,7 +898,7 @@ index 1204741d..b3332a5d 100644
              }
  
              RenderDispCnt = DispCnt;
-@@ -2535,7 +2632,27 @@
+@@ -2535,7 +2633,27 @@
  
  void GPU3D::VCount215(GPU& gpu) noexcept
  {

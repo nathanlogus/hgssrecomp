@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Name tags, emotes, arrows, lamp glow and fireflies no longer shake or slide over
+  the world while it moves: they are placed with the camera of the picture on the
+  screen (also the 60 fps in-between pictures), not the game's newest.
 - On PC, double-clicking `ssrecomp` in the `build` folder starts the game: it uses
   the ROM the setup program recorded, or else the `.nds` file in the folder above.
   Its messages go to `game.log`.
