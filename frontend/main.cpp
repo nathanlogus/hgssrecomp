@@ -59,6 +59,7 @@
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
+#include "gamesfx.h"
 #define PL_MPEG_IMPLEMENTATION
 #include "intro.h"
 #include "merged.h"
@@ -1038,6 +1039,7 @@ struct Settings
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
     bool redrawn = true;
     bool newSongs = true;
+    bool menuSounds = true; // the game's own cursor and button sounds in the frontend's menus (gamesfx.h)
     std::string textFont = "new"; // Text: a font family of the player's (assets/fonts) by name, "new" (the first), or "game"
     bool newButtons = true; // Button pictures: the player's (assets/buttons) instead of the set's // Music: the player's songs (songs.h) instead of the game's music, where there is one  // the game's screens redrawn in the HUD style (so far the trainer card)
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
@@ -1104,6 +1106,7 @@ struct Settings
             else if (k == "night_fx") nightFx = v == "1";
             else if (k == "redrawn_screens") redrawn = v == "1";
             else if (k == "music") newSongs = v != "original";
+            else if (k == "menu_sounds") menuSounds = v == "1";
             else if (k == "text_font") textFont = v;
             else if (k == "button_pictures") newButtons = v != "classic";
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
@@ -1150,6 +1153,7 @@ struct Settings
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
         f << "music=" << (newSongs ? "new" : "original") << "\n";
+        f << "menu_sounds=" << (menuSounds ? 1 : 0) << "\n";
         f << "text_font=" << textFont << "\n";
         f << "button_pictures=" << (newButtons ? "new" : "classic") << "\n";
         f << "blur=" << blur << "\n";
@@ -2514,6 +2518,35 @@ int main(int argc, char** argv)
     applyButtons();
     SongPlayer songs;
     if (songs.Load(ReadSongFile)) fprintf(stderr, "[songs] a list of songs in %s../songs\n", g_uiDir.c_str());
+    GameSfx sfx;
+    sfx.SetRom(rom.data(), rom.size());
+    auto uiSound = [&](GameSfx::Sound s) {
+        if (cfg.menuSounds) sfx.Play(s);
+    };
+    // A menu's input with its sounds: the cursor sound when the row or tab changes or a value
+    // is changed, the choose sound when a row is used.
+    auto menuUpdate = [&](Menu& m, const MenuInput& in, int& dir) {
+        const int tab = m.tab, sel = m.selected;
+        const int hit = m.Update(in, dir);
+        if (hit >= 0) uiSound(dir ? GameSfx::Cursor : GameSfx::Confirm);
+        else if (m.tab != tab || m.selected != sel) uiSound(GameSfx::Cursor);
+        return hit;
+    };
+    // (Tests: SSR_SFX_DUMP=<folder> writes the rendered sounds there as .wav files.)
+    if (const char* dir = getenv("SSR_SFX_DUMP"))
+        for (int i = 0; i < GameSfx::SoundCount; i++)
+        {
+            const std::vector<int16_t>& pcm = sfx.Get((GameSfx::Sound)i);
+            const std::string path = std::string(dir) + "/sfx" + std::to_string(GameSfx::Seqs[i]) + ".wav";
+            if (FILE* f = fopen(path.c_str(), "wb"))
+            {
+                const uint32_t bytes = (uint32_t)pcm.size() * 2;
+                const uint32_t h[] = { 0x46464952, 36 + bytes, 0x45564157, 0x20746D66, 16, 0x00020001, 48000, 48000 * 4, 0x00100004, 0x61746164, bytes };
+                fwrite(h, 4, 11, f);
+                fwrite(pcm.data(), 2, pcm.size(), f);
+                fclose(f);
+            }
+        }
     // The logo on the start screen: assets/logo.png (beside the HUD's folder), if it is there.
     Image logo;
     {
@@ -2758,7 +2791,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE, M_MENUSOUNDS,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2916,6 +2949,7 @@ int main(int argc, char** argv)
         add(T_GAME, M_MUSIC, "Music", !songs.Any() ? "Original" : cfg.newSongs ? "New songs" : "Original",
             songs.Any() ? "New songs: your own music files (assets/songs, listed in songs.txt) in place of the game's tunes. Sound effects stay."
                         : "Put music files and a songs.txt in assets/songs to hear your own songs in place of the game's tunes.")->disabled = !songs.Any();
+        add(T_GAME, M_MENUSOUNDS, "Menu sounds", onOff(cfg.menuSounds), "The game's own cursor and button sounds in these menus.");
         add(T_GAME, M_FPSMAX, "Frame rate", cfg.fpsUnlimited ? "Unlimited" : "60",
             "Unlimited: as many pictures of the world as your computer can draw, for screens faster than 60 Hz. The game runs at its normal speed either way.");
         add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
@@ -3611,12 +3645,13 @@ int main(int argc, char** argv)
                 }
                 else if (edit.text.size() < edit.max)
                     edit.text += edit.charset[nav.up ? (edit.charset[0] == ' ' ? 1 : 0) : cs - 1];
+                uiSound(GameSfx::Cursor);
             }
-            if (nav.right && edit.cursor < (int)std::min(edit.text.size(), edit.max - 1)) edit.cursor++;
-            if (nav.left && edit.cursor > 0) edit.cursor--;
-            if (pressed(cfg.byLabel ? PAD_X : PAD_Y) && at()) edit.text.erase(edit.cursor, 1);
-            if (nav.accept && (edit.purpose != E_CODE || edit.text.size() == 4)) finishEdit();
-            else if (nav.back) screen = SCR_NONE;
+            if (nav.right && edit.cursor < (int)std::min(edit.text.size(), edit.max - 1)) edit.cursor++, uiSound(GameSfx::Cursor);
+            if (nav.left && edit.cursor > 0) edit.cursor--, uiSound(GameSfx::Cursor);
+            if (pressed(cfg.byLabel ? PAD_X : PAD_Y) && at()) edit.text.erase(edit.cursor, 1), uiSound(GameSfx::Cancel);
+            if (nav.accept && (edit.purpose != E_CODE || edit.text.size() == 4)) finishEdit(), uiSound(GameSfx::Confirm);
+            else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
         }
         else if (screen == SCR_INVITE && (Party_Link() != PartyLink::Online || inviteFrom < 0 || !Party_Peers()[inviteFrom].present))
             screen = SCR_NONE; // the session or the player has gone
@@ -3625,15 +3660,15 @@ int main(int argc, char** argv)
         else if (screen == SCR_INVITE && !toggleMenu)
         {
             int dir = 0;
-            const int hit = inviteMenu.Update(nav, dir);
+            const int hit = menuUpdate(inviteMenu, nav, dir);
             if (hit >= 0 && dir == 0) answerInvite(hit == M_ACCEPT);
-            else if (nav.back) answerInvite(false);
+            else if (nav.back) answerInvite(false), uiSound(GameSfx::Cancel);
         }
         else if (screen == SCR_FRIENDS && !toggleMenu)
         {
             buildFriends();
             int dir = 0;
-            const int hit = friendsMenu.Update(nav, dir);
+            const int hit = menuUpdate(friendsMenu, nav, dir);
             if (nav.tabPrev || nav.tabNext) friendsMenu.selected = 0;
             const int who = hit - M_FRIEND;
             if (friendsMenu.tab == 0 && who >= 0 && who < 4)
@@ -3646,7 +3681,7 @@ int main(int argc, char** argv)
                     screen = SCR_NONE;
                 }
             }
-            if (nav.back) screen = SCR_NONE;
+            if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
         }
         else if (screen == SCR_SESSION && Party_Link() == PartyLink::Off)
             screen = SCR_NONE; // the session has ended
@@ -3654,33 +3689,35 @@ int main(int argc, char** argv)
         {
             buildSession();
             int dir = 0;
-            const int hit = sessionMenu.Update(nav, dir);
+            const int hit = menuUpdate(sessionMenu, nav, dir);
             if (hit == M_HOSTMAX && dir) Party_SetMax(std::clamp(Party_Max() + dir, 2, 4));
             else if (hit == M_LEAVE && dir == 0) screen = SCR_SUMMARY;
-            else if (nav.back) screen = SCR_NONE;
+            else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
         }
         else if (screen == SCR_SUMMARY && !toggleMenu)
         {
             if (nav.accept)
             {
+                uiSound(GameSfx::Confirm);
                 Party_Leave();
                 say("You left the session", "icons/icon_exit");
                 screen = SCR_NONE;
                 buildMenu();
             }
-            else if (nav.back) screen = SCR_NONE;
+            else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
         }
         else if (startOpen && titleOpen && !menu.open && !toggleMenu)
         {
-            if (nav.accept || nav.back || pressed(PAD_START) || pressed(PAD_A)) titleOpen = false;
+            if (nav.accept || nav.back || pressed(PAD_START) || pressed(PAD_A)) titleOpen = false, uiSound(GameSfx::Confirm);
         }
         else if (startOpen && !menu.open && !toggleMenu)
         {
             const int n = (int)startActions.size();
-            if (nav.left) startSel = (startSel + n - 1) % n;
-            if (nav.right) startSel = (startSel + 1) % n;
+            if (nav.left) startSel = (startSel + n - 1) % n, uiSound(GameSfx::Cursor);
+            if (nav.right) startSel = (startSel + 1) % n, uiSound(GameSfx::Cursor);
             if (nav.accept || pressed(PAD_START))
             {
+                uiSound(GameSfx::Confirm);
                 const int act = startActions[startSel];
                 if (act == ST_CONTINUE || act == ST_NEW)
                 {
@@ -3704,7 +3741,7 @@ int main(int argc, char** argv)
             }
         }
         else if (toggleMenu && screen != SCR_NONE)
-            screen = SCR_NONE;
+            screen = SCR_NONE, uiSound(GameSfx::Cancel);
         else if (toggleMenu && startOpen && !menu.open)
             ; // the start screen stays until Play
         else if (toggleMenu)
@@ -3714,8 +3751,9 @@ int main(int argc, char** argv)
             {
                 menu.selected = 0;
                 buildMenu();
+                uiSound(GameSfx::Confirm);
             }
-            else swallowMenuButtons = true;
+            else swallowMenuButtons = true, uiSound(GameSfx::Cancel);
         }
         else if (menu.open && remapping >= 0)
         {
@@ -3734,6 +3772,7 @@ int main(int argc, char** argv)
             }
             if (got >= 0 || nav.back || frame - remapSince > 300)
             {
+                uiSound(got >= 0 ? GameSfx::Confirm : GameSfx::Cancel);
                 remapping = -1;
                 swallowMenuButtons = true;
                 buildMenu();
@@ -3745,6 +3784,7 @@ int main(int argc, char** argv)
             {
                 menu.open = false;
                 swallowMenuButtons = true;
+                uiSound(GameSfx::Cancel);
             }
             // Y on a button row: back to the usual controller button.
             if (const MenuItem* sel = menu.Selected(); sel && sel->id >= M_REMAP && sel->id < M_REMAP + RemapCount && pressed(PAD_Y))
@@ -3753,7 +3793,7 @@ int main(int argc, char** argv)
                 buildMenu();
             }
             int dir = 0;
-            int hit = menu.Update(nav, dir);
+            int hit = menuUpdate(menu, nav, dir);
             if (hit >= M_REMAP && hit < M_REMAP + RemapCount && dir == 0)
             {
                 remapping = hit - M_REMAP;
@@ -3857,6 +3897,9 @@ int main(int argc, char** argv)
                 break;
             case M_MUSIC:
                 cfg.newSongs = !cfg.newSongs;
+                break;
+            case M_MENUSOUNDS:
+                cfg.menuSounds = !cfg.menuSounds;
                 break;
             case M_REDRAWN:
                 cfg.redrawn = !cfg.redrawn;
@@ -4094,7 +4137,9 @@ int main(int argc, char** argv)
                 {
                     if ((savePhase == 0 || savePhase == 1) && saveTarget < 0)
                     {
-                        if (newKeys & ((1u << KEY_UP) | (1u << KEY_DOWN) | (1u << KEY_LEFT) | (1u << KEY_RIGHT))) saveSel ^= 1;
+                        // (Only the cursor's sound: the answer is given to the game's own
+                        // yes/no prompt, which makes its own sound for it.)
+                        if (newKeys & ((1u << KEY_UP) | (1u << KEY_DOWN) | (1u << KEY_LEFT) | (1u << KEY_RIGHT))) saveSel ^= 1, uiSound(GameSfx::Cursor);
                         if (newKeys & (1u << KEY_A)) saveTarget = saveSel;
                         else if (newKeys & (1u << KEY_B)) saveTarget = 1;
                     }
@@ -4902,6 +4947,10 @@ int main(int argc, char** argv)
             }
             soundAt = at;
             if (got > 0) songs.Mix(audioBuf.data(), got);
+            if (got > 0) sfx.Mix(audioBuf.data(), got);
+            // (Tests: SSR_AUDIO_DUMP=<file> writes what is heard there, 48 kHz stereo 16-bit.)
+            static FILE* audioDump = getenv("SSR_AUDIO_DUMP") ? fopen(getenv("SSR_AUDIO_DUMP"), "wb") : nullptr;
+            if (audioDump && got > 0) fwrite(audioBuf.data(), 4, got, audioDump);
         }
         if (audio && got > 0)
         {
