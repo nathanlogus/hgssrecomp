@@ -57,6 +57,8 @@
 #include "hudparty.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
+#define PL_MPEG_IMPLEMENTATION
+#include "intro.h"
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
@@ -2511,6 +2513,11 @@ int main(int argc, char** argv)
 #endif
         if (f.empty() || !DecodePng(f.data(), f.size(), logo)) logo = Image();
     }
+    // The title screen's video (intro.h), if the player has put one in assets/animations.
+    IntroVideo intro;
+#ifndef __ANDROID__
+    if (intro.Load(ReadFile(g_uiDir + "../animations/intro.mpg"))) fprintf(stderr, "[hud] title video\n");
+#endif
     // Other players' trainers near this one (online), moved smoothly towards where they
     // were last heard and drawn into the widescreen world as the far map's people are.
     struct RemoteTrainer
@@ -2788,6 +2795,9 @@ int main(int argc, char** argv)
     // snapshot from the command line).
     bool startOpen = spritesOk && ((cfg.startScreen && !opt.headless && opt.party.empty() && opt.stateLoad.empty()) || getenv("SSR_START_SCREEN"));
     int startSel = 0;
+    // Before the start screen: the title, the video with the logo, until A (or + or Enter).
+    bool titleOpen = startOpen && intro.Ok();
+    const uint32_t titleSince = SDL_GetTicks();
     enum { ST_CONTINUE, ST_NEW, ST_ONLINE, ST_SETTINGS, ST_QUIT };
     const bool haveSave = Party_SaveCard().known;
     std::vector<int> startActions = { ST_NEW, ST_ONLINE, ST_SETTINGS, ST_QUIT };
@@ -3587,6 +3597,10 @@ int main(int argc, char** argv)
                 buildMenu();
             }
             else if (nav.back) screen = SCR_NONE;
+        }
+        else if (startOpen && titleOpen && !menu.open && !toggleMenu)
+        {
+            if (nav.accept || nav.back || pressed(PAD_START) || pressed(PAD_A)) titleOpen = false;
         }
         else if (startOpen && !menu.open && !toggleMenu)
         {
@@ -5138,6 +5152,19 @@ int main(int argc, char** argv)
             }
             else
             {
+                if (titleOpen)
+                {
+                    intro.Draw(canvas, (SDL_GetTicks() - titleSince) / 1000.0);
+                    float lx, ly, lw;
+                    intro.LogoPlace(canvas.w, canvas.h, lx, ly, lw);
+                    if (!logo.px.empty())
+                    {
+                        const float lh = lw * logo.h / logo.w;
+                        Blit(canvas, logo, 0, 0, (float)logo.w, (float)logo.h, lx - lw / 2, ly - lh / 2, lw, lh);
+                    }
+                }
+                else
+                {
                 std::vector<HudOnline::StartItem> items;
                 for (int act : startActions)
                     items.push_back(act == ST_CONTINUE ? HudOnline::StartItem { "CONTINUE", "menu/menu_resume" }
@@ -5167,6 +5194,7 @@ int main(int argc, char** argv)
                 HudOnline::StartScreen(canvas, ui, sprites, font, items, startSel, logo.px.empty() ? nullptr : &logo,
                     heartGold ? "POK\xC3\xA9MON HEARTGOLD" : "POK\xC3\xA9MON SOULSILVER", "ssrecomp \xC2\xB7 widescreen build",
                     { { { accept }, "Select" } }, footer, drawSave);
+                }
             }
             overlayUsed = true;
         }

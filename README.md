@@ -257,6 +257,17 @@ brought to about the loudness of the game's music; sound effects, cries and jing
 the game's own. **Music** in the Game tab switches between the songs and the original
 tunes. The songs are yours: they are not part of this project and are never uploaded with it.
 
+### Title video
+
+A video in `assets/animations/intro.mpg` is shown as a title screen before the start
+screen, in a loop, with `assets/logo.png` on its left (where the video should leave room
+for it; `LogoX`, `LogoY` and `LogoW` in `frontend/intro.h` say where). It has to be MPEG-1
+without sound; ffmpeg makes one from any video:
+
+    ffmpeg -i intro.mp4 -c:v mpeg1video -q:v 3 -an -f mpeg intro.mpg
+
+Like songs, the video is yours and is not part of the project.
+
 ### Your own font and button pictures
 
 The menus and the HUD use the game's own letters and coloured button pictures. A font file

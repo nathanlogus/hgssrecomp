@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A **title screen** before the start screen when there is a video in
+  `assets/animations/intro.mpg`: it plays in a loop with the logo on it, and A (or + or
+  Enter) goes on to the start screen. The game's title music plays meanwhile.
 - **New battle commands** (NEW SCREENS): in single battles FIGHT, POKéMON, BAG and RUN are
   round buttons under the field, beside "What will ... do?", and FIGHT opens a card with
   your Pokémon's moves, their types and PP, and the chosen move's power, accuracy and
