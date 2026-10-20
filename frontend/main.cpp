@@ -375,6 +375,7 @@ struct Options
     bool navStopOnBattle = false;        // end --nav when a battle starts, so the script can play it
     uint32_t stopAt = 0;                 // real frame at which to quit, whatever the script clock says
     uint32_t navAfter = 0;               // script frame at which --nav starts
+    uint32_t talkAfter = 0;              // test aid: from this script frame, walk to the nearest person and talk to them
     std::vector<std::pair<int, std::string>> navMapIds; // grids of single interior maps
     std::string navMap;                  // permission grid from tools/navmap.py for --nav
     uint32_t posEvery = 0;               // test aid: print map and player tile every N frames
@@ -499,6 +500,7 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--nav-stop-on-battle") o.navStopOnBattle = true;
         else if (a == "--stop-at") o.stopAt = strtoul(next().c_str(), nullptr, 10);
         else if (a == "--nav-after") o.navAfter = strtoul(next().c_str(), nullptr, 10);
+        else if (a == "--talk-after") o.talkAfter = strtoul(next().c_str(), nullptr, 10);
         else if (a == "--nav-map") o.navMap = next();
         else if (a == "--nav-map-id")
         {
@@ -2724,6 +2726,71 @@ int main(int argc, char** argv)
                     // With no route (e.g. mid-warp, the target is on the next map) just wait.
                     // Dismiss anything that stops the walk (signs, people talking).
                     if (frame - navState.since > 24 && (frame / 6) % 2 == 0) keys |= 1 << KEY_B;
+                }
+            }
+        }
+        // Talk (--talk-after): walk up to the nearest other person on the map (people move,
+        // so the target is chosen afresh each frame), face them and press A; the script then
+        // answers the conversation. A conversation pauses the player's own movement (map
+        // object flag 0x40); if that has not happened within a second, the person stepped
+        // away as A was pressed, so the walk starts again.
+        static bool talkDone = false;
+        static uint32_t talkAt = 0, talkSince = 0;
+        if (opt.talkAfter && !talkDone && scriptClock >= opt.talkAfter)
+        {
+            if (!talkSince) talkSince = frame;
+            if (frame - talkSince > 3600)
+            {
+                talkDone = true; // nobody to talk to: let the script and the frame count go on
+                printf("talk: gave up at frame %u\n", frame);
+            }
+        }
+        if (opt.talkAfter && talkAt && !talkDone)
+        {
+            if (frame - talkAt < 5) keys |= 1 << KEY_A; // held a few frames, as a tap: the field reads input every other frame
+            const uint32_t me = readRam(readRam(readRam(0x021D4158) + 0x40) + 0x30);
+            if (readRam(me) & 0x40)
+            {
+                talkDone = true;
+                printf("talk: in conversation (frame %u)\n", frame);
+            }
+            else if (frame - talkAt >= 60)
+                talkAt = 0;
+        }
+        if (opt.talkAfter && !talkDone && !talkAt && !navigating && scriptClock >= opt.talkAfter)
+        {
+            int map, x, z;
+            const uint32_t fs = readRam(0x021D4158), mgr = readRam(fs + 0x3C), me = readRam(readRam(fs + 0x40) + 0x30);
+            const uint32_t count = readRam(mgr + 4), objs = readRam(mgr + 0x124);
+            int best = 1 << 30, tx = 0, tz = 0;
+            if (playerPos(map, x, z) && objs && count < 256)
+                for (uint32_t i = 0; i < count; i++)
+                {
+                    const uint32_t o = objs + i * 0x12C;
+                    if (o == me || (readRam(o) & 0x201) != 1) continue; // not the player; active and not hidden
+                    const int ox = (int)readRam(o + 0x64), oz = (int)readRam(o + 0x6C);
+                    const int d = std::abs(ox - x) + std::abs(oz - z);
+                    if (d < best) { best = d; tx = ox; tz = oz; }
+                }
+            if (best < (1 << 30))
+            {
+                navigating = true;
+                static const int talkKeys[4] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT };
+                if (best == 1)
+                {
+                    const int dir = tz < z ? 0 : tz > z ? 1 : tx < x ? 2 : 3;
+                    // currentFacing: 0 up, 1 down, 2 left, 3 right, as the directions here.
+                    if ((int)readRam(me + 0x28) != dir) { if (frame % 8 == 0) keys |= 1 << talkKeys[dir]; }
+                    else
+                    {
+                        keys |= 1 << KEY_A;
+                        talkAt = frame;
+                    }
+                }
+                else
+                {
+                    const int dir = navStep(x, z, tx, tz);
+                    if (dir >= 0) keys |= 1 << talkKeys[dir];
                 }
             }
         }
