@@ -23,6 +23,84 @@ inline void StatRow(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, floa
     HudText(c, ui, f, x + w - 20, y + 10, 32, value, HudColour::Ink, 2);
 }
 
+// The save screen (17-save): the trainer and partner on the left, the save's numbers and
+// badges in a card, the two answers below and a line about the session. `phase`: 0 asking,
+// 1 the game asking to write over the save file (answered for the player), 2 saving, 3
+// saved. `sel`: the answer chosen (0 save, 1 back). `footer`: the place and the time.
+inline void SaveScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const std::string& name, const PartyCard& card, int dex,
+    const Image* trainer, const Image* partner, int phase, int sel, const std::string& session, const std::string& footer,
+    const std::vector<HudHint>& hints)
+{
+    DrawBackdrop(c, sp, "backgrounds/bg_sunny", 0xFFFFFFFF);
+    const float wd = ui.W / ui.s, x0 = wd / 2 - 780;
+    // The trainer and partner.
+    const float lx = x0, ly = 100, lw = 300, lh = 620;
+    HudPanel(c, ui, sp, "panels/card", lx, ly, lw, lh);
+    if (trainer) HudPixelArt(c, ui, trainer, lx + lw / 2 - 128, ly + 70, 256, 256);
+    if (partner) HudPixelArt(c, ui, partner, lx + lw / 2 - 80, ly + 360, 160, 160);
+    HudText(c, ui, f, lx + lw / 2, ly + lh - 70, 32, name, HudColour::Ink, 1);
+
+    // The numbers and the badges.
+    const float cx = x0 + 360, cw = 1200, cy = 100;
+    const float rows = session.empty() ? 5 : 6;
+    const float ch = 40 + rows * 64 + 30;
+    HudPanel(c, ui, sp, "panels/card", cx, cy, cw, ch);
+    char id[16], time[16];
+    snprintf(id, sizeof id, "%05u", card.id & 0xFFFF);
+    snprintf(time, sizeof time, "%d:%02d", card.hours, card.minutes);
+    std::vector<std::pair<std::string, std::string>> list = { { "Name", name }, { "ID No.", id },
+        { "Pok\xC3\xA9" "dex", (dex < 0 ? std::string("-") : std::to_string(dex)) + " Pok\xC3\xA9mon" },
+        { "Money", "$" + Thousands(card.money) }, { "Play time", time } };
+    if (!session.empty()) list.push_back({ "Session", session });
+    const float rx = cx + 36, rw = cw - 36 - 320;
+    float ry = cy + 36;
+    for (size_t i = 0; i < list.size(); i++)
+    {
+        const bool gold = i == 5;
+        if (gold) FillBlend(c, ui(rx - 10), ui(ry - 8), ui(rw + 20), ui(52), 0xFFFFF4C8);
+        HudText(c, ui, f, rx, ry, 32, list[i].first, gold ? 0xFFC88A1E : HudColour::Muted);
+        HudText(c, ui, f, rx + rw, ry, 32, list[i].second, HudColour::Ink, 2);
+        if (!gold) FillBlend(c, ui(rx), ui(ry + 46), ui(rw), ui(2), 0xFFF1E3C8);
+        ry += 64;
+    }
+    const float bx = cx + cw - 300;
+    HudText(c, ui, f, bx + 130, cy + 30, 32, "Badges", HudColour::Muted, 1);
+    for (int i = 0; i < 8; i++)
+    {
+        const float x = bx + 20 + (i % 2) * 120, y = cy + 78 + (i / 2) * 82, s = 72;
+        if (card.johto >> i & 1)
+        {
+            HudSprite(c, ui, sp, "people/chip_ring_orange", x + 10, y, s, s);
+            HudSprite(c, ui, sp, "icons/icon_star", x + 10 + s / 2 - 22, y + s / 2 - 22, 44, 44);
+        }
+        else
+            HudSprite(c, ui, sp, "people/chip_ring_grey", x + 10, y, s, s, 0x80FFFFFF);
+    }
+
+    // The answers, or what is happening.
+    const float by = cy + ch + 70;
+    if (phase == 0)
+    {
+        const char* labels[2] = { "Save your progress", "Back to your adventure" };
+        for (int k = 0; k < 2; k++)
+        {
+            const float y = by + k * 80;
+            HudPanel(c, ui, sp, k == sel ? "panels/button_yellow" : "panels/button_white", cx, y, cw, 60);
+            if (k == sel) HudSprite(c, ui, sp, "cursor/cursor", cx + 20, y + 10, 36, 40);
+            HudText(c, ui, f, cx + cw / 2, y + 14, 32, labels[k], HudColour::Ink, 1);
+        }
+    }
+    else
+    {
+        HudPanel(c, ui, sp, "panels/dialogue_box", cx, by, cw, 100);
+        HudSprite(c, ui, sp, phase <= 2 ? "icons/icon_save" : "icons/icon_check", cx + 36, by + 28, 44, 44);
+        HudText(c, ui, f, cx + 100, by + 32, 32,
+            phase <= 2 ? "Saving... don't turn the power off." : name + " saved the game.", HudColour::Ink);
+    }
+    DrawHintBar(c, ui, sp, f, hints);
+    if (!footer.empty()) HudText(c, ui, f, 32, 1080 - 56 + 12, 32, footer, HudColour::Muted);
+}
+
 // The trainer card: the trainer (their overworld sprite, larger) and partner on the left,
 // the numbers on the right, the badges in a tray. `trainer` and `partner` may be null; the
 // session's rows are shown when `online`.

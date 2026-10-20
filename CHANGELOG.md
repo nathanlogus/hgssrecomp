@@ -75,6 +75,9 @@
   and they get a card to answer it (yes or not now, within 20 seconds). It also lists
   the players you have met before and when you last saw them. During a link battle a
   banner at the top shows who is battling whom.
+- A **new save screen** (NEW SCREENS): your trainer, partner, money, Pokédex, play time and
+  badges on one card, with "Save your progress" or "Back to your adventure". The game's
+  extra "overwrite the save?" question is answered for you, and its messages go by quickly.
 - A **new trainer card**, drawn in the style of the pause menu: your trainer, your
   partner Pokémon, money, Pokédex, play time and the badges you have, and while playing
   together the session's link battles and trades. NEW SCREENS in the Display tab turns

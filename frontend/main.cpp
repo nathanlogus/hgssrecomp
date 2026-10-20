@@ -1352,8 +1352,7 @@ int main(int argc, char** argv)
     if (!opt.headless || configGiven) cfg.Load(opt.config);
     // Online: who this player is (the trainer's name unless another was chosen), and a
     // party to join from the command line (the server is remembered for the menu).
-    auto onlineName = [&]() {
-        if (!cfg.onlineName.empty()) return cfg.onlineName;
+    auto trainerName = [&]() {
         // The trainer's name in the save (general block, PlayerProfile at 0x64).
         for (size_t base : { (size_t)0, (size_t)0x40000 })
             if (base + 0x74 <= sav.size() && sav[base + 0x64] && sav[base + 0x64] != 0xFF)
@@ -1365,6 +1364,7 @@ int main(int argc, char** argv)
             }
         return std::string("Trainer");
     };
+    auto onlineName = [&]() { return cfg.onlineName.empty() ? trainerName() : cfg.onlineName; };
     Party_SetProfile(onlineName(), cfg.onlineColour);
     Party_SetPartner(cfg.onlinePartner);
     if (!opt.party.empty())
@@ -2481,6 +2481,23 @@ int main(int argc, char** argv)
         uint32_t v;
         memcpy(&v, nds->MainRAM + (a & nds->MainRAMMask), 4);
         return v;
+    };
+    // The game's save screen (TouchSaveApp, src/touch_save_app.c): its data, found in memory
+    // by its field system pointer (+0x1C) while its functions run, and kept while it checks
+    // out. +0x0C its step (and +0x10 the step after a message), +0x48 its yes/no prompt.
+    uint32_t saveAppAt = 0;
+    auto findSaveApp = [&]() -> uint32_t {
+        const uint32_t fs = readRam(0x021D4158);
+        auto looks = [&](uint32_t a) {
+            return fs && readRam(a + 0x1C) == fs && readRam(a + 0x0C) < 16 && readRam(a + 0x10) < 16 &&
+                (readRam(a + 0x04) >> 24) == 0x02 && (readRam(a + 0x08) >> 24) == 0x02 && (readRam(a + 0x44) >> 24) == 0x02;
+        };
+        if (saveAppAt && looks(saveAppAt)) return saveAppAt;
+        saveAppAt = 0;
+        if (!std::any_of(std::begin(probeSave), std::end(probeSave), probeActive)) return 0;
+        for (uint32_t a = 0x02100000; a < 0x02400000; a += 4)
+            if (looks(a)) return saveAppAt = a;
+        return 0;
     };
     // The player walking about with nothing of the game open: no X menu, text box or event
     // (the player's map object paused, flag 0x40, while someone talks or a script runs).
@@ -3736,6 +3753,69 @@ int main(int argc, char** argv)
             }
             wheelPrev = emoteWheel ? dpad : 0;
         }
+        // The save screen redrawn (HudScreens::SaveScreen): -1 not shown, else its phase. The
+        // answer is chosen on the card and then given to the game's yes/no prompt as presses
+        // read off the prompt: A to leave touch mode, up to Yes, then A; or B for No.
+        int savePhase = -1;
+        static int saveSel = 0, saveTarget = -1, saveGap = 0, saveLastPhase = -1, saveHold = 0;
+        static uint32_t saveHoldKey = 0;
+        static uint32_t saveKeysBefore = 0;
+        if (cfg.redrawn && spritesOk && !uiOpen && bootMode == BOOT_NONE)
+            if (const uint32_t app = findSaveApp())
+            {
+                const int st = (int)readRam(app + 0x0C), next = st == 2 ? (int)readRam(app + 0x10) : st;
+                // (8 and 9: another adventure's save, a failed save: the game's own messages.)
+                savePhase = next <= 4 ? 0 : next <= 7 ? 1 : next <= 9 ? -1 : next <= 12 ? 2 : 3;
+                if (savePhase != saveLastPhase)
+                {
+                    // The game then asks whether to write over the save file there is (every
+                    // time there is one): already answered by choosing Save.
+                    saveTarget = savePhase == 1 && saveLastPhase == 0 && saveTarget == 0 ? 0 : -1;
+                    saveSel = 0;
+                }
+                saveLastPhase = savePhase;
+                const uint32_t newKeys = keys & ~saveKeysBefore;
+                saveKeysBefore = keys;
+                if (savePhase >= 0)
+                {
+                    if ((savePhase == 0 || savePhase == 1) && saveTarget < 0)
+                    {
+                        if (newKeys & ((1u << KEY_UP) | (1u << KEY_DOWN) | (1u << KEY_LEFT) | (1u << KEY_RIGHT))) saveSel ^= 1;
+                        if (newKeys & (1u << KEY_A)) saveTarget = saveSel;
+                        else if (newKeys & (1u << KEY_B)) saveTarget = 1;
+                    }
+                    keys = 0;
+                    touching = false;
+                    const uint32_t prompt = readRam(app + 0x48);
+                    if (saveHold > 0)
+                    {
+                        // Held a few frames, as a tap: the game reads the buttons every other frame.
+                        keys |= saveHoldKey;
+                        saveHold--;
+                    }
+                    else if (st == 2 && (savePhase >= 1 || saveTarget == 0) && --saveGap <= 0)
+                    {
+                        // Its messages printed at once once Save is chosen, as A does by hand.
+                        saveHoldKey = 1u << KEY_A;
+                        keys |= saveHoldKey;
+                        saveHold = 2;
+                        saveGap = 4;
+                    }
+                    else if (saveTarget >= 0 && (st == 4 || st == 7) && (prompt >> 24) == 0x02 && --saveGap <= 0)
+                    {
+                        const uint32_t w = readRam(prompt + 0x74); // touch mode (bit 0), cursor, result (3: waiting)
+                        if (((w >> 16) & 0xF) == 3)
+                        {
+                            saveHoldKey = (w & 1) ? 1u << KEY_A : saveTarget == 1 ? 1u << KEY_B
+                                : ((w >> 8) & 0xFF) != 0 ? 1u << KEY_UP : 1u << KEY_A;
+                            keys |= saveHoldKey;
+                            saveHold = 3;
+                            saveGap = 8; // then let go: the game acts on new presses
+                        }
+                    }
+                }
+            }
+        if (savePhase < 0) saveLastPhase = -1;
         if (!uiOpen && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
         if (bootMode != BOOT_NONE)
         {
@@ -4659,6 +4739,31 @@ int main(int argc, char** argv)
         else if (menu.open)
         {
             menu.Draw(canvas, "POKEMON SOULSILVER", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
+            overlayUsed = true;
+        }
+        if (savePhase >= 0)
+        {
+            int year, month, day, hour, minute, second;
+            nds->RTC.GetDateTime(year, month, day, hour, minute, second);
+            char clock[16];
+            snprintf(clock, sizeof clock, "%d:%02d", hour, minute);
+            const std::string place = Party_PlaceName(partyMap);
+            std::string session;
+            if (Party_Link() == PartyLink::Online)
+            {
+                const uint32_t secs = Party_SessionSeconds();
+                char t[16];
+                snprintf(t, sizeof t, "%u:%02u", secs / 3600, secs / 60 % 60);
+                session = std::to_string(Party_Count()) + (Party_Count() == 1 ? " player \xC2\xB7 " : " players \xC2\xB7 ") + t;
+            }
+            const std::vector<int> party = Party_MySpecies();
+            const int partnerSpecies = cfg.onlinePartner ? cfg.onlinePartner : party.empty() ? 0 : party[0];
+            const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+            std::vector<HudHint> hints;
+            if (savePhase == 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Confirm" }, { { back }, "Back" } };
+            HudScreens::SaveScreen(canvas, ui, sprites, font, trainerName(), Party_MyCard(), Party_DexCount(),
+                trainerArt.px.empty() ? nullptr : &trainerArt, romArt.PokemonIcon(partnerSpecies), savePhase, saveSel, session,
+                (place.empty() ? "" : place + " \xC2\xB7 ") + clock, hints);
             overlayUsed = true;
         }
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("TrainerCard"))
