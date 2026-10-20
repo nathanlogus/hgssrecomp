@@ -18,6 +18,11 @@
 //
 // Addresses are those of HeartGold and SoulSilver (US), which share this code; it is
 // checked before anything is hooked.
+//
+// Around the link, the online HUD: who is in the party (name, colour, host), what they are
+// doing, the round trip to the server, and events (a Pokemon caught, a badge earned),
+// found by watching this player's save data in memory. Joining happens in the background:
+// the game goes on while the connection is made, and a lost connection is retried for 30 s.
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -43,6 +48,7 @@
 #include <vector>
 
 #include "NDS.h"
+#include "ndsrom.h"
 #include "party.h"
 
 using namespace melonDS;
@@ -101,6 +107,33 @@ u32 Frame = 0; // communication updates so far, for the log
 NDS* Nds = nullptr;
 bool Hooked = false;
 std::vector<u8> In; // received bytes not yet made into messages
+
+// The online side (see the top of this file).
+PartyLink Link = PartyLink::Off;
+std::string Server, Code, JoinCode; // the server, the party's code or name, and what to join
+bool Hosting = false;
+int HostMax = 4, MaxPlayers = 4;
+int Dial = 0;                       // 1 connecting, 2 waiting for the player number
+u32 DialSince = 0, LastHeard = 0, LastPing = 0, LastStatus = 0, LastScan = 0, LostAt = 0, LastTry = 0, SessionStart = 0;
+int Rtt = -1;
+PartyPeer Peers[4];
+bool PendingJoin[4] = {};
+std::deque<PartyEvent> Events;
+std::string MyName = "Trainer";
+int MyColour = 0, MyState = 0, MyMap = -1, SentState = -1, SentMap = -2;
+const uint8_t* RomData = nullptr;
+size_t RomSize = 0;
+// This player's save data in memory: their trainer name and ID find it; the Pokedex is
+// at the same distance from them as in the save file.
+uint8_t TrainerName[16] = {};
+u32 TrainerId = 0, DexDelta = 0;
+bool HaveTrainer = false;
+u32 ProfileAt = 0;
+uint8_t DexCaught[64];
+bool DexKnown = false;
+int Badges = -1, CaughtSession = 0;
+void Lost(const char* why);
+void Fail(const std::string& why);
 
 // Parents seen in the party: player -> beacon (ggid, tgid, attribute, max entry, game info).
 struct Beacon
@@ -176,7 +209,9 @@ u32 CommType()
     return p ? R8(p + 0x4E) : 1;
 }
 
-// A player's wireless address: the firmware's, with the player number added (main.cpp).
+// The wireless address the game is shown for a player: made up from the player number, as
+// a scan result names a parent by its address. (The consoles' own addresses stay as they
+// are: the game resets the clock-related parts of a save that it finds on another console.)
 void MacOf(int player, u8* mac)
 {
     const u8 base[6] = { 0x00, 0x09, 0xBF, 0x11, 0x22, 0x33 };
@@ -217,8 +252,7 @@ void Send(char kind, const std::vector<u8>& body = {})
             timeval tv = { 1, 0 };
             if (select((int)Sock + 1, nullptr, &set, nullptr, &tv) <= 0)
             {
-                fprintf(stderr, "[party] lost the connection to the server\n");
-                Party_Leave();
+                Lost("lost the connection to the server");
                 return;
             }
             continue;
@@ -285,10 +319,107 @@ void Connect(int parent)
     if (Log) fprintf(stderr, "[party] asking player %d to join (link %u)\n", parent + 1, CommType());
 }
 
+void SendHello()
+{
+    // No colour chosen: one by player number, so that everyone differs.
+    std::vector<u8> b = { (u8)(MyColour >= 0 ? MyColour : Me & 3), 0, 0 };
+    b.insert(b.end(), MyName.begin(), MyName.end());
+    Send('N', b);
+}
+
 void Message(char kind, const u8* p, size_t n)
 {
     switch (kind)
     {
+    case 'I': // our player number
+        if (n >= 1 && p[0] < 4 && Dial == 2)
+        {
+            Me = p[0];
+            Dial = 0;
+            for (PartyPeer& q : Peers) q = PartyPeer();
+            Peers[Me].present = true;
+            Peers[Me].sinceMs = Ms();
+            if (Link == PartyLink::Lost) Events.push_back({ PartyEvent::Reconnected, Me });
+            else SessionStart = Ms();
+            Link = PartyLink::Online;
+            LastHeard = LastPing = Ms();
+            Rtt = -1;
+            SentState = -1;
+            SendHello();
+            // Still the parent of a link the game started before the connection was lost.
+            if (Serving) SendBeacon();
+            fprintf(stderr, "[party] in the party as player %d\n", Me + 1);
+        }
+        break;
+    case 'F':
+        Fail(Hosting ? "The server could not make a party" : "That party is full, or there is no party with that code");
+        break;
+    case 'K':
+        Code.assign((const char*)p, n);
+        break;
+    case 'M':
+        if (n >= 1) MaxPlayers = p[0];
+        break;
+    case 'j': // a player joined (their name follows)
+        if (n >= 1 && p[0] < 4)
+        {
+            Peers[p[0]] = PartyPeer();
+            Peers[p[0]].present = true;
+            Peers[p[0]].sinceMs = Ms();
+            PendingJoin[p[0]] = true;
+        }
+        break;
+    case 'l': // a player left
+        if (n >= 1 && p[0] < 4)
+        {
+            if (Peers[p[0]].present && p[0] != Me)
+            {
+                PartyEvent e = { PartyEvent::Left, p[0] };
+                e.text = Peers[p[0]].name;
+                e.arg = Peers[p[0]].colour;
+                Events.push_back(e);
+            }
+            Peers[p[0]] = PartyPeer();
+            PendingJoin[p[0]] = false;
+        }
+        break;
+    case 'N': // who a player is: player, flags, colour, partner (u16), name
+        if (n >= 5 && p[0] < 4)
+        {
+            PartyPeer& q = Peers[p[0]];
+            if (!q.present) q.sinceMs = Ms();
+            q.present = true;
+            q.host = p[1] & 1;
+            q.colour = p[2] & 3;
+            q.name.assign((const char*)p + 5, std::min<size_t>(n - 5, 20));
+            if (PendingJoin[p[0]])
+            {
+                PendingJoin[p[0]] = false;
+                Events.push_back({ PartyEvent::Joined, p[0] });
+            }
+        }
+        break;
+    case 'S': // what a player is doing: player, state, map (u16), badges, round trip (u16)
+        if (n >= 5 && p[0] < 4)
+        {
+            PartyPeer& q = Peers[p[0]];
+            q.state = p[1];
+            q.map = p[2] | p[3] << 8;
+            q.badges = p[4];
+            if (n >= 7) q.rtt = p[5] | p[6] << 8;
+        }
+        break;
+    case 'E': // an event: player, kind, argument (u16)
+        if (n >= 4 && p[0] < 4 && (p[1] == 1 || p[1] == 2))
+            Events.push_back({ p[1] == 1 ? PartyEvent::Caught : PartyEvent::Badge, p[0], p[2] | p[3] << 8 });
+        break;
+    case 'q': // the answer to a ping
+        if (n >= 4)
+        {
+            const int r = (int)(Ms() - RomGet32(p));
+            if (r >= 0 && r < 60000) Rtt = Rtt < 0 ? r : (Rtt * 3 + r) / 4;
+        }
+        break;
     case 'B': // a parent's beacon: player, ggid, tgid, attribute, max entry, game info
         if (n >= 9)
         {
@@ -392,6 +523,7 @@ void Message(char kind, const u8* p, size_t n)
 
 void Receive()
 {
+    if (Sock == NoSocket || Dial == 1) return;
     for (;;)
     {
         u8 buf[4096];
@@ -399,6 +531,7 @@ void Receive()
         if (n > 0)
         {
             In.insert(In.end(), buf, buf + n);
+            LastHeard = Ms();
             continue;
         }
 #ifdef _WIN32
@@ -408,8 +541,7 @@ void Receive()
 #endif
         if (!wouldBlock)
         {
-            fprintf(stderr, "[party] the server closed the connection\n");
-            Party_Leave();
+            Lost("the server closed the connection");
             return;
         }
         break;
@@ -666,6 +798,175 @@ bool Hook(ARMv5* cpu, u32 addr)
     return false;
 }
 
+void CloseSocket()
+{
+    if (Sock == NoSocket) return;
+#ifdef _WIN32
+    closesocket(Sock);
+#else
+    close(Sock);
+#endif
+    Sock = NoSocket;
+    In.clear();
+    Dial = 0;
+}
+
+// The game's link partners are gone with the connection: as when they leave.
+void DropLink()
+{
+    if (!Hooked || !Nds) return;
+    if (ParentPlayer >= 0)
+    {
+        SetField(ErrorCode, 4, ErrDisconnected);
+        SetState(StateError);
+        ParentPlayer = -1;
+    }
+    for (const auto& [player, aid] : AidOfPlayer)
+    {
+        SetField(Connected, 2, Field(Connected, 2) & ~(1u << aid));
+        Queue(Field(DisconnectCallback, 4), aid);
+        Queue(Field(RecvFunc, 4), aid, 0, 0);
+    }
+    AidOfPlayer.clear();
+    PlayerOfAid.clear();
+    Beacons.clear();
+}
+
+void Lost(const char* why)
+{
+    CloseSocket();
+    DropLink();
+    if (Link == PartyLink::Online)
+    {
+        fprintf(stderr, "[party] %s; trying again\n", why);
+        Link = PartyLink::Lost;
+        LostAt = LastTry = Ms();
+        Events.push_back({ PartyEvent::Reconnecting, Me });
+    }
+    else if (Link == PartyLink::Connecting)
+        Fail(why);
+}
+
+void Fail(const std::string& why)
+{
+    CloseSocket();
+    if (Link == PartyLink::Lost) return; // keeps trying until its time is up
+    DropLink();
+    fprintf(stderr, "[party] %s\n", why.c_str());
+    Link = PartyLink::Off;
+    Me = -1;
+    for (PartyPeer& q : Peers) q = PartyPeer();
+    PartyEvent e = { PartyEvent::Failed, -1 };
+    e.text = why;
+    Events.push_back(e);
+}
+
+// Starts connecting to Server; the rest happens in Party_Process.
+bool Dialup()
+{
+#ifdef _WIN32
+    static bool started = false;
+    WSADATA wsa;
+    if (!started && WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
+    started = true;
+#endif
+    const size_t colon = Server.rfind(':');
+    const std::string host = colon == std::string::npos ? Server : Server.substr(0, colon);
+    const std::string port = colon == std::string::npos ? "7373" : Server.substr(colon + 1);
+    addrinfo hints = {}, *res = nullptr;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host.c_str(), port.c_str(), &hints, &res) != 0 || !res) return false;
+    Sock = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP);
+    if (Sock == NoSocket)
+    {
+        freeaddrinfo(res);
+        return false;
+    }
+#ifdef _WIN32
+    u_long nb = 1;
+    ioctlsocket(Sock, FIONBIO, &nb);
+#else
+    fcntl(Sock, F_SETFL, fcntl(Sock, F_GETFL) | O_NONBLOCK);
+#endif
+    int one = 1;
+    setsockopt(Sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof one);
+    connect(Sock, res->ai_addr, (int)res->ai_addrlen); // finishes in the background
+    freeaddrinfo(res);
+    Dial = 1;
+    DialSince = Ms();
+    return true;
+}
+
+// The connection being made: once connected, asks to join (or host).
+void DialStep()
+{
+    if (Ms() - DialSince > 5000)
+    {
+        Fail(Dial == 1 ? "Cannot reach the server " + Server : "No answer from the server " + Server);
+        return;
+    }
+    if (Dial != 1) return;
+    fd_set w, e;
+    FD_ZERO(&w);
+    FD_ZERO(&e);
+    FD_SET(Sock, &w);
+    FD_SET(Sock, &e);
+    timeval tv = { 0, 0 };
+    if (select((int)Sock + 1, nullptr, &w, &e, &tv) <= 0) return;
+    int err = 0;
+    socklen_t len = sizeof err;
+    getsockopt(Sock, SOL_SOCKET, SO_ERROR, (char*)&err, &len);
+    if (err || FD_ISSET(Sock, &e))
+    {
+        Fail("Cannot reach the server " + Server);
+        return;
+    }
+    Dial = 2;
+    if (Hosting) Send('H', { (u8)HostMax });
+    else Send('J', std::vector<u8>(JoinCode.begin(), JoinCode.end()));
+}
+
+// This player's badges and Pokemon caught, from their save data in memory, as events.
+void ScanSave()
+{
+    if (!Nds || !HaveTrainer) return;
+    uint8_t* ram = Nds->MainRAM;
+    const u32 size = Nds->MainRAMMask + 1;
+    auto at = [&](u32 profile) {
+        return profile + 20 <= size && profile + DexDelta + 4 + 64 <= size && !memcmp(ram + profile, TrainerName, 16) &&
+            RomGet32(ram + profile + 16) == TrainerId && RomGet32(ram + profile + DexDelta) == 0xBEEFCAFE;
+    };
+    if (!ProfileAt || !at(ProfileAt))
+    {
+        ProfileAt = 0;
+        DexKnown = false;
+        for (u32 a = 0; a + 20 <= size; a += 4)
+            if (at(a)) { ProfileAt = a; break; }
+        if (!ProfileAt) return;
+    }
+    // Badges: Johto's (+0x1A) and Kanto's (+0x1F), one bit each.
+    int b = 0;
+    for (int i = 0; i < 8; i++) b += (ram[ProfileAt + 0x1A] >> i & 1) + (ram[ProfileAt + 0x1F] >> i & 1);
+    if (Badges >= 0 && b == Badges + 1 && Link == PartyLink::Online) Send('E', { 2, (u8)b, 0 });
+    Badges = b;
+    const uint8_t* caught = ram + ProfileAt + DexDelta + 4;
+    if (DexKnown)
+    {
+        int fresh = 0;
+        for (int i = 0; i < 64; i++) fresh += __builtin_popcount(caught[i] & ~DexCaught[i]);
+        // A handful at most: more is another save (a state loaded), not catches.
+        if (fresh <= 3)
+            for (int i = 0; i < 64 * 8; i++)
+                if ((caught[i >> 3] & ~DexCaught[i >> 3]) >> (i & 7) & 1)
+                {
+                    CaughtSession++;
+                    if (Link == PartyLink::Online) Send('E', { 1, (u8)(i + 1), (u8)((i + 1) >> 8) });
+                }
+    }
+    memcpy(DexCaught, caught, 64);
+    DexKnown = true;
+}
+
 // The game's code is in RAM once it has unpacked itself; hook only if it is the expected code.
 void TryHook()
 {
@@ -681,69 +982,43 @@ void TryHook()
 
 }
 
-int Party_Join(const std::string& server, const std::string& code)
+void Party_SetProfile(const std::string& name, int colour)
 {
-#ifdef _WIN32
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
-#endif
-    Log = getenv("SSR_PARTY_LOG") != nullptr;
-    const size_t colon = server.rfind(':');
-    const std::string host = colon == std::string::npos ? server : server.substr(0, colon);
-    const std::string port = colon == std::string::npos ? "7373" : server.substr(colon + 1);
-    addrinfo hints = {}, *res = nullptr;
-    hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host.c_str(), port.c_str(), &hints, &res) != 0 || !res)
-    {
-        fprintf(stderr, "[party] cannot find the server %s\n", server.c_str());
-        return -1;
-    }
-    Sock = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP);
-    const bool ok = Sock != NoSocket && connect(Sock, res->ai_addr, (int)res->ai_addrlen) == 0;
-    freeaddrinfo(res);
-    if (!ok)
-    {
-        fprintf(stderr, "[party] cannot connect to %s\n", server.c_str());
-        Party_Leave();
-        return -1;
-    }
-    int one = 1;
-    setsockopt(Sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof one);
+    MyName = name.empty() ? "Trainer" : name.substr(0, 10);
+    MyColour = colour >= 0 ? colour & 3 : -1;
+    if (Link == PartyLink::Online) SendHello();
+}
 
-    // The server answers with our player number ("I" n) or that the party is full ("F").
-    Send('J', std::vector<u8>(code.begin(), code.end()));
-    for (u32 start = Ms(); Me < 0 && Ms() - start < 5000;)
+bool Party_Join(const std::string& server, const std::string& code)
+{
+    Party_Leave();
+    Server = server;
+    JoinCode = code;
+    Hosting = false;
+    Log = getenv("SSR_PARTY_LOG") != nullptr;
+    if (!Dialup())
     {
-        u8 buf[8];
-        fd_set set;
-        FD_ZERO(&set);
-        FD_SET(Sock, &set);
-        timeval tv = { 0, 100000 };
-        if (select((int)Sock + 1, &set, nullptr, nullptr, &tv) <= 0) continue;
-        const int n = recv(Sock, (char*)buf, 4, 0);
-        if (n >= 3 && buf[2] == 'F')
-        {
-            fprintf(stderr, "[party] the party \"%s\" is full\n", code.c_str());
-            Party_Leave();
-            return -1;
-        }
-        if (n == 4 && buf[2] == 'I') Me = buf[3];
-        else break;
+        Fail("Cannot find the server " + server);
+        return false;
     }
-    if (Me < 0)
+    Link = PartyLink::Connecting;
+    return true;
+}
+
+bool Party_Host(const std::string& server, int maxPlayers)
+{
+    Party_Leave();
+    Server = server;
+    Hosting = true;
+    HostMax = std::max(2, std::min(4, maxPlayers));
+    Log = getenv("SSR_PARTY_LOG") != nullptr;
+    if (!Dialup())
     {
-        fprintf(stderr, "[party] no answer from %s\n", server.c_str());
-        Party_Leave();
-        return -1;
+        Fail("Cannot find the server " + server);
+        return false;
     }
-#ifdef _WIN32
-    u_long nb = 1;
-    ioctlsocket(Sock, FIONBIO, &nb);
-#else
-    fcntl(Sock, F_SETFL, fcntl(Sock, F_GETFL) | O_NONBLOCK);
-#endif
-    fprintf(stderr, "[party] joined \"%s\" on %s as player %d\n", code.c_str(), server.c_str(), Me + 1);
-    return Me;
+    Link = PartyLink::Connecting;
+    return true;
 }
 
 void Party_Attach(NDS& nds)
@@ -751,23 +1026,157 @@ void Party_Attach(NDS& nds)
     Nds = &nds;
 }
 
-void Party_Process()
+int Party_Count();
+
+void Party_Process(int state, int map)
 {
-    if (Sock == NoSocket) return;
-    TryHook();
+    MyState = state;
+    MyMap = map;
+    static PartyLink shownLink = PartyLink::Off;
+    static int shownCount = 0;
+    static u32 updates = 0;
+    updates++;
+    if (Log && (Link != shownLink || Party_Count() != shownCount))
+        fprintf(stderr, "[party] link %d, %d players, dial %d (update %u)\n", (int)Link, Party_Count(), Dial, updates);
+    shownLink = Link;
+    shownCount = Party_Count();
+    if (Dial) DialStep();
+    Receive();
+    // (After reading: what was heard is never later than `now`.)
+    const u32 now = Ms();
+    if (Link == PartyLink::Online && Sock != NoSocket)
+    {
+        TryHook();
+        if (now - LastHeard > 3500)
+            Lost("no answer from the server");
+        else
+        {
+            if (now - LastPing >= 1000)
+            {
+                Send('Q', { (u8)now, (u8)(now >> 8), (u8)(now >> 16), (u8)(now >> 24) });
+                LastPing = now;
+            }
+            if (now - LastScan >= 1000)
+            {
+                ScanSave();
+                LastScan = now;
+            }
+            if (Sock != NoSocket && (now - LastStatus >= 2000 || state != SentState || map != SentMap))
+            {
+                const int r = std::max(0, std::min(65535, Rtt));
+                Send('S', { (u8)state, (u8)map, (u8)(map >> 8), (u8)std::max(0, Badges), (u8)r, (u8)(r >> 8) });
+                Peers[Me].state = state;
+                Peers[Me].map = map;
+                Peers[Me].badges = std::max(0, Badges);
+                Peers[Me].rtt = Rtt;
+                SentState = state;
+                SentMap = map;
+                LastStatus = now;
+            }
+        }
+    }
+    else if (Link == PartyLink::Lost)
+    {
+        if (now - LostAt > 30000)
+        {
+            Link = PartyLink::Connecting; // so that Fail ends it
+            Fail("Could not reconnect: playing offline");
+        }
+        else if (!Dial && now - LastTry >= 3000)
+        {
+            // Back into the same party, by its code or name.
+            LastTry = now;
+            if (!Code.empty()) JoinCode = Code;
+            Hosting = false;
+            Dialup();
+        }
+    }
 }
 
 void Party_Leave()
 {
-    if (Sock == NoSocket) return;
-    if (Me >= 0) Leave();
-#ifdef _WIN32
-    closesocket(Sock);
-#else
-    close(Sock);
-#endif
-    Sock = NoSocket;
+    if (Link == PartyLink::Online && Me >= 0) Leave();
+    CloseSocket();
+    DropLink();
+    Link = PartyLink::Off;
     Me = -1;
-    ssr_HleHook = nullptr;
-    Hooked = false;
+    Code.clear();
+    Rtt = -1;
+    for (PartyPeer& q : Peers) q = PartyPeer();
+    // The hook stays: the game's wireless code goes on believing in its (now empty) party,
+    // as if every other console had been switched off.
 }
+
+void Party_SetMax(int maxPlayers)
+{
+    if (Link == PartyLink::Online) Send('M', { (u8)std::max(2, std::min(4, maxPlayers)) });
+}
+
+PartyLink Party_Link() { return Link; }
+int Party_Me() { return Me; }
+int Party_Max() { return MaxPlayers; }
+std::string Party_Code() { return Code; }
+int Party_RttMs() { return Rtt; }
+float Party_LostSeconds() { return Link == PartyLink::Lost ? (Ms() - LostAt) / 1000.0f : 0; }
+const PartyPeer* Party_Peers() { return Peers; }
+int Party_Count()
+{
+    int n = 0;
+    for (const PartyPeer& q : Peers) n += q.present;
+    return n;
+}
+bool Party_PopEvent(PartyEvent& e)
+{
+    if (Events.empty()) return false;
+    e = Events.front();
+    Events.pop_front();
+    return true;
+}
+int Party_MyBadges() { return std::max(0, Badges); }
+int Party_CaughtThisSession() { return CaughtSession; }
+uint32_t Party_SessionSeconds() { return Link == PartyLink::Off || !SessionStart ? 0 : (Ms() - SessionStart) / 1000; }
+
+void Party_SetRom(const uint8_t* rom, size_t size)
+{
+    RomData = rom;
+    RomSize = size;
+}
+
+std::string Party_SpeciesName(int species)
+{
+    // Species names are text bank 237; the game writes them in capitals ("HOOTHOOT").
+    std::string s = NdsMessage(RomData, RomSize, 237, species);
+    bool first = true;
+    for (char& ch : s)
+    {
+        if (ch >= 'A' && ch <= 'Z' && !first) ch = (char)(ch - 'A' + 'a');
+        first = !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'));
+    }
+    return s.empty() ? "a Pok\xC3\xA9mon" : s;
+}
+
+void Party_SetSave(const uint8_t* sav, size_t size)
+{
+    // The general block of the newer of the save's two copies: the trainer's name and ID
+    // (PlayerProfile at 0x64), and where the Pokedex (magic 0xBEEFCAFE) is from there.
+    const u32 block = 0xF628;
+    u32 best = ~0u, bestCount = 0;
+    for (u32 base : { 0u, 0x40000u })
+    {
+        if (base + block > size || RomGet32(sav + base + block - 8) != 0x20060623) continue;
+        const u32 count = RomGet32(sav + base + block - 16);
+        if (best == ~0u || count > bestCount) { best = base; bestCount = count; }
+    }
+    HaveTrainer = false;
+    if (best == ~0u) return;
+    for (u32 o = 0; o + 4 <= block - 16; o += 4)
+        if (RomGet32(sav + best + o) == 0xBEEFCAFE)
+        {
+            memcpy(TrainerName, sav + best + 0x64, 16);
+            TrainerId = RomGet32(sav + best + 0x74);
+            DexDelta = o - 0x64;
+            HaveTrainer = true;
+            return;
+        }
+}
+

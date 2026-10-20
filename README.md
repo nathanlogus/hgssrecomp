@@ -217,6 +217,17 @@ the rest), **Controls**, **Online** and **States** (save and load state). In
 **Controls** each DS button can be given another controller button: choose the
 row, press A, then press the button to use; Y puts the usual one back.
 
+**Playing together.** Up to four players can use the Union Room, link battles and
+trades with each other over the internet, each with their own save. One of you
+runs the party server, `python3 tools/party_server.py` (Python 3, nothing else; it
+listens on TCP port 7373, so that port has to be reachable, e.g. forwarded on the
+router). Everyone puts its address in the pause menu's **Online** tab (**Server**).
+Then one player chooses **Host a session** and tells the others the code shown
+(SSR- and four letters), and they choose **Join with a code**. Once in, go to a
+Pokemon Center's wireless club counters (the two ladies at the back) as you
+would with consoles side by side. From the command line, `--party <server>
+--party-code <code>` joins straight away.
+
 `run.sh` also writes what the game prints to `game.log` next to it; a bug report
 about a controller should include it (it lists every controller SDL sees).
 

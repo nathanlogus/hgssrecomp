@@ -50,6 +50,7 @@
 #include "hud.h"
 #include "hudmenu.h"
 #include "hudtoast.h"
+#include "hudonline.h"
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
@@ -570,9 +571,6 @@ static void SetClock(NDS& nds, bool fixed)
     nds.RTC.SetDateTime(y, mo, d, h, mi, sec);
 }
 
-// Player number in a party, or -1: each player's console needs its own wireless address.
-static int PartyPlayer = -1;
-
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
     NDSCart::NDSCartArgs cartArgs;
@@ -590,13 +588,6 @@ static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const s
     }
     NDSArgs args;
     args.JIT = std::nullopt;
-    if (PartyPlayer > 0)
-    {
-        auto& header = args.Firmware.GetHeader();
-        header.MacAddr[5] += PartyPlayer * 0x10; // as melonDS does for its extra instances
-        header.UpdateChecksum();
-        args.Firmware.UpdateChecksums();
-    }
     auto nds = std::make_unique<NDS>(std::move(args));
     nds->SetNDSCart(std::move(cart));
     nds->Reset();
@@ -1033,6 +1024,14 @@ struct Settings
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
     bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
     int windowH = 0;      // window height chosen in the menu; 0 = from --scale
+    // Playing online (party.cpp): the relay server, and who this player is to the others.
+    std::string onlineServer;
+    std::string onlineName; // empty: the trainer's name
+    int onlineColour = -1;  // -1: by player number
+    int hostMax = 4;        // players a hosted session allows
+    bool showPing = true;
+    bool onlineToasts = true;
+    bool startScreen = true; // the frontend's own start screen before the game
 
     void Load(const std::string& path)
     {
@@ -1051,6 +1050,13 @@ struct Settings
             else if (k == "wide") wide = v == "1";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "buttons") byLabel = v != "positions";
+            else if (k == "online_server") onlineServer = v;
+            else if (k == "online_name") onlineName = v.substr(0, 10);
+            else if (k == "online_colour") onlineColour = std::clamp(atoi(v.c_str()), -1, 3);
+            else if (k == "host_max") hostMax = std::clamp(atoi(v.c_str()), 2, 4);
+            else if (k == "show_ping") showPing = v == "1";
+            else if (k == "online_toasts") onlineToasts = v == "1";
+            else if (k == "start_screen") startScreen = v == "1";
             else if (k == "pad_map")
             {
                 std::istringstream ss(v);
@@ -1086,6 +1092,13 @@ struct Settings
         f << "wide=" << (wide ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
+        f << "online_server=" << onlineServer << "\n";
+        f << "online_name=" << onlineName << "\n";
+        f << "online_colour=" << onlineColour << "\n";
+        f << "host_max=" << hostMax << "\n";
+        f << "show_ping=" << (showPing ? 1 : 0) << "\n";
+        f << "online_toasts=" << (onlineToasts ? 1 : 0) << "\n";
+        f << "start_screen=" << (startScreen ? 1 : 0) << "\n";
         f << "pad_map=";
         for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
@@ -1254,19 +1267,16 @@ int main(int argc, char** argv)
 
     std::vector<uint8_t> sav = ReadFile(opt.save);
     fprintf(stderr, "ROM %s: %zu bytes; save %s: %zu bytes\n", opt.rom.c_str(), rom.size(), opt.save.c_str(), sav.size());
-    if (!opt.party.empty())
+    if (!opt.party.empty() && opt.lockstep)
     {
-        if (opt.lockstep)
-        {
-            fprintf(stderr, "--party cannot be used with --lockstep\n");
-            return 2;
-        }
-        PartyPlayer = Party_Join(opt.party, opt.partyCode);
-        if (PartyPlayer < 0) return 1;
+        fprintf(stderr, "--party cannot be used with --lockstep\n");
+        return 2;
     }
     auto nds = MakeConsole(rom, sav, opt.headless);
     if (!nds) return 1;
-    if (PartyPlayer >= 0) Party_Attach(*nds);
+    Party_Attach(*nds);
+    Party_SetRom(rom.data(), rom.size());
+    Party_SetSave(sav.data(), sav.size());
     nds->ARM9.RecompEnable = opt.recomp;
 
     // Lockstep: a second console on the plain interpreter runs each frame first and
@@ -1325,6 +1335,27 @@ int main(int argc, char** argv)
 
     Settings cfg;
     if (!opt.headless || configGiven) cfg.Load(opt.config);
+    // Online: who this player is (the trainer's name unless another was chosen), and a
+    // party to join from the command line (the server is remembered for the menu).
+    auto onlineName = [&]() {
+        if (!cfg.onlineName.empty()) return cfg.onlineName;
+        // The trainer's name in the save (general block, PlayerProfile at 0x64).
+        for (size_t base : { (size_t)0, (size_t)0x40000 })
+            if (base + 0x74 <= sav.size() && sav[base + 0x64] && sav[base + 0x64] != 0xFF)
+            {
+                uint16_t codes[8];
+                memcpy(codes, &sav[base + 0x64], 16);
+                const std::string n = NdsText(codes, 8);
+                if (!n.empty()) return n;
+            }
+        return std::string("Trainer");
+    };
+    Party_SetProfile(onlineName(), cfg.onlineColour);
+    if (!opt.party.empty())
+    {
+        if (!opt.headless || configGiven) cfg.onlineServer = opt.party;
+        Party_Join(opt.party, opt.partyCode);
+    }
     if (opt.layoutGiven || opt.headless) cfg.layout = opt.layout;
     if (opt.fullscreen) cfg.fullscreen = true;
     if (!opt.autoFocus) cfg.focusMode = 1;
@@ -2459,12 +2490,33 @@ int main(int argc, char** argv)
         M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_ASPECT, M_WINDOWSIZE, M_WIDE, M_ZOOM, M_FARMAP, M_VOIDFILL, M_NIGHTFX, M_BLUR, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT,
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
+        M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN,
     };
     // The pause menu's tabs.
-    enum { T_RESUME, T_GAME, T_DISPLAY, T_CONTROLS, T_ONLINE, T_STATES };
+    enum { T_RESUME, T_GAME, T_DISPLAY, T_CONTROLS, T_ONLINE, T_PROFILE, T_STATES };
     menu.tabs = { { "RESUME", "menu/menu_resume" }, { "GAME", "menu/menu_party" }, { "DISPLAY", "menu/menu_options" },
-        { "CONTROLS", "menu/menu_controls" }, { "ONLINE", "menu/menu_online" }, { "STATES", "menu/menu_states" } };
+        { "CONTROLS", "menu/menu_controls" }, { "ONLINE", "menu/menu_online" }, { "PROFILE", "menu/menu_profile" },
+        { "STATES", "menu/menu_states" } };
     menu.tab = T_DISPLAY;
+    // Screens of the online HUD over (or instead of) the pause menu.
+    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT };
+    int screen = SCR_NONE;
+    Menu sessionMenu;
+    sessionMenu.open = true;
+    // The frontend's own start screen, before the game runs (not for tests or a party or
+    // snapshot from the command line).
+    bool startOpen = spritesOk && ((cfg.startScreen && !opt.headless && opt.party.empty() && opt.stateLoad.empty()) || getenv("SSR_START_SCREEN"));
+    int startSel = 0;
+    // Typing a text: the nickname, the server's address or a party's code.
+    enum { E_NAME, E_SERVER, E_CODE };
+    struct TextEdit
+    {
+        int purpose = E_NAME;
+        std::string text, charset;
+        size_t max = 10;
+        int cursor = 0;
+    } edit;
+    static const std::string CodeLetters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no O/0 or I/1
     // The DS button waiting for a controller button in the Controls tab (-1 none), and since when.
     int remapping = -1;
     uint32_t remapSince = 0;
@@ -2477,7 +2529,6 @@ int main(int argc, char** argv)
         while (i + 1 < detailCount && detailLines[i + 1] <= cfg.wideLines) i++;
         return i;
     };
-    auto partyStatus = [&]() { return PartyPlayer >= 0 ? "Player " + std::to_string(PartyPlayer + 1) : std::string("Offline"); };
     auto buildMenu = [&]() {
         auto onOff = [](bool v) { return std::string(v ? "On" : "Off"); };
         static const char* large[] = { "Auto", "Top", "Bottom" };
@@ -2500,6 +2551,7 @@ int main(int argc, char** argv)
 
         add(T_GAME, M_FPS60, "60 fps", onOff(cfg.fps60), "Draws a picture between each two of the game's, so the world moves at 60 frames a second.");
         add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
+        add(T_GAME, M_STARTSCREEN, "Start screen", onOff(cfg.startScreen), "Shows the start screen (play, online, settings) when the game starts.");
         add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
         add(T_GAME, M_QUIT, "Quit", "", "Closes the game. The in-game save is kept; play since your last save is not.")->danger = true;
 
@@ -2534,12 +2586,73 @@ int main(int argc, char** argv)
         add(T_CONTROLS, M_PADTOUCH, "Stick touch cursor", onOff(cfg.padTouch), "Moves a cursor on the touch screen with the right stick; click the stick to touch.");
         add(T_CONTROLS, M_REMAP_RESET, "Usual buttons", "", "Gives every DS button its usual controller button again.");
 
-        add(T_ONLINE, -1, "Status", partyStatus(), "Playing together over the internet. Start the game with --party to join a party.")->disabled = true;
+        const PartyLink link = Party_Link();
+        const std::string server = cfg.onlineServer.empty() ? "Not set" : cfg.onlineServer;
+        if (link == PartyLink::Off)
+        {
+            add(T_ONLINE, M_HOST, "Host a session", "",
+                "Starts a session for up to " + std::to_string(cfg.hostMax) + " players, with a code to give to the others.");
+            add(T_ONLINE, M_JOIN, "Join with a code", "", "Joins a friend's session: type the code they give you (SSR- and four letters).");
+            add(T_ONLINE, M_HOSTMAX, "Players", std::to_string(cfg.hostMax), "How many players a session you host allows, you included.");
+        }
+        else
+        {
+            add(T_ONLINE, M_SESSION, "Session", Party_Code().empty() ? "Joining..." : Party_Code(),
+                "Who is here, and the code to give to anyone who wants to join.");
+            add(T_ONLINE, M_LEAVE, "Leave session", "", "Leaves the session and plays on alone. Your game is not affected.")->danger = true;
+        }
+        add(T_ONLINE, M_SERVER, "Server", server,
+            "The address of the party server everyone uses (it runs tools/party_server.py), e.g. 203.0.113.5 or play.example.org:7373.");
+        add(T_ONLINE, M_SHOWPING, "Show ping", onOff(cfg.showPing), "Shows the time a message takes to the server and back, beside the session badge.");
+        add(T_ONLINE, M_TOASTS, "Activity toasts", onOff(cfg.onlineToasts),
+            "Messages when someone joins, leaves, catches a Pok\xC3\xA9mon or earns a badge. They wait until you are not busy.");
+        add(T_PROFILE, M_NICK, "Nickname", onlineName(), "The name the other players see. Up to 10 letters; your trainer's name unless you change it.");
+        add(T_PROFILE, M_COLOUR, "Colour", cfg.onlineColour < 0 ? "Automatic" : HudOnline::ColourName(cfg.onlineColour),
+            "Your colour: your chip, and your name in messages. Automatic gives each player in a session a different one.");
 
         add(T_STATES, M_SAVESTATE, "Save state", "", "Saves this exact moment to come back to with Load state (F5).");
         add(T_STATES, M_LOADSTATE, "Load state", "", "Goes back to the moment saved with Save state (F8).");
     };
     buildMenu();
+    auto buildSession = [&]() {
+        sessionMenu.items.clear();
+        const bool host = Party_Me() >= 0 && Party_Peers()[Party_Me()].host;
+        MenuItem players;
+        players.id = M_HOSTMAX;
+        players.label = "Max players";
+        players.value = std::to_string(Party_Max());
+        players.disabled = !host;
+        sessionMenu.items.push_back(players);
+        MenuItem leave;
+        leave.id = M_LEAVE;
+        leave.label = "Leave session";
+        leave.danger = true;
+        sessionMenu.items.push_back(leave);
+        if (sessionMenu.selected >= (int)sessionMenu.items.size()) sessionMenu.selected = 0;
+    };
+    auto startEdit = [&](int purpose) {
+        edit = TextEdit();
+        edit.purpose = purpose;
+        if (purpose == E_NAME)
+        {
+            edit.text = onlineName();
+            edit.charset = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.'";
+            edit.max = 10;
+        }
+        else if (purpose == E_SERVER)
+        {
+            edit.text = cfg.onlineServer;
+            edit.charset = "abcdefghijklmnopqrstuvwxyz0123456789.-:";
+            edit.max = 40;
+        }
+        else
+        {
+            edit.charset = CodeLetters;
+            edit.max = 4;
+        }
+        edit.cursor = std::min((int)edit.text.size(), (int)edit.max - 1);
+        screen = SCR_EDIT;
+    };
 
     std::string toast;
     uint32_t toastUntil = 0;
@@ -2658,21 +2771,27 @@ int main(int argc, char** argv)
                 else if (ev.type == SDL_KEYDOWN && !ev.key.repeat)
                 {
                     SDL_Keycode k = ev.key.keysym.sym;
+                    const bool uiOpen = menu.open || screen != SCR_NONE || startOpen;
+                    const bool typing = screen == SCR_EDIT;
                     if (k == SDLK_ESCAPE || k == SDLK_AC_BACK)
                     {
-                        if (menu.open) nav.back = true;
+                        if (uiOpen) nav.back = true;
                         else toggleMenu = true;
                     }
-                    else if (menu.open)
+                    else if (uiOpen)
                     {
                         if (k == SDLK_UP) nav.up = true;
                         else if (k == SDLK_DOWN) nav.down = true;
                         else if (k == SDLK_LEFT) nav.left = true;
                         else if (k == SDLK_RIGHT) nav.right = true;
-                        else if (k == SDLK_RETURN || k == SDLK_x) nav.accept = true;
-                        else if (k == SDLK_z) nav.back = true;
-                        else if (k == SDLK_q) nav.tabPrev = true;
-                        else if (k == SDLK_w) nav.tabNext = true;
+                        else if (k == SDLK_RETURN || (!typing && k == SDLK_x)) nav.accept = true;
+                        else if (typing && k == SDLK_BACKSPACE && edit.cursor > 0)
+                        {
+                            edit.text.erase(--edit.cursor, 1);
+                        }
+                        else if (!typing && k == SDLK_z) nav.back = true;
+                        else if (!typing && k == SDLK_q) nav.tabPrev = true;
+                        else if (!typing && k == SDLK_w) nav.tabNext = true;
                     }
                     else if (k == SDLK_TAB) layout = LayoutNext(layout);
                     else if (k == SDLK_F1) focus.manualFlip = !focus.manualFlip;
@@ -2692,6 +2811,18 @@ int main(int argc, char** argv)
                         cfg.fullscreen = !cfg.fullscreen;
                         SDL_SetWindowFullscreen(window, cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                         SDL_ShowCursor(cfg.fullscreen ? SDL_DISABLE : SDL_ENABLE);
+                    }
+                }
+                else if (ev.type == SDL_TEXTINPUT && screen == SCR_EDIT)
+                {
+                    // Typed letters, where the text takes them.
+                    for (const char* t = ev.text.text; *t; t++)
+                    {
+                        char ch = *t;
+                        if (edit.purpose == E_CODE && ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
+                        if (edit.charset.find(ch) == std::string::npos || edit.text.size() >= edit.max) continue;
+                        edit.text.insert(edit.text.begin() + edit.cursor, ch);
+                        edit.cursor = std::min(edit.cursor + 1, (int)edit.max - 1);
                     }
                 }
                 else if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
@@ -2978,7 +3109,7 @@ int main(int argc, char** argv)
         heldNow.down = ps.btn[PAD_DOWN] || ps.ly > 0.5f;
         heldNow.left = ps.btn[PAD_LEFT] || ps.lx < -0.5f;
         heldNow.right = ps.btn[PAD_RIGHT] || ps.lx > 0.5f;
-        if (menu.open)
+        if (menu.open || screen != SCR_NONE || startOpen)
         {
             nav.up |= heldNow.up && !heldNav.up;
             nav.down |= heldNow.down && !heldNav.down;
@@ -2991,7 +3122,92 @@ int main(int argc, char** argv)
         }
         heldNav = heldNow;
 
-        if (toggleMenu)
+        // The online screens and the start screen take the input before the pause menu.
+        auto finishEdit = [&]() {
+            const std::string t = edit.text;
+            if (edit.purpose == E_NAME)
+            {
+                std::string name = t;
+                while (!name.empty() && name.back() == ' ') name.pop_back();
+                cfg.onlineName = name;
+                Party_SetProfile(onlineName(), cfg.onlineColour);
+            }
+            else if (edit.purpose == E_SERVER)
+                cfg.onlineServer = t;
+            else if (t.size() == 4)
+            {
+                Party_Join(cfg.onlineServer, "SSR-" + t);
+                say("Joining SSR-" + t + "...", "icons/icon_wifi");
+            }
+            screen = SCR_NONE;
+            buildMenu();
+        };
+        if (screen == SCR_EDIT && !toggleMenu)
+        {
+            const size_t cs = edit.charset.size();
+            auto at = [&]() -> char { return edit.cursor < (int)edit.text.size() ? edit.text[edit.cursor] : 0; };
+            if (nav.up || nav.down)
+            {
+                // The next or previous letter at the cursor (after the text: a new one, from A).
+                if (at())
+                {
+                    size_t i = edit.charset.find(at());
+                    if (i == std::string::npos) i = 0;
+                    edit.text[edit.cursor] = edit.charset[(i + (nav.up ? 1 : cs - 1)) % cs];
+                }
+                else if (edit.text.size() < edit.max)
+                    edit.text += edit.charset[nav.up ? (edit.charset[0] == ' ' ? 1 : 0) : cs - 1];
+            }
+            if (nav.right && edit.cursor < (int)std::min(edit.text.size(), edit.max - 1)) edit.cursor++;
+            if (nav.left && edit.cursor > 0) edit.cursor--;
+            if (pressed(cfg.byLabel ? PAD_X : PAD_Y) && at()) edit.text.erase(edit.cursor, 1);
+            if (nav.accept && (edit.purpose != E_CODE || edit.text.size() == 4)) finishEdit();
+            else if (nav.back) screen = SCR_NONE;
+        }
+        else if (screen == SCR_SESSION && Party_Link() == PartyLink::Off)
+            screen = SCR_NONE; // the session has ended
+        else if (screen == SCR_SESSION && !toggleMenu)
+        {
+            buildSession();
+            int dir = 0;
+            const int hit = sessionMenu.Update(nav, dir);
+            if (hit == M_HOSTMAX && dir) Party_SetMax(std::clamp(Party_Max() + dir, 2, 4));
+            else if (hit == M_LEAVE && dir == 0) screen = SCR_SUMMARY;
+            else if (nav.back) screen = SCR_NONE;
+        }
+        else if (screen == SCR_SUMMARY && !toggleMenu)
+        {
+            if (nav.accept)
+            {
+                Party_Leave();
+                say("You left the session", "icons/icon_exit");
+                screen = SCR_NONE;
+                buildMenu();
+            }
+            else if (nav.back) screen = SCR_NONE;
+        }
+        else if (startOpen && !menu.open && !toggleMenu)
+        {
+            if (nav.left) startSel = (startSel + 3) % 4;
+            if (nav.right) startSel = (startSel + 1) % 4;
+            if (nav.accept || pressed(PAD_START))
+            {
+                if (startSel == 0) startOpen = false, swallowMenuButtons = true;
+                else if (startSel == 3) running = false;
+                else
+                {
+                    menu.open = true;
+                    menu.tab = startSel == 1 ? T_ONLINE : T_DISPLAY;
+                    menu.selected = 0;
+                    buildMenu();
+                }
+            }
+        }
+        else if (toggleMenu && screen != SCR_NONE)
+            screen = SCR_NONE;
+        else if (toggleMenu && startOpen && !menu.open)
+            ; // the start screen stays until Play
+        else if (toggleMenu)
         {
             menu.open = !menu.open;
             if (menu.open)
@@ -3137,6 +3353,46 @@ int main(int argc, char** argv)
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;
+            case M_HOST:
+                if (cfg.onlineServer.empty()) startEdit(E_SERVER);
+                else
+                {
+                    Party_Host(cfg.onlineServer, cfg.hostMax);
+                    say("Starting a session...", "icons/icon_wifi");
+                    screen = SCR_SESSION;
+                }
+                break;
+            case M_JOIN:
+                startEdit(cfg.onlineServer.empty() ? E_SERVER : E_CODE);
+                break;
+            case M_HOSTMAX:
+                cfg.hostMax = std::clamp(cfg.hostMax + (dir < 0 ? -1 : 1), 2, 4);
+                break;
+            case M_SESSION:
+                screen = SCR_SESSION;
+                break;
+            case M_LEAVE:
+                screen = SCR_SUMMARY;
+                break;
+            case M_SERVER:
+                startEdit(E_SERVER);
+                break;
+            case M_SHOWPING:
+                cfg.showPing = !cfg.showPing;
+                break;
+            case M_TOASTS:
+                cfg.onlineToasts = !cfg.onlineToasts;
+                break;
+            case M_NICK:
+                startEdit(E_NAME);
+                break;
+            case M_COLOUR:
+                cfg.onlineColour = (cfg.onlineColour + 1 + (dir < 0 ? 4 : 1)) % 5 - 1; // Automatic, then the four colours
+                Party_SetProfile(onlineName(), cfg.onlineColour);
+                break;
+            case M_STARTSCREEN:
+                cfg.startScreen = !cfg.startScreen;
+                break;
             case M_REMAP_RESET:
                 for (int& b : cfg.padMap) b = -1;
                 say("The usual buttons are back", "icons/icon_gamepad");
@@ -3177,7 +3433,7 @@ int main(int argc, char** argv)
         for (int i = 0; i < PAD_COUNT; i++) anyHeld |= ps.btn[i];
         if (swallowMenuButtons && !anyHeld) swallowMenuButtons = false;
 
-        bool paused = menu.open;
+        bool paused = menu.open || screen != SCR_NONE || startOpen;
         int speed = 1;
         if (!paused && !swallowMenuButtons)
         {
@@ -3449,7 +3705,67 @@ int main(int argc, char** argv)
             }
         }
         perfMark(1);
-        Party_Process();
+        {
+            int pmap = -1, px = 0, pz = 0;
+            if (!playerPos(pmap, px, pz)) pmap = -1;
+            const int pstate = paused ? PS_MENU : sectionActive("OVY_12") && !fieldActive() ? PS_BATTLE
+                : pmap == 2 || pmap == 4 || pmap == 5 ? PS_LINK : PS_FIELD;
+            Party_Process(pstate, pmap);
+            PartyEvent pe;
+            while (Party_PopEvent(pe))
+            {
+                const PartyPeer* peers = Party_Peers();
+                Toast t;
+                t.waits = true;
+                if (pe.player >= 0 && pe.player < 4 && pe.kind != PartyEvent::Left)
+                {
+                    const PartyPeer& who = peers[pe.player];
+                    t.name = who.name;
+                    t.nameColour = HudOnline::TextColourOf(who.colour);
+                    t.chip = HudOnline::Initials(who.name);
+                    t.chipRing = HudOnline::RingOf(who.colour);
+                }
+                switch (pe.kind)
+                {
+                case PartyEvent::Joined:
+                    t.text = " joined the session";
+                    t.trail = "emotes/emote_hi";
+                    break;
+                case PartyEvent::Left:
+                    t.name = pe.text;
+                    t.nameColour = HudOnline::TextColourOf(pe.arg);
+                    t.chip = HudOnline::Initials(pe.text);
+                    t.chipRing = "people/chip_ring_grey";
+                    t.text = " left the session";
+                    break;
+                case PartyEvent::Caught:
+                    t.text = " caught " + std::string(strchr("AEIOU", Party_SpeciesName(pe.arg)[0]) ? "an " : "a ") + Party_SpeciesName(pe.arg);
+                    t.trail = "emotes/emote_sparkle";
+                    break;
+                case PartyEvent::Badge:
+                    t.chip.clear();
+                    t.lead = "people/crown_gold";
+                    t.text = " earned a badge (" + std::to_string(pe.arg) + " now)";
+                    break;
+                case PartyEvent::Reconnected:
+                    t = Toast();
+                    t.text = "Back online";
+                    t.lead = "icons/icon_wifi";
+                    break;
+                case PartyEvent::Failed:
+                    t = Toast();
+                    t.text = pe.text;
+                    t.lead = "icons/icon_wifi";
+                    t.frames = 300;
+                    break;
+                default:
+                    continue;
+                }
+                if (pe.kind == PartyEvent::Joined || pe.kind == PartyEvent::Left || pe.kind == PartyEvent::Caught || pe.kind == PartyEvent::Badge)
+                    if (!cfg.onlineToasts) continue;
+                toasts.Push(t);
+            }
+        }
         frame++;
         if (!holdScript) scriptClock++;
 
@@ -3714,7 +4030,23 @@ int main(int argc, char** argv)
         // (their top row ends at 12% of the height).
         int cornerY = touchPadUsed && touchPad.visible ? outH * 13 / 100 : 0;
         // (With the HUD's sprites: pills, in design units below the corner.)
-        float pillY = 32 + cornerY / ui.s;
+        const bool hudFree = !menu.open && screen == SCR_NONE && !startOpen;
+        const bool online = spritesOk && Party_Link() != PartyLink::Off && hudFree;
+        const bool trayShown = online && view.width >= 300 && fieldActive();
+        if (online)
+        {
+            HudOnline::SessionBadge(canvas, ui, sprites, font, 32, 32 + cornerY / ui.s, cfg.showPing);
+            if (trayShown) HudOnline::ChipTray(canvas, ui, sprites, font, ui.W / ui.s - 32, 32 + cornerY / ui.s);
+            if (Party_Link() == PartyLink::Lost)
+            {
+                std::string host;
+                for (int i = 0; i < 4; i++)
+                    if (Party_Peers()[i].present && Party_Peers()[i].host) host = Party_Peers()[i].name;
+                HudOnline::LostCard(canvas, ui, sprites, font, host);
+            }
+            overlayUsed = true;
+        }
+        float pillY = 32 + cornerY / ui.s + (trayShown ? 116 : 0);
         if (cfg.showFps && !opt.headless && spritesOk)
         {
             pillY = DrawCornerPill(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, std::to_string(shownFps) + " fps");
@@ -3757,13 +4089,13 @@ int main(int argc, char** argv)
             // text box (FieldSystem.textbox_open) or a menu.
             const u32 fs = readRam(0x021D4158);
             const bool textbox = fs && (readRam(fs + 0xD0) >> 16 & 0x40);
-            toasts.Update(frame, menu.open || !fieldActive() || textbox);
-            if (toasts.Any() && !menu.open)
+            toasts.Update(frame, !hudFree || !fieldActive() || textbox);
+            if (toasts.Any() && hudFree)
             {
                 // Below the on-screen controls' top row when they are shown; two at most on a
                 // narrow view.
                 const bool controls = touchPadUsed && touchPad.visible;
-                const float ty = controls ? outH * 13 / 100 / ui.s : 32;
+                const float ty = (controls ? outH * 13 / 100 / ui.s : 32) + (online ? 76 : 0);
                 toasts.Draw(canvas, ui, sprites, font, frame, 32, ty, view.width >= 300 ? 4 : 2);
                 overlayUsed = true;
             }
@@ -3806,6 +4138,47 @@ int main(int argc, char** argv)
         else if (menu.open)
         {
             menu.Draw(canvas, "POKEMON SOULSILVER", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
+            overlayUsed = true;
+        }
+        if (spritesOk && (screen != SCR_NONE || (startOpen && !menu.open)))
+        {
+            const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+            if (screen == SCR_SESSION)
+            {
+                buildSession();
+                HudOnline::SessionScreen(canvas, ui, sprites, font, sessionMenu,
+                    { { { "buttons/button_dpad" }, "Change" }, { { accept }, "Select" }, { { back }, "Back" } });
+            }
+            else if (screen == SCR_SUMMARY)
+                HudOnline::Summary(canvas, ui, sprites, font, { { { accept }, "Leave" }, { { back }, "Stay" } });
+            else if (screen == SCR_EDIT)
+            {
+                const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Letters" }, { { PadGlyph(cfg.byLabel ? PAD_X : PAD_Y) }, "Delete" },
+                    { { accept }, edit.purpose == E_CODE ? "Join" : "Done" }, { { back }, "Cancel" } };
+                if (edit.purpose == E_CODE)
+                {
+                    FillBlend(canvas, 0, 0, (float)canvas.w, (float)canvas.h, 0x80000000);
+                    HudOnline::CodeEntry(canvas, ui, sprites, font, edit.text, edit.cursor, "Join with a code",
+                        "Up and down change the letter, or type it. No O/0 or I/1.", ui.W / ui.s / 2 - 320, 330);
+                    DrawHintBar(canvas, ui, sprites, font, hints);
+                }
+                else
+                    HudOnline::TextEntry(canvas, ui, sprites, font, edit.purpose == E_NAME ? "Nickname" : "Party server", edit.text, edit.cursor,
+                        edit.purpose == E_NAME ? "Up and down change the letter, or type it." : "Its address, and :port if not 7373. Up and down change the letter, or type it.",
+                        hints);
+            }
+            else
+            {
+                const std::vector<HudOnline::StartItem> items = { { "PLAY", "menu/menu_resume" }, { "ONLINE", "menu/menu_online" },
+                    { "SETTINGS", "menu/menu_options" }, { "QUIT", "menu/menu_quit" } };
+                const PartyLink link = Party_Link();
+                std::string footer = onlineName() + (link == PartyLink::Online ? " \xC2\xB7 online, " + Party_Code() : link == PartyLink::Connecting ? " \xC2\xB7 joining..." : "");
+                // HeartGold's game codes are IPK*, SoulSilver's IPG*.
+                const bool heartGold = rom.size() > 0x10 && rom[0x0C] == 'I' && rom[0x0D] == 'P' && rom[0x0E] == 'K';
+                HudOnline::StartScreen(canvas, ui, sprites, font, items, startSel,
+                    heartGold ? "POK\xC3\xA9MON HEARTGOLD" : "POK\xC3\xA9MON SOULSILVER", "ssrecomp \xC2\xB7 widescreen build",
+                    { { { accept }, "Select" } }, footer);
+            }
             overlayUsed = true;
         }
 

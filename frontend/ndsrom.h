@@ -79,3 +79,63 @@ inline std::vector<std::pair<uint32_t, uint32_t>> NdsNarcFiles(const uint8_t* ro
     }
     return out;
 }
+
+// A character of the game's text encoding as UTF-8 ("" for codes with no letter).
+inline std::string NdsCharToUtf8(uint32_t code)
+{
+    auto utf8 = [](uint32_t cp) {
+        std::string s;
+        if (cp < 0x80) s += (char)cp;
+        else if (cp < 0x800) { s += (char)(0xC0 | cp >> 6); s += (char)(0x80 | (cp & 0x3F)); }
+        else { s += (char)(0xE0 | cp >> 12); s += (char)(0x80 | (cp >> 6 & 0x3F)); s += (char)(0x80 | (cp & 0x3F)); }
+        return s;
+    };
+    if (code >= 0x121 && code <= 0x12A) return std::string(1, (char)('0' + code - 0x121));
+    if (code >= 0x12B && code <= 0x144) return std::string(1, (char)('A' + code - 0x12B));
+    if (code >= 0x145 && code <= 0x15E) return std::string(1, (char)('a' + code - 0x145));
+    if (code >= 0x15F && code <= 0x19E) return utf8(0xC0 + code - 0x15F);
+    static const std::pair<uint32_t, uint32_t> extra[] = {
+        { 0x1AB, '!' }, { 0x1AC, '?' }, { 0x1AD, ',' }, { 0x1AE, '.' }, { 0x1AF, 0x2026 }, { 0x1B1, '/' },
+        { 0x1B2, '\'' }, { 0x1B3, '\'' }, { 0x1B4, '"' }, { 0x1B5, '"' }, { 0x1B9, '(' }, { 0x1BA, ')' },
+        { 0x1BB, 0x2642 }, { 0x1BC, 0x2640 }, { 0x1BD, '+' }, { 0x1BE, '-' }, { 0x1BF, '*' }, { 0x1C0, '#' },
+        { 0x1C1, '=' }, { 0x1C2, '&' }, { 0x1C3, '~' }, { 0x1C4, ':' }, { 0x1C5, ';' }, { 0x1D0, '@' },
+        { 0x1D2, '%' }, { 0x1DE, ' ' },
+    };
+    for (const auto& e : extra)
+        if (e.first == code) return utf8(e.second);
+    return "";
+}
+
+// Text in the game's encoding (up to `n` codes, ending at 0xFFFF) as UTF-8.
+inline std::string NdsText(const uint16_t* codes, size_t n)
+{
+    std::string s;
+    for (size_t i = 0; i < n && codes[i] != 0xFFFF; i++) s += NdsCharToUtf8(codes[i]);
+    return s;
+}
+
+// Line `index` of the text bank `bank` (a member of the message archive, a/0/2/7 in
+// HeartGold and SoulSilver), decrypted.
+inline std::string NdsMessage(const uint8_t* rom, size_t romSize, int bank, int index)
+{
+    const auto files = NdsNarcFiles(rom, romSize, "a/0/2/7");
+    if (bank < 0 || bank >= (int)files.size() || index < 0) return "";
+    const uint8_t* b = rom + files[bank].first;
+    const uint32_t size = files[bank].second;
+    if (size < 4) return "";
+    const uint32_t count = RomGet16(b), key = RomGet16(b + 2);
+    if ((uint32_t)index >= count || 4 + count * 8 > size) return "";
+    const uint32_t i = index + 1;
+    uint32_t allocKey = (765 * i * key) & 0xFFFF;
+    allocKey |= allocKey << 16;
+    const uint32_t off = RomGet32(b + 4 + index * 8) ^ allocKey, len = RomGet32(b + 8 + index * 8) ^ allocKey;
+    if ((uint64_t)off + len * 2 > size || len > 256) return "";
+    std::vector<uint16_t> codes(len);
+    uint16_t k = (uint16_t)(i * 596947);
+    for (uint32_t c = 0; c < len; c++)
+    {
+        codes[c] = (uint16_t)(RomGet16(b + off + 2 * c) ^ k);
+        k = (uint16_t)(k + 18749);
+    }
+    return NdsText(codes.data(), codes.size());
+}

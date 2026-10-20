@@ -40,11 +40,19 @@
 - ROM hacks that change the game's code in place, such as Definitive HeartGold, can
   be recompiled: `tools/rehash_layout.py` makes a layout for them from the base
   game's. Code a hack adds elsewhere runs on the interpreter.
-- First steps towards playing together over the internet (for testers, from the
-  command line for now): run `tools/party_server.py` somewhere both players can reach
-  and start the game with `--party <server>`. Up to four games in the same party
-  share the Pokemon Center's wireless clubs as if their consoles were side by side,
-  each with its own save; it copes with a slow connection.
+- **Playing together over the internet**: up to four players, each with their own save,
+  share the Pokemon Center's wireless clubs as if their consoles were side by side:
+  the Union Room, link battles (also two against two) and trades, even on a slow
+  connection. Someone runs `tools/party_server.py` where everyone can reach it; in the
+  pause menu's **Online** tab set its address, then **Host a session** and give the
+  others its code (SSR- and four letters), which they type in **Join with a code**.
+- While playing together: a badge at the top left shows the session, how many are in
+  it and the connection's speed; the players' chips are at the top right; messages say
+  when someone joins or leaves, catches a Pokemon or earns a badge (they wait until
+  you are not in a battle or reading). A lost connection is retried for 30 seconds
+  while you keep playing. Your nickname and colour are in the new **Profile** tab.
+- A **start screen** before the game: Play, Online, Settings, Quit (Play is already
+  chosen, so one press starts the game). It can be turned off in the Game tab.
 - Fewer flashes when the view changes: the world no longer starts at normal size and
   then jumps to your WORLD ZOOM after Continue, no longer jumps to 100% zoom for a few
   frames now and then after a battle, and opening the save screen (or another screen
