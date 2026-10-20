@@ -3693,11 +3693,10 @@ int main(int argc, char** argv)
         for (int i = 0; i < PAD_COUNT; i++) anyHeld |= ps.btn[i];
         if (swallowMenuButtons && !anyHeld) swallowMenuButtons = false;
 
-        // With the pause menu or a screen of the HUD open the game keeps running, with no
-        // buttons or touches for it: its music plays on and changes to the view show at once.
-        // Only the start screen holds it (it has not started yet).
+        // With the pause menu, a screen of the HUD or the start screen open the game keeps
+        // running, with no buttons or touches for it: its music plays on (the intro's and
+        // the title screen's behind the start screen) and changes to the view show at once.
         const bool uiOpen = menu.open || screen != SCR_NONE || startOpen;
-        const bool paused = startOpen;
         int speed = 1;
         if (!uiOpen && !swallowMenuButtons)
         {
@@ -3729,7 +3728,7 @@ int main(int argc, char** argv)
             wheelPrev = emoteWheel ? dpad : 0;
         }
         if (!uiOpen && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
-        if (bootMode != BOOT_NONE && !paused)
+        if (bootMode != BOOT_NONE)
         {
             // Past the intro (see bootMode): the player's own presses wait meanwhile.
             keys = 0;
@@ -3986,7 +3985,7 @@ int main(int argc, char** argv)
             keys = 0;
             touching = false;
         }
-        if (ref && !paused)
+        if (ref)
         {
             TraceLog.clear();
             TracePos = 0;
@@ -4001,7 +4000,6 @@ int main(int argc, char** argv)
 
         perfMark(0);
         int got = 0;
-        if (!paused)
         {
             nds->SetKeyMask(~keys & 0xFFF);
             if (touching) nds->TouchScreen((u16)touchX, (u16)touchY);
@@ -4232,7 +4230,7 @@ int main(int argc, char** argv)
             }
         }
 
-        if (ref && !paused)
+        if (ref)
         {
             if (!TraceFailed && TracePos != TraceLog.size())
             {
@@ -4267,12 +4265,11 @@ int main(int argc, char** argv)
         for (const RcApp* app : focus.bottomApps)
             if (appActive(app->name)) appBottom = true;
         appBottomNow = appBottom;
-        if (top && bot && !paused) focus.Update(top, bot, fieldNow, appBottom);
+        if (top && bot) focus.Update(top, bot, fieldNow, appBottom);
         layout.swapped = focus.Swapped();
         // While the touch cursor is in use the bottom screen has to be big enough to aim at.
         if (!merged && focus.mode == 0 && frame < cursorShownUntil) layout.swapped = true;
         LayoutRects(layout, outW, outH, rects);
-        if (!paused)
         {
             // A new layout has to be asked for a few frames in a row before it replaces the
             // one on screen, so that the frames of a transition in which the game is between
