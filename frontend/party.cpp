@@ -1261,6 +1261,10 @@ bool Party_StartLocalServer(const std::string& script)
         }
     }
     return false;
+#elif defined(__ANDROID__)
+    // No Python there, and forking an app's process (with the Java VM in it) is unsafe.
+    (void)script;
+    return false;
 #else
     if (LocalServer) return true;
     const pid_t pid = fork();

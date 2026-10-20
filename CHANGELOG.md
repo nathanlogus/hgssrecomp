@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Android: your own songs, fonts, button pictures, title video and autosave picture are
+  packed into the APK and used there too. Songs and the video can be left out (setup
+  program option, or `--no-media`) to keep the APK small; its size is shown when it is made.
 - Autosave no longer stops the game: it keeps your place in the background (for Continue).
   The game's own save by itself in Pokémon Centers and after a badge is now ALSO SAVE THE
   GAME in the Game tab (off by default), and its writing is much quicker.
