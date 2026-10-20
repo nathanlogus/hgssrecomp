@@ -910,7 +910,16 @@ bool Dialup()
     addrinfo hints = {}, *res = nullptr;
     hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host.c_str(), port.c_str(), &hints, &res) != 0 || !res) return false;
-    Sock = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP);
+    // An IPv4 address when the name has one: older servers listen on IPv4 only, and
+    // "localhost" gives ::1 first on Windows.
+    const addrinfo* use = res;
+    for (const addrinfo* a = res; a; a = a->ai_next)
+        if (a->ai_family == AF_INET)
+        {
+            use = a;
+            break;
+        }
+    Sock = socket(use->ai_family, SOCK_STREAM, IPPROTO_TCP);
     if (Sock == NoSocket)
     {
         freeaddrinfo(res);
@@ -924,7 +933,7 @@ bool Dialup()
 #endif
     int one = 1;
     setsockopt(Sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof one);
-    connect(Sock, res->ai_addr, (int)res->ai_addrlen); // finishes in the background
+    connect(Sock, use->ai_addr, (int)use->ai_addrlen); // finishes in the background
     freeaddrinfo(res);
     Dial = 1;
     DialSince = Ms();

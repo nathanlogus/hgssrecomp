@@ -243,7 +243,8 @@ async def main():
     ap.add_argument('--lag', type=float, default=0, help='milliseconds to hold every message back')
     args = ap.parse_args()
     relay = Relay(args.lag)
-    server = await asyncio.start_server(relay.serve, '0.0.0.0', args.port)
+    # Every address, IPv4 and IPv6 ("localhost" is ::1 first on Windows).
+    server = await asyncio.start_server(relay.serve, None, args.port)
     print(f'party server on TCP port {args.port}, lag {args.lag:g} ms', flush=True)
     async with server:
         await server.serve_forever()
