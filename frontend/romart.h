@@ -151,16 +151,38 @@ public:
             }
     }
 
-    // A species' party icon, 32 x 32 (the first of its two frames), or null.
-    const Image* PokemonIcon(int species)
+    // A species' party icon, 32 x 32 (the first of its two frames), or null: the form's own
+    // where the game has one (Unown's letters, Deoxys, Burmy...), or an egg's. As
+    // GetMonIconNaixEx and GetMonIconPaletteEx (src/pokemon_icon_idx.c) choose them.
+    const Image* PokemonIcon(int species, int form = 0, bool egg = false)
     {
         if (species <= 0 || species > 493 || icons.size() < 8 + 493 || iconPal.size() < 48) return nullptr;
-        auto it = cache.find(species);
+        // Each species with forms: its first form's icon, and palette (in the table, after
+        // the species and the two eggs), and how many forms it has besides the first.
+        struct Forms { int species, file, pal, most; };
+        static const Forms forms[] = { { 386, 503, 496, 3 }, { 201, 507, 499, 27 }, { 412, 534, 527, 2 }, { 413, 536, 529, 2 },
+            { 422, 538, 531, 1 }, { 423, 539, 532, 1 }, { 487, 540, 533, 1 }, { 492, 541, 534, 1 }, { 479, 542, 535, 5 } };
+        int file = 7 + species, pal = species;
+        if (egg)
+        {
+            file = species == 490 ? 502 : 501; // Manaphy's egg has its own
+            pal = species == 490 ? 495 : 494;
+        }
+        else
+            for (const Forms& fm : forms)
+                if (fm.species == species && form > 0 && form <= fm.most)
+                {
+                    file = fm.file + form - 1;
+                    pal = fm.pal + form - 1;
+                }
+        if ((int)icons.size() <= file) return nullptr;
+        const int key = file; // the picture and its palette both follow from it
+        auto it = cache.find(key);
         if (it != cache.end()) return it->second.px.empty() ? nullptr : &it->second;
-        const int palNo = palTable ? palTable[species] : 0;
-        const auto& f = icons[7 + species];
+        const int palNo = palTable && pal < 544 ? palTable[pal] : 0;
+        const auto& f = icons[file];
         Image both = NdsTiles(Rom + f.first, f.second, 32, 64, iconPal.data() + 16 * palNo, 16);
-        Image& img = cache[species];
+        Image& img = cache[key];
         if (both.px.size() == 32 * 64)
         {
             img.w = img.h = 32;

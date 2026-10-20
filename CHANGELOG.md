@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- NEW SCREENS: the bag's menu for an item (Use, Trash, Give, Register, Move...), how many to
+  trash and the questions about it, choosing an item for a Pokémon to hold, and the party
+  screen when using or giving an item from the bag (the HP bar filling as a potion heals,
+  the game's messages and yes/no) are drawn in the new style too. Eggs and Unown's letters
+  have their own icons, an egg's summary shows "The Egg Watch", long item names no longer
+  run into the status, and the party's Cancel button sits under the cards.
 - **Host when playing** (Online tab, on by default): once you are in the game, a session is
   started by itself on your party server, and its code is shown (and stays in the badge at
   the top left while there is room), so friends can join at any time with that code.

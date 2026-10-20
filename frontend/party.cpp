@@ -1401,6 +1401,7 @@ bool Party_ReadMon(uint32_t addr, PartyMon& mon)
     mon.otId = RomGet32(a + 4);
     mon.exp = RomGet32(a + 8);
     mon.ability = a[0x0D];
+    mon.friendship = a[0x0C];
     mon.nature = (int)(pid % 25);
     const u32 ivs = RomGet32(b + 0x10);
     mon.egg = ivs >> 30 & 1;
@@ -1443,7 +1444,8 @@ bool Party_ReadMon(uint32_t addr, PartyMon& mon)
     if (const uint8_t* jd = RomMember("a/1/3/8", 0, 2 * 494)) mon.johto = RomGet16(jd + 2 * mon.species);
     if (const uint8_t* ps = RomMember("a/0/0/2", mon.species, 0x14))
     {
-        if (mon.form == 0)
+        // Wormadam, Rotom, Shaymin and Arceus have types of their own in their other forms.
+        if (mon.form == 0 || (mon.species != 413 && mon.species != 479 && mon.species != 492 && mon.species != 493))
         {
             mon.types[0] = ps[6];
             mon.types[1] = ps[7];

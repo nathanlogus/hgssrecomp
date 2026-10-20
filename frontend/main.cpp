@@ -5231,10 +5231,14 @@ int main(int argc, char** argv)
                 overlayUsed = true;
             }
         }
-        // The bag redrawn (HudBag), read from the game's memory each frame; its sub-menus are
-        // the game's own picture.
-        static uint32_t bagManager = 0;
+        // The bag redrawn (HudBag), read from the game's memory each frame, with the item's
+        // menu, the quantity to trash and the messages about it. A frame ends at times while
+        // the game is halfway through changing what is read (a Pokemon decrypted, a menu
+        // being built): for up to three frames that do not check out, the last picture stays
+        // rather than the game's own flashing up (the party and summary below too).
+        static uint32_t bagManager = 0, bagActions = 0, bagGood = 0;
         static bool bagShown = false;
+        static HudBag::State bagLast;
         static HudBag::Texts bagTexts(rom.data(), rom.size());
         bool bagNow = false;
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Bag"))
@@ -5242,14 +5246,24 @@ int main(int argc, char** argv)
                 if (!strcmp(rc_apps[i].name, "Bag"))
                 {
                     HudBag::State bs;
-                    bagNow = HudBag::FindManager(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, bagManager) &&
-                        HudBag::ReadState(readRam, bagManager, bs) && HudBag::Shown(bs, bagShown);
+                    if (HudBag::FindManager(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, bagManager) &&
+                        HudBag::ReadState(readRam, bagManager, bs, bagActions))
+                    {
+                        bagNow = HudBag::Shown(bs, bagShown);
+                        if (bagNow) bagLast = bs, bagGood = frame;
+                    }
+                    else if (bagShown && frame - bagGood <= 3)
+                        bagNow = true, bs = bagLast;
                     if (bagNow)
                     {
                         const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
-                        HudBag::Draw(canvas, ui, sprites, font, romArt, bagTexts, bs,
-                            { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Pocket" }, { { "buttons/button_dpad" }, "Choose" },
-                                { { accept }, "Select" }, { { back }, "Close bag" } });
+                        std::vector<HudHint> hints = { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Pocket" }, { { "buttons/button_dpad" }, "Choose" },
+                            { { accept }, bs.giving ? "Give" : "Select" }, { { back }, "Close bag" } };
+                        if (bs.menu) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
+                        if (bs.quantity) hints = { { { "buttons/button_dpad" }, "How many" }, { { accept }, "Trash" }, { { back }, "Cancel" } };
+                        if (!bs.message.empty()) hints = { { { accept }, "Next" } };
+                        if (bs.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "No" } };
+                        HudBag::Draw(canvas, ui, sprites, font, romArt, bagTexts, bs, hints);
                         overlayUsed = true;
                     }
                     break;
@@ -5259,7 +5273,7 @@ int main(int argc, char** argv)
         // applications, which keep the input; on any step they do not draw, the game shows.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen)
         {
-            static uint32_t partyAt = 0, summaryAt = 0;
+            static uint32_t partyAt = 0, summaryAt = 0, partyGood = 0, summaryGood = 0;
             const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
             auto app = [](const char* name) -> const RcApp* {
                 for (unsigned i = 0; i < rc_num_apps; i++)
@@ -5269,21 +5283,30 @@ int main(int argc, char** argv)
             const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
             static HudParty::PartyScreen partyView;
             static HudParty::SummaryScreen summaryView;
+            const HudParty::MonIconFn partyIcon = [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); };
             const RcApp *pa = app("PartyMenu"), *sa = app("PokemonSummary");
-            if (pa && appRunning("PartyMenu") && (partyView = HudParty::PartyScreen(),
-                    HudParty::ReadPartyScreen(ram, partyAt, pa->initAddr, pa->execAddr, pa->exitAddr, partyView)))
+            HudParty::PartyScreen pv;
+            HudParty::SummaryScreen sv;
+            if (pa && appRunning("PartyMenu") && HudParty::ReadPartyScreen(ram, partyAt, pa->initAddr, pa->execAddr, pa->exitAddr, pv))
+                partyView = pv, partyGood = frame;
+            if (sa && appRunning("PokemonSummary") && HudParty::ReadSummaryScreen(ram, summaryAt, sa->initAddr, sa->execAddr, sa->exitAddr, sv))
+                summaryView = sv, summaryGood = frame;
+            if (pa && appRunning("PartyMenu") && frame - partyGood <= 3)
             {
-                HudParty::DrawParty(canvas, ui, sprites, font, partyView, monIcon,
-                    { { { "buttons/button_dpad" }, "Choose" }, { { accept }, partyView.items.empty() ? "Options" : "Select" }, { { back }, "Back" } });
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" },
+                    { { accept }, partyView.items.empty() && partyView.context == 0 ? "Options" : "Select" }, { { back }, "Back" } };
+                if (!partyView.message.empty()) hints = { { { accept }, "Next" } };
+                if (partyView.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "No" } };
+                HudParty::DrawParty(canvas, ui, sprites, font, partyView, partyIcon, hints);
                 overlayUsed = true;
             }
-            else if (sa && appRunning("PokemonSummary") &&
-                HudParty::ReadSummaryScreen(ram, summaryAt, sa->initAddr, sa->execAddr, sa->exitAddr, summaryView))
+            else if (sa && appRunning("PokemonSummary") && frame - summaryGood <= 3)
             {
-                std::vector<HudHint> hints = { { { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" } };
+                std::vector<HudHint> hints; // an egg has one page
+                if (!summaryView.mon.egg) hints.push_back({ { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" });
                 if (summaryView.count > 1) hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Next Pok\xC3\xA9mon" });
                 hints.push_back({ { back }, "Back" });
-                HudParty::DrawSummary(canvas, ui, sprites, font, summaryView, monIcon, hints);
+                HudParty::DrawSummary(canvas, ui, sprites, font, summaryView, partyIcon, hints);
                 overlayUsed = true;
             }
         }
