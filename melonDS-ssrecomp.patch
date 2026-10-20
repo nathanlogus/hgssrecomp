@@ -725,7 +725,7 @@ diff --git a/src/GPU3D.cpp b/src/GPU3D.cpp
 index 1204741d..b3332a5d 100644
 --- a/src/GPU3D.cpp
 +++ b/src/GPU3D.cpp
-@@ -26,8 +26,21 @@
+@@ -26,8 +26,22 @@
  #include "Platform.h"
  #include "GPU3D.h"
  
@@ -740,6 +740,7 @@ index 1204741d..b3332a5d 100644
 +// the frame is submitted again for the widescreen picture, which shows more of the scene.
 +u32 SubmitPolygonLimit = 2048, SubmitVertexLimit = 6144;
 +void WideOnFlush(GPU3D& g);
++void WideRunExtra(GPU3D& g);
 +void WideOnRender(GPU& gpu, bool showingInterp);
 +void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
 +    u32& numPolys, u32& matched);
@@ -747,7 +748,7 @@ index 1204741d..b3332a5d 100644
  using Platform::Log;
  using Platform::LogLevel;
  
-@@ -971,6 +984,19 @@ void GPU3D::SubmitPolygon() noexcept
+@@ -971,6 +985,20 @@
      // TODO: work out how it works on the real thing
      // the normalization part is a wild guess
  
@@ -763,11 +764,12 @@ index 1204741d..b3332a5d 100644
 +        raw.NumConsecutivePolygons = NumConsecutivePolygons;
 +        raw.StripStart = LastStripPolygon == nullptr;
 +    }
++    if (Wide.Capturing) return;
 +
      Vertex *v0, *v1, *v2, *v3;
      s64 normalX, normalY, normalZ;
      s64 dot;
-@@ -1092,7 +1118,7 @@ void GPU3D::SubmitPolygon() noexcept
+@@ -1092,7 +1120,7 @@
  
      // reject the polygon if it's not going to fit in polygon/vertex RAM
  
@@ -776,23 +778,31 @@ index 1204741d..b3332a5d 100644
      {
          LastStripPolygon = NULL;
          DispCnt |= (1<<13);
-@@ -1589,6 +1615,15 @@ void GPU3D::BoxTest(const u32* params) noexcept
+@@ -1589,6 +1617,23 @@
          cube[i].Position[3] = ((s64)x*ClipMatrix[3] + (s64)y*ClipMatrix[7] + (s64)z*ClipMatrix[11] + (s64)0x1000*ClipMatrix[15]) >> 12;
      }
  
 +    // ssrecomp: with the widescreen world on, the test is made against the wide view, so
 +    // that the game also draws what is only visible beside the DS's own picture. This is
-+    // the one place where widescreen changes what the game itself sees.
-+    if (Wide.Owner == this && Wide.ViewWidth > 256)
++    // the one place where widescreen changes what the game itself sees. Zoomed out, the
++    // view also reaches further up and down; zoomed in, the DS's own test is kept (it
++    // only draws a little more than is seen).
++    if (Wide.Owner == this && (Wide.ViewWidth > 256 || Wide.Zoom < 1))
 +    {
++        const s64 zoom = Wide.Zoom < 1 ? (s64)(4096.0f * Wide.Zoom + 0.5f) : 4096;
 +        for (int i = 0; i < 8; i++)
-+            cube[i].Position[0] = (s32)((s64)cube[i].Position[0] * 256 / (s64)Wide.ViewWidth);
++        {
++            if (Wide.ViewWidth > 256)
++                cube[i].Position[0] = (s32)((s64)cube[i].Position[0] * 256 / (s64)Wide.ViewWidth);
++            cube[i].Position[0] = (s32)((s64)cube[i].Position[0] * zoom / 4096);
++            cube[i].Position[1] = (s32)((s64)cube[i].Position[1] * zoom / 4096);
++        }
 +    }
 +
      // front face (-Z)
      face[0] = cube[0]; face[1] = cube[1]; face[2] = cube[2]; face[3] = cube[3];
      res = ClipPolygon<false>(*this, face, 4, 0);
-@@ -2456,8 +2491,28 @@ bool YSort(Polygon* a, Polygon* b)
+@@ -2456,8 +2501,28 @@
      return a->SortKey < b->SortKey;
  }
  
@@ -821,7 +831,7 @@ index 1204741d..b3332a5d 100644
      if (GeometryEnabled)
      {
          if (RenderingEnabled)
-@@ -2487,6 +2542,20 @@ void GPU3D::VBlank() noexcept
+@@ -2487,6 +2552,21 @@
  
                  RenderNumPolygons = NumPolygons;
                  RenderFrameIdentical = false;
@@ -830,6 +840,7 @@ index 1204741d..b3332a5d 100644
 +                // while the 3D image is being captured into video memory.
 +                InterpPending = false;
 +                InterpShowReal = false;
++                if (Wide.Owner == this && Wide.Extra) WideRunExtra(*this);
 +                if (InterpolationEnabled || Wide.Owner == this)
 +                {
 +                    const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;
@@ -842,7 +853,7 @@ index 1204741d..b3332a5d 100644
              }
              else
              {
-@@ -2499,6 +2568,13 @@ void GPU3D::VBlank() noexcept
+@@ -2499,6 +2579,13 @@
                      && memcmp(RenderEdgeTable, EdgeTable, 8*2) == 0
                      && memcmp(RenderFogDensityTable + 1, FogDensityTable, 32) == 0
                      && memcmp(RenderToonTable, ToonTable, 32*2) == 0;
@@ -856,7 +867,7 @@ index 1204741d..b3332a5d 100644
              }
  
              RenderDispCnt = DispCnt;
-@@ -2535,7 +2611,27 @@ void GPU3D::VBlank() noexcept
+@@ -2535,7 +2622,27 @@
  
  void GPU3D::VCount215(GPU& gpu) noexcept
  {

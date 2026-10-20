@@ -2,6 +2,7 @@
 // Drawn into an ARGB buffer the size of the output, so the window and the
 // headless screenshots show the same thing.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -171,7 +172,8 @@ struct Menu
     {
         int scale = c.h / 240;
         if (scale < 1) scale = 1;
-        int lineH = 11 * scale;
+        // Rows close up a little when there are too many to fit the screen.
+        int lineH = std::min(11 * scale, (c.h - 8 * scale) / ((int)items.size() + 3));
         int boxW = 190 * scale;
         if (boxW > c.w - 8) boxW = c.w - 8;
         int boxH = lineH * ((int)items.size() + 3) + 6 * scale;

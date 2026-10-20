@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- On PC, double-clicking `ssrecomp` in the `build` folder starts the game: it uses
+  the ROM the setup program recorded, or else the `.nds` file in the folder above.
+  Its messages go to `game.log`.
+- **ASPECT RATIO** in the pause menu: fill the window, 4:3, 16:10, 16:9 or 21:9. On a
+  wider screen the view keeps that shape with black bars beside it; in a window the
+  window takes that shape. The game now opens in a 16:9 window, so the widescreen
+  world shows straight away.
+- **WORLD ZOOM** in the pause menu (60% to 150%): below 100% the camera pulls back and
+  more of the overworld is seen, above it the world is drawn larger, at full
+  sharpness. Text boxes, menus and battles keep their size.
+- **FAR MAP** in the pause menu (on by default): the game only keeps the map around the
+  player loaded, so a zoomed-out or very wide view used to show black (or haze) past it.
+  The map blocks around it are now read from the game and drawn there too, with the
+  game's own textures and time-of-day lighting: trees, paths, water and cliffs carry on
+  to the edge of the screen. Buildings and signs in those far blocks are not drawn yet.
+- **VOID FILL** in the pause menu (on by default): when a far zoom or a wide screen
+  shows ground the game has not loaded yet, that corner is filled with a dimmed haze
+  continuing the nearby ground instead of black. The black around rooms indoors is
+  left as the game draws it.
+- **WINDOW SIZE** in the pause menu: 720p, 900p, 1080p or 1440p (sizes taller than
+  the screen are left out). WORLD DETAIL can now also be 2160 (4K).
+- ROM hacks that change the game's code in place, such as Definitive HeartGold, can
+  be recompiled: `tools/rehash_layout.py` makes a layout for them from the base
+  game's. Code a hack adds elsewhere runs on the interpreter.
+
 ## v0.4.2 — Faster widescreen
 
 **Downloads:** the same setup programs as before; update from the setup window

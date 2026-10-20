@@ -1,0 +1,2 @@
+// The program icon shown by Explorer, the taskbar and shortcuts.
+1 ICON "../assets/icon.ico"

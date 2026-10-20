@@ -37,6 +37,7 @@ void WideWait();
 // the frame is submitted again for the widescreen picture, which shows more of the scene.
 u32 SubmitPolygonLimit = 2048, SubmitVertexLimit = 6144;
 void WideOnFlush(GPU3D& g);
+void WideRunExtra(GPU3D& g);
 void WideOnRender(GPU& gpu, bool showingInterp);
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
     u32& numPolys, u32& matched);
@@ -996,6 +997,7 @@ void GPU3D::SubmitPolygon() noexcept
         raw.NumConsecutivePolygons = NumConsecutivePolygons;
         raw.StripStart = LastStripPolygon == nullptr;
     }
+    if (Wide.Capturing) return;
 
     Vertex *v0, *v1, *v2, *v3;
     s64 normalX, normalY, normalZ;
@@ -1617,11 +1619,19 @@ void GPU3D::BoxTest(const u32* params) noexcept
 
     // ssrecomp: with the widescreen world on, the test is made against the wide view, so
     // that the game also draws what is only visible beside the DS's own picture. This is
-    // the one place where widescreen changes what the game itself sees.
-    if (Wide.Owner == this && Wide.ViewWidth > 256)
+    // the one place where widescreen changes what the game itself sees. Zoomed out, the
+    // view also reaches further up and down; zoomed in, the DS's own test is kept (it
+    // only draws a little more than is seen).
+    if (Wide.Owner == this && (Wide.ViewWidth > 256 || Wide.Zoom < 1))
     {
+        const s64 zoom = Wide.Zoom < 1 ? (s64)(4096.0f * Wide.Zoom + 0.5f) : 4096;
         for (int i = 0; i < 8; i++)
-            cube[i].Position[0] = (s32)((s64)cube[i].Position[0] * 256 / (s64)Wide.ViewWidth);
+        {
+            if (Wide.ViewWidth > 256)
+                cube[i].Position[0] = (s32)((s64)cube[i].Position[0] * 256 / (s64)Wide.ViewWidth);
+            cube[i].Position[0] = (s32)((s64)cube[i].Position[0] * zoom / 4096);
+            cube[i].Position[1] = (s32)((s64)cube[i].Position[1] * zoom / 4096);
+        }
     }
 
     // front face (-Z)
@@ -2547,6 +2557,7 @@ void GPU3D::VBlank() noexcept
                 // while the 3D image is being captured into video memory.
                 InterpPending = false;
                 InterpShowReal = false;
+                if (Wide.Owner == this && Wide.Extra) WideRunExtra(*this);
                 if (InterpolationEnabled || Wide.Owner == this)
                 {
                     const bool capturing = (NDS.GPU.GPU2D_A.CaptureCnt & (1u << 31)) != 0;

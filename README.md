@@ -279,6 +279,21 @@ The older layouts are still in the pause menu: `hybrid`, `side`, `vertical`,
 In the merged view on a wide display the overworld fills the whole picture
 instead of a 4:3 box, and is drawn at high resolution ("WIDESCREEN WORLD" and
 "WORLD DETAIL" in the pause menu; `wide` and `wide_lines` in `ssrecomp.cfg`).
+"WORLD ZOOM" (`zoom`, in percent) pulls the camera back to show more of the world, or
+draws it larger: the 3D picture is projected with the zoom applied, so a close-up is
+as sharp as the normal view; the 2D parts (text boxes) keep their size.
+The game keeps only the 2x2 map blocks around the player loaded, so a far zoom can
+reach ground that is not there yet. "FAR MAP" (`far_map`) draws the blocks around them
+into the widescreen picture only (`frontend/worldblocks.h`): when the 3D frame is
+flushed, it reads the map matrix, the loaded blocks, the camera and the area's texture
+placement from the game's memory, takes the missing blocks' models from the ROM, and
+runs their display lists through melonDS's vertex pipeline in capture mode
+(`WideState::Extra`), which only records the polygons and puts the pipeline state back.
+The game never sees them. Props (buildings, signs) of those blocks are not drawn yet.
+Where even that leaves ground empty, "VOID FILL" (`void_fill`) fills it with the
+nearby ground's colours, blurred and dimmed (`frontend/voidfill.h`, checked by
+`tests/voidfill_test.cpp`). It is left out when the DS's own view has empty parts
+(indoors), where the black is the game's own.
 Because it is no longer limited to the DS's 256x192 pixels, the world also
 moves in steps smaller than a DS pixel: walking up and down, where the camera's
 tilt makes the DS scroll 2, 1, 2, 1 pixels, is even.
@@ -544,6 +559,15 @@ screenshot is taken at every change of merged layout; `tools/strip.py` tiles a
 shot directory into contact sheets, which is how layouts are reviewed in motion. Input scripts can
 drive a virtual controller (`pad:guide`, `pad:rt`, `pad:rx+`, ...) to test the
 controller paths without hardware.
+
+To start tests at fixed places without playing there, `tools/places.py` edits a copy of a
+save so that Continue warps the player to a place (it sets the flag the game uses to warp
+on Continue after the Hall of Fame). `snapshots <rom> <save>` boots once per place in
+`tools/test_places.json` (towns, routes, a house, a cave) and keeps a snapshot of the arrival
+in `test/places/`; `run <rom> --set zoom=60` loads them all with those settings, walks
+each place's route and tiles the screenshots into `test/places/sheet.png`; `lockstep <rom>`
+checks the recompiled code against the interpreter at every place; `save <in> <out>
+<place|map,x,y>` only writes the save.
 
 To get around the game world in tests, `--nav "x,z;x,z;..."` walks the player to
 a list of tiles (door tiles included; `x,z,L` keeps walking left into a side

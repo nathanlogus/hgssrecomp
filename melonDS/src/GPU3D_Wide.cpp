@@ -25,6 +25,12 @@ WideState Wide;
 
 bool YSort(Polygon* a, Polygon* b);
 extern u32 SubmitPolygonLimit, SubmitVertexLimit;
+// GPU3D.cpp's matrix operations, for the captured extra geometry.
+void MatrixLoad4x4(s32* m, s32* s);
+void MatrixLoad4x3(s32* m, s32* s);
+void MatrixMult4x3(s32* m, s32* s);
+void MatrixScale(s32* m, s32* s);
+void MatrixTranslate(s32* m, s32* s);
 
 namespace
 {
@@ -184,8 +190,8 @@ struct WideAccess
     // Submits the recorded frame again into the given buffers. With `interpolate`, every
     // vertex is first moved halfway back towards where the same polygon was in the
     // previous frame; `matched` then counts the polygons found in both frames. The
-    // horizontal clip coordinate is multiplied by xnum/xden.
-    static void Replay(GPU3D& g, bool interpolate, s64 xnum, s64 xden, Vertex* vram, Polygon* pram,
+    // horizontal clip coordinate is multiplied by xnum/xden, the vertical one by ynum/xden.
+    static void Replay(GPU3D& g, bool interpolate, s64 xnum, s64 ynum, s64 xden, Vertex* vram, Polygon* pram,
         Polygon** list, u32& numPolys, u32& matched, u32 polyLimit = 2048, u32 vertLimit = 6144)
     {
         SubmitPolygonLimit = polyLimit;
@@ -403,6 +409,9 @@ struct WideAccess
             if (xnum != xden)
                 for (int i = 0; i < nverts; i++)
                     g.TempVertexBuffer[i].Position[0] = (s32)((s64)g.TempVertexBuffer[i].Position[0] * xnum / xden);
+            if (ynum != xden)
+                for (int i = 0; i < nverts; i++)
+                    g.TempVertexBuffer[i].Position[1] = (s32)((s64)g.TempVertexBuffer[i].Position[1] * ynum / xden);
 
             g.PolygonMode = cur.PolygonMode;
             g.CurPolygonAttr = cur.PolygonAttr;
@@ -452,6 +461,180 @@ struct WideAccess
     }
 
     // A frame has been flushed: builds the wide polygon lists for it.
+    // Runs geometry commands (command byte, then its parameters) through the vertex
+    // pipeline only to record their polygons (see WideState::Extra): no FIFO, no timing,
+    // nothing stored in polygon memory, and the pipeline state is put back afterwards.
+    static void RunCaptured(GPU3D& g, const u32* list, u32 count)
+    {
+        // Everything the commands below change.
+        const s32 savedCycles = g.CycleCount, savedVP = g.VertexPipeline, savedNP = g.NormalPipeline, savedPP = g.PolygonPipeline;
+        const u32 savedMode = g.MatrixMode, savedPolyMode = g.PolygonMode, savedPolyAttr = g.PolygonAttr, savedCurAttr = g.CurPolygonAttr;
+        const u32 savedTexParam = g.TexParam, savedTexPal = g.TexPalette, savedVNum = g.VertexNum, savedVInPoly = g.VertexNumInPoly;
+        const u32 savedConsec = g.NumConsecutivePolygons, savedSlotsFree = g.VertexSlotsFree;
+        const s32 savedSlotCounter = g.VertexSlotCounter;
+        Polygon* const savedStrip = g.LastStripPolygon;
+        const bool savedDirty = g.ClipMatrixDirty, savedShin = g.UseShininessTable;
+        s32 savedMtx[5][16];
+        memcpy(savedMtx[0], g.ProjMatrix, 64); memcpy(savedMtx[1], g.PosMatrix, 64); memcpy(savedMtx[2], g.VecMatrix, 64);
+        memcpy(savedMtx[3], g.TexMatrix, 64); memcpy(savedMtx[4], g.ClipMatrix, 64);
+        u32 savedViewport[6];
+        memcpy(savedViewport, g.Viewport, sizeof(g.Viewport));
+        s16 savedCurVertex[3], savedTexCoords[2], savedRawTex[2], savedNormal[3];
+        memcpy(savedCurVertex, g.CurVertex, sizeof(g.CurVertex)); memcpy(savedTexCoords, g.TexCoords, sizeof(g.TexCoords));
+        memcpy(savedRawTex, g.RawTexCoords, sizeof(g.RawTexCoords)); memcpy(savedNormal, g.Normal, sizeof(g.Normal));
+        u8 savedColors[5][3];
+        memcpy(savedColors[0], g.VertexColor, 3); memcpy(savedColors[1], g.MatDiffuse, 3); memcpy(savedColors[2], g.MatAmbient, 3);
+        memcpy(savedColors[3], g.MatSpecular, 3); memcpy(savedColors[4], g.MatEmission, 3);
+        Vertex savedTemp[4];
+        memcpy(savedTemp, g.TempVertexBuffer, sizeof(g.TempVertexBuffer));
+
+        // Parameters per command, as the geometry FIFO takes them.
+        static const u8 numParams[0x80] = {
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            1,0,1,1,1,0,16,12,16,12,9,3,3,0,0,0,
+            1,1,1,2,1,1,1,1,1,1,1,1,0,0,0,0,
+            1,1,1,1,32,0,0,0,0,0,0,0,0,0,0,0,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            3,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        };
+        Wide.Capturing = true;
+        u32 i = 0;
+        while (i < count)
+        {
+            const u32 cmd = list[i++] & 0x7F;
+            const u32 n = numParams[cmd];
+            if (i + n > count) break;
+            s32* params = (s32*)&list[i];
+            const u32 p = list[i];
+            i += n;
+            switch (cmd)
+            {
+            case 0x10: g.MatrixMode = p & 3; break;
+            case 0x16:
+            case 0x17:
+            case 0x19:
+                if (g.MatrixMode == 3) break; // texture matrices are not used here
+                if (cmd == 0x16) { if (g.MatrixMode == 0) MatrixLoad4x4(g.ProjMatrix, params); else MatrixLoad4x4(g.PosMatrix, params); }
+                else if (cmd == 0x17) { if (g.MatrixMode == 0) MatrixLoad4x3(g.ProjMatrix, params); else MatrixLoad4x3(g.PosMatrix, params); }
+                else { if (g.MatrixMode == 0) MatrixMult4x3(g.ProjMatrix, params); else MatrixMult4x3(g.PosMatrix, params); }
+                if (g.MatrixMode == 2)
+                {
+                    if (cmd == 0x16) MatrixLoad4x4(g.VecMatrix, params);
+                    else if (cmd == 0x17) MatrixLoad4x3(g.VecMatrix, params);
+                    else MatrixMult4x3(g.VecMatrix, params);
+                }
+                g.ClipMatrixDirty = true;
+                break;
+            case 0x1B:
+                if (g.MatrixMode == 0) MatrixScale(g.ProjMatrix, params);
+                else if (g.MatrixMode != 3) MatrixScale(g.PosMatrix, params);
+                g.ClipMatrixDirty = true;
+                break;
+            case 0x1C:
+                if (g.MatrixMode == 0) MatrixTranslate(g.ProjMatrix, params);
+                else if (g.MatrixMode != 3)
+                {
+                    MatrixTranslate(g.PosMatrix, params);
+                    if (g.MatrixMode == 2) MatrixTranslate(g.VecMatrix, params);
+                }
+                g.ClipMatrixDirty = true;
+                break;
+            case 0x20:
+                g.VertexColor[0] = p & 0x1F; g.VertexColor[1] = (p >> 5) & 0x1F; g.VertexColor[2] = (p >> 10) & 0x1F;
+                break;
+            case 0x21:
+                g.Normal[0] = (s16)((p & 0x000003FF) << 6) >> 6;
+                g.Normal[1] = (s16)((p & 0x000FFC00) >> 4) >> 6;
+                g.Normal[2] = (s16)((p & 0x3FF00000) >> 14) >> 6;
+                g.CalculateLighting();
+                break;
+            case 0x22:
+                g.RawTexCoords[0] = p & 0xFFFF;
+                g.RawTexCoords[1] = p >> 16;
+                if ((g.TexParam >> 30) == 1)
+                {
+                    g.TexCoords[0] = (g.RawTexCoords[0]*g.TexMatrix[0] + g.RawTexCoords[1]*g.TexMatrix[4] + g.TexMatrix[8] + g.TexMatrix[12]) >> 12;
+                    g.TexCoords[1] = (g.RawTexCoords[0]*g.TexMatrix[1] + g.RawTexCoords[1]*g.TexMatrix[5] + g.TexMatrix[9] + g.TexMatrix[13]) >> 12;
+                }
+                else
+                {
+                    g.TexCoords[0] = g.RawTexCoords[0];
+                    g.TexCoords[1] = g.RawTexCoords[1];
+                }
+                break;
+            case 0x23:
+                g.CurVertex[0] = list[i - 2] & 0xFFFF;
+                g.CurVertex[1] = list[i - 2] >> 16;
+                g.CurVertex[2] = list[i - 1] & 0xFFFF;
+                g.SubmitVertex();
+                break;
+            case 0x24:
+                g.CurVertex[0] = (p & 0x000003FF) << 6;
+                g.CurVertex[1] = (p & 0x000FFC00) >> 4;
+                g.CurVertex[2] = (p & 0x3FF00000) >> 14;
+                g.SubmitVertex();
+                break;
+            case 0x25: g.CurVertex[0] = p & 0xFFFF; g.CurVertex[1] = p >> 16; g.SubmitVertex(); break;
+            case 0x26: g.CurVertex[0] = p & 0xFFFF; g.CurVertex[2] = p >> 16; g.SubmitVertex(); break;
+            case 0x27: g.CurVertex[1] = p & 0xFFFF; g.CurVertex[2] = p >> 16; g.SubmitVertex(); break;
+            case 0x28:
+                g.CurVertex[0] += (s16)((p & 0x000003FF) << 6) >> 6;
+                g.CurVertex[1] += (s16)((p & 0x000FFC00) >> 4) >> 6;
+                g.CurVertex[2] += (s16)((p & 0x3FF00000) >> 14) >> 6;
+                g.SubmitVertex();
+                break;
+            case 0x29: g.PolygonAttr = p; break;
+            case 0x2A: g.TexParam = p; break;
+            case 0x2B: g.TexPalette = p & 0x1FFF; break;
+            case 0x30:
+                g.MatDiffuse[0] = p & 0x1F; g.MatDiffuse[1] = (p >> 5) & 0x1F; g.MatDiffuse[2] = (p >> 10) & 0x1F;
+                g.MatAmbient[0] = (p >> 16) & 0x1F; g.MatAmbient[1] = (p >> 21) & 0x1F; g.MatAmbient[2] = (p >> 26) & 0x1F;
+                if (p & 0x8000) memcpy(g.VertexColor, g.MatDiffuse, 3);
+                break;
+            case 0x31:
+                g.MatSpecular[0] = p & 0x1F; g.MatSpecular[1] = (p >> 5) & 0x1F; g.MatSpecular[2] = (p >> 10) & 0x1F;
+                g.MatEmission[0] = (p >> 16) & 0x1F; g.MatEmission[1] = (p >> 21) & 0x1F; g.MatEmission[2] = (p >> 26) & 0x1F;
+                g.UseShininessTable = (p & 0x8000) != 0;
+                break;
+            case 0x40:
+                g.PolygonMode = p & 3;
+                g.VertexNum = 0;
+                g.VertexNumInPoly = 0;
+                g.NumConsecutivePolygons = 0;
+                g.LastStripPolygon = nullptr;
+                g.CurPolygonAttr = g.PolygonAttr;
+                break;
+            case 0x60:
+                g.Viewport[0] = p & 0xFF;
+                g.Viewport[1] = (191 - ((p >> 8) & 0xFF)) & 0xFF;
+                g.Viewport[2] = (p >> 16) & 0xFF;
+                g.Viewport[3] = (191 - (p >> 24)) & 0xFF;
+                g.Viewport[4] = (g.Viewport[2] - g.Viewport[0] + 1) & 0x1FF;
+                g.Viewport[5] = (g.Viewport[1] - g.Viewport[3] + 1) & 0xFF;
+                break;
+            default: break; // anything else is not needed for map models
+            }
+        }
+        Wide.Capturing = false;
+
+        g.CycleCount = savedCycles; g.VertexPipeline = savedVP; g.NormalPipeline = savedNP; g.PolygonPipeline = savedPP;
+        g.MatrixMode = savedMode; g.PolygonMode = savedPolyMode; g.PolygonAttr = savedPolyAttr; g.CurPolygonAttr = savedCurAttr;
+        g.TexParam = savedTexParam; g.TexPalette = savedTexPal; g.VertexNum = savedVNum; g.VertexNumInPoly = savedVInPoly;
+        g.NumConsecutivePolygons = savedConsec; g.LastStripPolygon = savedStrip;
+        g.VertexSlotsFree = savedSlotsFree; g.VertexSlotCounter = savedSlotCounter;
+        g.ClipMatrixDirty = savedDirty; g.UseShininessTable = savedShin;
+        memcpy(g.ProjMatrix, savedMtx[0], 64); memcpy(g.PosMatrix, savedMtx[1], 64); memcpy(g.VecMatrix, savedMtx[2], 64);
+        memcpy(g.TexMatrix, savedMtx[3], 64); memcpy(g.ClipMatrix, savedMtx[4], 64);
+        memcpy(g.Viewport, savedViewport, sizeof(g.Viewport));
+        memcpy(g.CurVertex, savedCurVertex, sizeof(g.CurVertex)); memcpy(g.TexCoords, savedTexCoords, sizeof(g.TexCoords));
+        memcpy(g.RawTexCoords, savedRawTex, sizeof(g.RawTexCoords)); memcpy(g.Normal, savedNormal, sizeof(g.Normal));
+        memcpy(g.VertexColor, savedColors[0], 3); memcpy(g.MatDiffuse, savedColors[1], 3); memcpy(g.MatAmbient, savedColors[2], 3);
+        memcpy(g.MatSpecular, savedColors[3], 3); memcpy(g.MatEmission, savedColors[4], 3);
+        memcpy(g.TempVertexBuffer, savedTemp, sizeof(g.TempVertexBuffer));
+    }
+
     static void OnFlush(GPU3D& g)
     {
         if (VtxReal.empty())
@@ -475,12 +658,12 @@ struct WideAccess
             }
         }
         float view = Wide.ViewWidth < 256 ? 256 : Wide.ViewWidth;
-        const s64 xden = 4096, xnum = (s64)(4096.0f * 256.0f / view + 0.5f);
+        const s64 xden = 4096, xnum = (s64)(4096.0f * 256.0f / view * Wide.Zoom + 0.5f), ynum = (s64)(4096.0f * Wide.Zoom + 0.5f);
         u32 matched;
-        Replay(g, false, xnum, xden, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched, MaxPolygons, MaxVertices);
+        Replay(g, false, xnum, ynum, xden, VtxReal.data(), PolyReal.data(), ListReal.data(), NumReal, matched, MaxPolygons, MaxVertices);
         NumInterp = 0;
         if (g.InterpPending)
-            Replay(g, true, xnum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices);
+            Replay(g, true, xnum, ynum, xden, VtxInterp.data(), PolyInterp.data(), ListInterp.data(), NumInterp, matched, MaxPolygons, MaxVertices);
         Dirty = true;
     }
 
@@ -1129,10 +1312,17 @@ struct WideAccess
 
 void WideWait() { WideAccess::Wait(); }
 void WideOnFlush(GPU3D& g) { WideAccess::OnFlush(g); }
+void WideRunExtra(GPU3D& g)
+{
+    static std::vector<u32> extra;
+    extra.clear();
+    Wide.Extra(extra);
+    if (!extra.empty()) WideAccess::RunCaptured(g, extra.data(), (u32)extra.size());
+}
 void WideOnRender(GPU& gpu, bool showingInterp) { WideAccess::OnRender(gpu, showingInterp); }
 void WideReplay(GPU3D& g, bool interpolate, Vertex* vram, Polygon* pram, Polygon** list,
     u32& numPolys, u32& matched)
 {
-    WideAccess::Replay(g, interpolate, 1, 1, vram, pram, list, numPolys, matched);
+    WideAccess::Replay(g, interpolate, 1, 1, 1, vram, pram, list, numPolys, matched);
 }
 }

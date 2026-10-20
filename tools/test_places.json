@@ -1,0 +1,203 @@
+{
+  "_comment": "Places for tools/places.py. map: map header number (pokeheartgold include/constants/maps.h); x, y: tile, global for outdoor maps; dir: 0 up, 1 down, 2 left, 3 right; walk: [key, frames] pairs pressed after arriving; check: what to look at.",
+  "places": [
+    {
+      "name": "new_bark",
+      "map": 60,
+      "x": 695,
+      "y": 397,
+      "dir": 1,
+      "walk": [
+        [
+          "LEFT",
+          80
+        ],
+        [
+          "DOWN",
+          40
+        ]
+      ],
+      "check": "outdoor town near the east edge of Johto; zoomed out, the corners reach map blocks that are not loaded"
+    },
+    {
+      "name": "new_bark_edge",
+      "map": 60,
+      "x": 689,
+      "y": 401,
+      "dir": 1,
+      "walk": [
+        [
+          "LEFT",
+          40
+        ]
+      ],
+      "check": "standing just past the middle of a map block: a zoomed-out view reaches blocks the game has not loaded (black, haze, or with FAR MAP the real map)"
+    },
+    {
+      "name": "route_29",
+      "map": 33,
+      "x": 581,
+      "y": 398,
+      "dir": 1,
+      "walk": [
+        [
+          "RIGHT",
+          160
+        ]
+      ],
+      "check": "a route: walking across block boundaries, grass, the widescreen world while scrolling"
+    },
+    {
+      "name": "route_29_edge",
+      "map": 33,
+      "x": 593,
+      "y": 401,
+      "dir": 1,
+      "walk": [
+        [
+          "LEFT",
+          40
+        ]
+      ],
+      "check": "same, on a route: the far blocks are forest and paths"
+    },
+    {
+      "name": "cherrygrove",
+      "map": 67,
+      "x": 564,
+      "y": 392,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          60
+        ],
+        [
+          "LEFT",
+          80
+        ]
+      ],
+      "check": "town by the sea: water reaching the edges of the view"
+    },
+    {
+      "name": "route_30",
+      "map": 34,
+      "x": 555,
+      "y": 356,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          160
+        ]
+      ],
+      "check": "long north-south route: trees popping in at the edges of a zoomed-out view"
+    },
+    {
+      "name": "violet",
+      "map": 73,
+      "x": 479,
+      "y": 258,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          80
+        ],
+        [
+          "RIGHT",
+          80
+        ]
+      ],
+      "check": "large city: many props (buildings), polygon load"
+    },
+    {
+      "name": "azalea",
+      "map": 74,
+      "x": 410,
+      "y": 461,
+      "dir": 1,
+      "walk": [
+        [
+          "LEFT",
+          120
+        ]
+      ],
+      "check": "town at the south edge of the map"
+    },
+    {
+      "name": "goldenrod",
+      "map": 76,
+      "x": 352,
+      "y": 369,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          60
+        ],
+        [
+          "RIGHT",
+          100
+        ]
+      ],
+      "check": "the biggest city: speed, polygon and texture load"
+    },
+    {
+      "name": "ecruteak",
+      "map": 78,
+      "x": 375,
+      "y": 174,
+      "dir": 1,
+      "walk": [
+        [
+          "RIGHT",
+          120
+        ]
+      ],
+      "check": "town with tall buildings and trees around it"
+    },
+    {
+      "name": "olivine",
+      "map": 77,
+      "x": 272,
+      "y": 258,
+      "dir": 1,
+      "walk": [
+        [
+          "LEFT",
+          120
+        ]
+      ],
+      "check": "harbour town at the west edge: the sea and the lighthouse"
+    },
+    {
+      "name": "player_house",
+      "map": 63,
+      "x": 3,
+      "y": 4,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          60
+        ]
+      ],
+      "check": "indoors: the black around the room is the game's own and must stay black (no void fill)"
+    },
+    {
+      "name": "union_cave",
+      "map": 99,
+      "x": 27,
+      "y": 44,
+      "dir": 1,
+      "walk": [
+        [
+          "DOWN",
+          80
+        ]
+      ],
+      "check": "a cave: darkness and the edges of a small map"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 """Makes the layout file that lets the recompiler work from a player's own ROM
 instead of from the decompilation's build (see tools/recomp.py --rom).
 
-usage: make_layout.py <build dir> <built ROM> <layout file>
+usage: make_layout.py <build dir> <built ROM> <layout file> [game name]
 
 The layout holds, for every code section: its name, load address, where in the ROM
 its bytes come from, a SHA-1 of them (to check a player's ROM), which address ranges
@@ -22,6 +22,7 @@ from ndsrom import read_rom
 from recomp import load_sections
 
 build_dir, rom_path, out_path = sys.argv[1:4]
+game = sys.argv[4] if len(sys.argv) > 4 else 'Pokemon SoulSilver (USA)'
 main_image, overlays = read_rom(rom_path)
 by_hash = {hashlib.sha1(data).hexdigest(): ovy for ovy, (ram, data) in overlays.items()}
 
@@ -56,7 +57,7 @@ apps = [[m.group(1), m.group(2), int(m.group(3), 16), int(m.group(4), 16), m.gro
 focus = [[m.group(1), m.group(2), int(m.group(3), 16)] for m in row.finditer(focus_part)]
 
 layout = {
-    'game': 'Pokemon SoulSilver (USA)',
+    'game': game,
     'rom_sha1': hashlib.sha1(open(rom_path, 'rb').read()).hexdigest(),
     'sections': sections,
     'apps': apps,

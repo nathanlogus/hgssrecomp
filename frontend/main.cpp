@@ -50,6 +50,8 @@
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
+#include "voidfill.h"
+#include "worldblocks.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
@@ -917,6 +919,19 @@ static uint32_t PadKeys(const PadState& p, bool byLabel)
     return k;
 }
 
+// Shapes the single-screen view can be held to, with bars beside it on a wider window.
+// 0 is the window's own shape.
+static const struct { const char* name; float ratio; } AspectRatios[] = {
+    { "FILL WINDOW", 0 }, { "4:3", 4 / 3.0f }, { "16:10", 16 / 10.0f }, { "16:9", 16 / 9.0f }, { "21:9", 64 / 27.0f },
+};
+static const int AspectCount = (int)(sizeof(AspectRatios) / sizeof(AspectRatios[0]));
+// World zoom steps (percent): above 100 the overworld is drawn larger, below it more of it is seen.
+static const int ZoomSteps[] = { 60, 70, 80, 90, 100, 115, 130, 150 };
+static const int ZoomCount = (int)(sizeof(ZoomSteps) / sizeof(ZoomSteps[0]));
+// Window size steps: the height in pixels, the width following the aspect ratio.
+static const int WindowHeights[] = { 720, 900, 1080, 1440 };
+static const int WindowHeightCount = (int)(sizeof(WindowHeights) / sizeof(WindowHeights[0]));
+
 // Settings that persist between runs.
 struct Settings
 {
@@ -932,6 +947,11 @@ struct Settings
     // switch screens. Off unless asked for: brushing the stick put the bottom screen up.
     bool padTouch = false;
     bool showFps = false; // frames shown per second, in a corner
+    int aspect = 0;       // index into AspectRatios
+    int zoom = 100;       // world zoom, percent (one of ZoomSteps)
+    bool voidFill = true; // haze instead of black where the world reaches past the loaded map
+    bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
+    int windowH = 0;      // window height chosen in the menu; 0 = from --scale
 
     void Load(const std::string& path)
     {
@@ -953,6 +973,13 @@ struct Settings
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
+            else if (k == "void_fill") voidFill = v == "1";
+            else if (k == "far_map") farMap = v == "1";
+            else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), ZoomSteps[0], ZoomSteps[ZoomCount - 1]);
+            else if (k == "window_height") windowH = std::clamp(atoi(v.c_str()), 0, 4320);
+            else if (k == "aspect")
+                for (int i = 1; i < AspectCount; i++)
+                    if (v == AspectRatios[i].name) aspect = i;
         }
     }
 
@@ -969,6 +996,11 @@ struct Settings
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
+        f << "aspect=" << (aspect ? AspectRatios[aspect].name : "fill") << "\n";
+        f << "zoom=" << zoom << "\n";
+        f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
+        f << "far_map=" << (farMap ? 1 : 0) << "\n";
+        f << "window_height=" << windowH << "\n";
     }
 };
 
@@ -1031,6 +1063,12 @@ static bool ReadSnapshot(NDS& nds, const std::string& path, uint32_t* frame)
     return true;
 }
 
+#ifdef _WIN32
+// From kernel32, declared here rather than including windows.h, whose macros clash.
+extern "C" __declspec(dllimport) unsigned long __stdcall GetConsoleProcessList(unsigned long*, unsigned long);
+extern "C" __declspec(dllimport) int __stdcall FreeConsole(void);
+#endif
+
 int main(int argc, char** argv)
 {
     Options opt;
@@ -1057,6 +1095,50 @@ int main(int argc, char** argv)
         for (auto& a : androidArgs) androidArgv.push_back(a.data());
         argc = (int)androidArgv.size();
         argv = androidArgv.data();
+    }
+#else
+    // Double-clicked (ssrecomp.exe in build/): play like the setup program's Play button,
+    // with the ROM it recorded, or else the first .nds in the folder above build/.
+    std::vector<std::string> clickArgs;
+    std::vector<char*> clickArgv;
+    if (argc < 2)
+    {
+        namespace fs = std::filesystem;
+        char* base = SDL_GetBasePath();
+        fs::path here = base ? fs::u8path(base).parent_path().parent_path() : fs::current_path();
+        SDL_free(base);
+        std::string rom, save;
+        std::ifstream note(here / "ssrecomp.rom");
+        if (std::getline(note, rom) && !rom.empty())
+        {
+            // The setup program writes it relative to its folder in portable mode.
+            rom = (here / fs::u8path(rom)).u8string();
+            save = (here / "soulsilver.sav").u8string();
+        }
+        else
+        {
+            rom.clear();
+            std::error_code ec;
+            for (auto& e : fs::directory_iterator(here, ec))
+                if (e.path().extension() == ".nds") { rom = e.path().u8string(); break; }
+        }
+        if (!rom.empty())
+        {
+            fs::current_path(here);
+            // There is no terminal to read the messages in: they go to game.log, for bug reports.
+            freopen("game.log", "w", stderr);
+#ifdef _WIN32
+            // Windows opened a console window just for us (we are its only process):
+            // close it, nothing is written there. Started from a terminal, keep it.
+            unsigned long procs[2];
+            if (GetConsoleProcessList(procs, 2) == 1) FreeConsole();
+#endif
+            clickArgs = { "ssrecomp", rom };
+            if (!save.empty()) clickArgs.insert(clickArgs.end(), { "--save", save });
+            for (auto& a : clickArgs) clickArgv.push_back(a.data());
+            argc = (int)clickArgv.size();
+            argv = clickArgv.data();
+        }
     }
 #endif
     if (!ParseArgs(argc, argv, opt))
@@ -1127,11 +1209,14 @@ int main(int argc, char** argv)
 
     const size_t slash = opt.save.find_last_of("/\\");
     std::string dir = slash == std::string::npos ? "." : opt.save.substr(0, slash);
+    // Headless runs use the default settings unless a settings file is named (tests of
+    // the zoom or the void fill name one).
+    const bool configGiven = !opt.config.empty();
     if (opt.config.empty()) opt.config = dir + "/ssrecomp.cfg";
     const std::string quickState = opt.save + ".state";
 
     Settings cfg;
-    if (!opt.headless) cfg.Load(opt.config);
+    if (!opt.headless || configGiven) cfg.Load(opt.config);
     if (opt.layoutGiven || opt.headless) cfg.layout = opt.layout;
     if (opt.fullscreen) cfg.fullscreen = true;
     if (!opt.autoFocus) cfg.focusMode = 1;
@@ -1187,8 +1272,14 @@ int main(int argc, char** argv)
         }
         int w, h;
         LayoutNativeSize(layout, w, h);
+        // The single-screen view opens wide (16:9 unless a shape is chosen), so that the
+        // widescreen world is seen without resizing the window first.
+        float ratio = (float)w / h;
+        if (layout.mode == LayoutMode::Merged) ratio = cfg.aspect ? AspectRatios[cfg.aspect].ratio : 16 / 9.0f;
+        const int winH = cfg.windowH > 0 ? cfg.windowH : h * opt.scale;
+        const int winW = (int)(winH * ratio + 0.5f);
         window = SDL_CreateWindow("Pokemon SoulSilver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            w * opt.scale, h * opt.scale,
+            winW, winH,
             SDL_WINDOW_RESIZABLE |
 #ifdef __APPLE__
             SDL_WINDOW_ALLOW_HIGHDPI |
@@ -2084,6 +2175,14 @@ int main(int argc, char** argv)
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
     BattleWide battleWide;
+    VoidFill voidFill;
+    // The map blocks around the loaded ones, drawn into the widescreen world when a frame's
+    // 3D is flushed (inside the emulated frame, with that frame's camera).
+    WorldBlocks worldBlocks;
+    worldBlocks.SetRom(rom);
+    melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
+        if (cfg.farMap) worldBlocks.Build(*nds, commands);
+    };
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
 
@@ -2219,11 +2318,11 @@ int main(int argc, char** argv)
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_WIDE, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_ASPECT, M_WINDOWSIZE, M_WIDE, M_ZOOM, M_FARMAP, M_VOIDFILL, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
     };
     bool fastLock = false;
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
-    static const int detailLines[] = { 192, 288, 384, 540, 720, 1080, 1440 };
+    static const int detailLines[] = { 192, 288, 384, 540, 720, 1080, 1440, 2160 };
     const int detailCount = (int)(sizeof(detailLines) / sizeof(detailLines[0]));
     auto detailIndex = [&]() {
         int i = 0;
@@ -2239,7 +2338,12 @@ int main(int argc, char** argv)
             { "60 FPS", cfg.fps60 ? "ON" : "OFF" },
             { "FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
             { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
+            { "ASPECT RATIO", AspectRatios[cfg.aspect].name },
+            { "WINDOW SIZE", cfg.windowH ? std::to_string(cfg.windowH) + "P" : "DEFAULT" },
             { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
+            { "WORLD ZOOM", std::to_string(cfg.zoom) + "%" },
+            { "FAR MAP", cfg.farMap ? "ON" : "OFF" },
+            { "VOID FILL", cfg.voidFill ? "ON" : "OFF" },
             { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
             { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
             { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
@@ -2675,6 +2779,50 @@ int main(int argc, char** argv)
                 cfg.smooth = !cfg.smooth;
                 applySmooth();
                 break;
+            case M_ASPECT:
+                cfg.aspect = (cfg.aspect + (dir < 0 ? AspectCount - 1 : 1)) % AspectCount;
+                // In a window (not maximised) the window takes the new shape, keeping its height.
+                if (window && cfg.aspect && !(SDL_GetWindowFlags(window) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED)))
+                {
+                    int ww, wh;
+                    SDL_GetWindowSize(window, &ww, &wh);
+                    SDL_SetWindowSize(window, (int)(wh * AspectRatios[cfg.aspect].ratio + 0.5f), wh);
+                }
+                break;
+            case M_WINDOWSIZE:
+            {
+                // The next preset up or down, wrapping round; heights taller than the screen are skipped.
+                SDL_Rect usable = { 0, 0, 0, 0 };
+                if (window) SDL_GetDisplayUsableBounds(SDL_GetWindowDisplayIndex(window), &usable);
+                int fit = WindowHeightCount;
+                while (fit > 1 && usable.h > 0 && WindowHeights[fit - 1] > usable.h) fit--;
+                int i = 0;
+                while (i < fit && WindowHeights[i] != cfg.windowH) i++;
+                if (i == fit) i = dir < 0 ? 0 : fit - 1; // not a preset yet: start from an end
+                i = (i + (dir < 0 ? fit - 1 : 1)) % fit;
+                cfg.windowH = WindowHeights[i];
+                if (window && !(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN))
+                {
+                    const float ratio = cfg.aspect ? AspectRatios[cfg.aspect].ratio : 16 / 9.0f;
+                    SDL_RestoreWindow(window);
+                    SDL_SetWindowSize(window, (int)(cfg.windowH * ratio + 0.5f), cfg.windowH);
+                    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+                }
+                break;
+            }
+            case M_ZOOM:
+            {
+                int i = 0;
+                while (i + 1 < ZoomCount && ZoomSteps[i] < cfg.zoom) i++;
+                cfg.zoom = ZoomSteps[(i + (dir < 0 ? ZoomCount - 1 : 1)) % ZoomCount];
+                break;
+            }
+            case M_FARMAP:
+                cfg.farMap = !cfg.farMap;
+                break;
+            case M_VOIDFILL:
+                cfg.voidFill = !cfg.voidFill;
+                break;
             case M_WIDE:
                 cfg.wide = !cfg.wide;
                 break;
@@ -2746,12 +2894,21 @@ int main(int argc, char** argv)
         SDL_Rect rects[2];
         LayoutRects(layout, outW, outH, rects);
         const bool merged = layout.mode == LayoutMode::Merged;
-        const MergedView view = MergedMakeView(outW, outH);
+        // The single-screen view is drawn in mergedW columns from mergedX: the whole output, or
+        // the chosen shape centred with bars beside it. Headless pictures keep their own size.
+        int mergedW = outW, mergedX = 0;
+        if (!opt.headless && cfg.aspect && outW > outH * AspectRatios[cfg.aspect].ratio)
+        {
+            mergedW = (int)(outH * AspectRatios[cfg.aspect].ratio + 0.5f);
+            mergedX = (outW - mergedW) / 2;
+        }
+        MergedView view = MergedMakeView(mergedW, outH);
+        view.originX += mergedX;
         // Widescreen 3D: on while the overworld is running in the merged view on a wide
         // output. It is drawn at the size of the picture, up to 1440 lines.
         static int wideFrames = 0;
         {
-            int ww = opt.headless && opt.composeW ? opt.composeW : outW, wh = opt.headless && opt.composeH ? opt.composeH : outH;
+            int ww = opt.headless && opt.composeW ? opt.composeW : mergedW, wh = opt.headless && opt.composeH ? opt.composeH : outH;
             // Drawing it costs time in proportion to its size; cfg.wideLines caps its height
             // and the result is enlarged to the picture.
             if (wh > cfg.wideLines)
@@ -2763,6 +2920,7 @@ int main(int argc, char** argv)
                 (fieldActive() || menuReturn > 0 || scene.edgeFill);
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.ViewWidth = view.width;
+            melonDS::Wide.Zoom = (fieldActive() || menuReturn > 0) && !scene.edgeFill ? cfg.zoom / 100.0f : 1;
             melonDS::Wide.Width = ww;
             melonDS::Wide.Height = wh;
             wideFrames = wantWide ? wideFrames + 1 : 0;
@@ -2781,7 +2939,7 @@ int main(int argc, char** argv)
                     world.w = melonDS::Wide.FrontW;
                     world.h = melonDS::Wide.FrontH;
                 }
-                const float vw = MergedMakeView(outW, outH).width;
+                const float vw = view.width;
                 const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
                 const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(),
                     static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D()).LayerFlags[tu] };
@@ -2798,6 +2956,15 @@ int main(int argc, char** argv)
                 wideImage.pixels = melonDS::Wide.Front.data();
                 wideImage.w = melonDS::Wide.FrontW;
                 wideImage.h = melonDS::Wide.FrontH;
+                if (cfg.voidFill)
+                {
+                    // The DS's own view: 256 of the view's base pixels across, all 192 down,
+                    // both scaled by the zoom.
+                    const float zoom = melonDS::Wide.Zoom;
+                    wideImage.pixels = voidFill.Apply(wideImage.pixels, wideImage.w, wideImage.h,
+                        std::min(1.0f, 256 * zoom / std::max(256.0f, melonDS::Wide.ViewWidth)), std::min(1.0f, zoom),
+                        melonDS::Wide.FrontSerial);
+                }
                 // Fades: the game darkens or whitens its screen with the master brightness
                 // register, or with a brightness effect on the 3D layer.
                 int topUnit = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
@@ -3325,15 +3492,18 @@ int main(int argc, char** argv)
                 if (!cpuCompose)
                 {
                     if (!gpuCompose) gpuCompose = new GpuCompositor(renderer);
-                    gpuCompose->Draw(scene, screenImages, outW, outH, cfg.smooth, &wideImage);
+                    const SDL_Rect area = { mergedX, 0, mergedW, outH };
+                    SDL_RenderSetViewport(renderer, &area);
+                    gpuCompose->Draw(scene, screenImages, mergedW, outH, cfg.smooth, &wideImage);
+                    SDL_RenderSetViewport(renderer, nullptr);
                     perfMark(3);
                 }
                 else
                 {
-                    int cw = outW, ch = outH;
+                    int cw = mergedW, ch = outH;
                     if (cfg.smooth && outH > 768)
                     {
-                        cw = outW * 768 / outH;
+                        cw = mergedW * 768 / outH;
                         ch = 768;
                     }
                     MergedCompose(scene, screenImages, cw, ch, mergedImage, cfg.smooth, &wideImage);
@@ -3347,7 +3517,16 @@ int main(int argc, char** argv)
                     }
                     SDL_SetTextureScaleMode(mergedTex, cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
                     SDL_UpdateTexture(mergedTex, nullptr, mergedImage.data(), cw * 4);
-                    SDL_RenderCopy(renderer, mergedTex, nullptr, nullptr);
+                    const SDL_Rect area = { mergedX, 0, mergedW, outH };
+                    SDL_RenderCopy(renderer, mergedTex, nullptr, &area);
+                }
+                // The bars beside a view held to a narrower shape (clearing ignores the area).
+                if (mergedX > 0)
+                {
+                    const SDL_Rect bars[2] = { { 0, 0, mergedX, outH }, { mergedX + mergedW, 0, outW - mergedX - mergedW, outH } };
+                    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+                    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                    SDL_RenderFillRects(renderer, bars, 2);
                 }
             }
             else
@@ -3441,6 +3620,7 @@ int main(int argc, char** argv)
     // The 3D render thread must be finished before anything it draws from is torn down.
     static_cast<melonDS::SoftRenderer&>(nds->GPU.GetRenderer3D()).SetThreaded(false, nds->GPU);
     melonDS::Wide.Owner = nullptr;
+    melonDS::Wide.Extra = nullptr;
     if (!opt.headless)
     {
         cfg.layout = LayoutName(layout.mode);
