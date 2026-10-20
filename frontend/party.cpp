@@ -1346,6 +1346,117 @@ std::string Party_SpeciesName(int species)
     return s.empty() ? "a Pok\xC3\xA9mon" : s;
 }
 
+std::string Party_Text(int bank, int index)
+{
+    static std::map<std::pair<int, int>, std::string> cache;
+    auto it = cache.find({ bank, index });
+    if (it != cache.end()) return it->second;
+    return cache[{ bank, index }] = NdsMessage(RomData, RomSize, bank, index);
+}
+
+// Member `i` of a NARC of the ROM, if it has at least `need` bytes.
+static const uint8_t* RomMember(const char* narc, int i, uint32_t need)
+{
+    static std::map<std::string, std::vector<std::pair<uint32_t, uint32_t>>> files;
+    auto it = files.find(narc);
+    if (it == files.end()) it = files.emplace(narc, NdsNarcFiles(RomData, RomSize, narc)).first;
+    if (i < 0 || i >= (int)it->second.size() || it->second[i].second < need) return nullptr;
+    return RomData + it->second[i].first;
+}
+
+bool Party_ReadMon(uint32_t addr, PartyMon& mon)
+{
+    // A BoxPokemon (personality, flags, checksum, four 32-byte blocks shuffled by the
+    // personality and encrypted with the checksum as the seed), then the party's own part
+    // (status, level, HP and stats: 100 bytes encrypted with the personality as the seed).
+    // The flags say when a part is decrypted in place, as the game does while it reads one.
+    if (!Nds || !RomData || (addr >> 24) != 0x02) return false;
+    std::vector<u8> m = ReadBytes(addr, 236);
+    const u32 pid = RomGet32(&m[0]), flags = RomGet16(&m[4]), check = RomGet16(&m[6]);
+    if (flags & 4) return false; // the game found its checksum wrong: a Bad Egg
+    auto crypt = [&](u32 from, u32 words, u32 seed) {
+        for (u32 w = 0; w < words; w++)
+        {
+            seed = seed * 0x41C64E6D + 0x6073;
+            const u32 v = RomGet16(&m[from + 2 * w]) ^ (seed >> 16);
+            m[from + 2 * w] = (u8)v;
+            m[from + 2 * w + 1] = (u8)(v >> 8);
+        }
+    };
+    if (!(flags & 2)) crypt(8, 64, check);
+    if (!(flags & 1)) crypt(0x88, 50, pid);
+    u32 sum = 0;
+    for (u32 w = 0; w < 64; w++) sum += RomGet16(&m[8 + 2 * w]);
+    if ((sum & 0xFFFF) != check) return false;
+    static const char* orders[24] = { "ABCD", "ABDC", "ACBD", "ACDB", "ADBC", "ADCB", "BACD", "BADC", "BCAD", "BCDA", "BDAC", "BDCA",
+        "CABD", "CADB", "CBAD", "CBDA", "CDAB", "CDBA", "DABC", "DACB", "DBAC", "DBCA", "DCAB", "DCBA" };
+    const char* order = orders[((pid >> 13) & 31) % 24];
+    const u8* blk[4];
+    for (int k = 0; k < 4; k++) blk[order[k] - 'A'] = &m[8 + 32 * k];
+    const u8 *a = blk[0], *b = blk[1], *c = blk[2], *d = blk[3], *p = &m[0x88];
+    mon = PartyMon();
+    mon.species = RomGet16(a);
+    if (mon.species <= 0 || mon.species > 493) return false;
+    mon.item = RomGet16(a + 2);
+    mon.otId = RomGet32(a + 4);
+    mon.exp = RomGet32(a + 8);
+    mon.ability = a[0x0D];
+    mon.nature = (int)(pid % 25);
+    const u32 ivs = RomGet32(b + 0x10);
+    mon.egg = ivs >> 30 & 1;
+    mon.gender = b[0x18] >> 1 & 3;
+    mon.form = b[0x18] >> 3;
+    for (int i = 0; i < 4; i++)
+    {
+        mon.moves[i] = RomGet16(b + 2 * i);
+        mon.pp[i] = b[8 + i];
+        if (mon.moves[i] <= 0 || mon.moves[i] > 467) { mon.moves[i] = 0; continue; }
+        // Move data (a/0/1/1): the type at +4, the PP at +6; each PP Up adds a fifth.
+        if (const uint8_t* mv = RomMember("a/0/1/1", mon.moves[i], 8))
+        {
+            mon.moveType[i] = mv[4];
+            mon.ppMax[i] = mv[6] * (5 + (b[0x0C + i] & 3)) / 5;
+        }
+    }
+    auto text = [](const u8* s, int n) {
+        uint16_t codes[16];
+        for (int i = 0; i < n; i++) codes[i] = (uint16_t)RomGet16(s + 2 * i);
+        return NdsText(codes, (size_t)n);
+    };
+    mon.name = ivs >> 31 ? text(c, 11) : Party_SpeciesName(mon.species);
+    mon.otName = text(d, 8);
+    // The place met: Diamond and Pearl's field, or for places they lack ("faraway place",
+    // 3002) the one Platinum and HeartGold added.
+    mon.metPlace = RomGet16(d + 0x18);
+    if (mon.metPlace == 3002 && RomGet16(b + 0x1E)) mon.metPlace = RomGet16(b + 0x1E);
+    mon.metLevel = d[0x1C] & 0x7F;
+    mon.ribbons = __builtin_popcount(RomGet32(a + 0x1C)) + __builtin_popcount(RomGet32(b + 0x14)) +
+        __builtin_popcount(RomGet32(c + 0x18)) + __builtin_popcount(RomGet32(c + 0x1C));
+    mon.status = RomGet32(p);
+    mon.level = p[4];
+    mon.hp = RomGet16(p + 6);
+    for (int i = 0; i < 6; i++) mon.stats[i] = RomGet16(p + 8 + 2 * i);
+    if (mon.level < 1 || mon.level > 100 || mon.stats[0] <= 0 || mon.hp > mon.stats[0]) return false;
+    // The species' data (a/0/0/2): its types at +6 (forms with types of their own have
+    // entries elsewhere: left unknown), its growth rate at +0x13, whose table (a/0/0/3)
+    // gives the experience each level starts at.
+    if (const uint8_t* jd = RomMember("a/1/3/8", 0, 2 * 494)) mon.johto = RomGet16(jd + 2 * mon.species);
+    if (const uint8_t* ps = RomMember("a/0/0/2", mon.species, 0x14))
+    {
+        if (mon.form == 0)
+        {
+            mon.types[0] = ps[6];
+            mon.types[1] = ps[7];
+        }
+        if (const uint8_t* g = RomMember("a/0/0/3", ps[0x13], 101 * 4))
+        {
+            mon.expLevel = RomGet32(g + 4 * mon.level);
+            mon.expNext = mon.level < 100 ? RomGet32(g + 4 * (mon.level + 1)) : 0;
+        }
+    }
+    return true;
+}
+
 void Party_SetSave(const uint8_t* sav, size_t size)
 {
     // The general block of the newer of the save's two copies: the trainer's name and ID

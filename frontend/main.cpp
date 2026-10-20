@@ -52,6 +52,7 @@
 #include "hudmenu.h"
 #include "hudtoast.h"
 #include "hudscreens.h"
+#include "hudparty.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
 #include "merged.h"
@@ -2825,7 +2826,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the trainer card.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the trainer card, the save screen, your party and the Pok\xC3\xA9mon summary.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -4932,6 +4933,38 @@ int main(int argc, char** argv)
                 HudScreens::TrainerCard(canvas, ui, sprites, font, me, card, Party_DexCount(), sessionStats, Party_Link() != PartyLink::Off,
                     trainerArt.px.empty() ? nullptr : &trainerArt, cfg.onlinePartner ? romArt.PokemonIcon(cfg.onlinePartner) : nullptr,
                     { { { PadGlyph(cfg.byLabel ? PAD_B : PAD_A) }, "Back" } });
+                overlayUsed = true;
+            }
+        }
+        // The party menu and the summary redrawn (hudparty.h), mirroring the game's own
+        // applications, which keep the input; on any step they do not draw, the game shows.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen)
+        {
+            static uint32_t partyAt = 0, summaryAt = 0;
+            const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+            auto app = [](const char* name) -> const RcApp* {
+                for (unsigned i = 0; i < rc_num_apps; i++)
+                    if (!strcmp(rc_apps[i].name, name)) return &rc_apps[i];
+                return nullptr;
+            };
+            const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+            static HudParty::PartyScreen partyView;
+            static HudParty::SummaryScreen summaryView;
+            const RcApp *pa = app("PartyMenu"), *sa = app("PokemonSummary");
+            if (pa && appRunning("PartyMenu") && (partyView = HudParty::PartyScreen(),
+                    HudParty::ReadPartyScreen(ram, partyAt, pa->initAddr, pa->execAddr, pa->exitAddr, partyView)))
+            {
+                HudParty::DrawParty(canvas, ui, sprites, font, partyView, monIcon,
+                    { { { "buttons/button_dpad" }, "Choose" }, { { accept }, partyView.items.empty() ? "Options" : "Select" }, { { back }, "Back" } });
+                overlayUsed = true;
+            }
+            else if (sa && appRunning("PokemonSummary") &&
+                HudParty::ReadSummaryScreen(ram, summaryAt, sa->initAddr, sa->execAddr, sa->exitAddr, summaryView))
+            {
+                std::vector<HudHint> hints = { { { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" } };
+                if (summaryView.count > 1) hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Next Pok\xC3\xA9mon" });
+                hints.push_back({ { back }, "Back" });
+                HudParty::DrawSummary(canvas, ui, sprites, font, summaryView, monIcon, hints);
                 overlayUsed = true;
             }
         }
