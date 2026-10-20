@@ -121,6 +121,7 @@ public:
         // The palette table, from the game's code in the ROM (so icons have their colours
         // before the game has started).
         const std::vector<uint8_t> arm9 = NdsArm9(rom, size);
+        FindItemTables(arm9);
         palTable = nullptr;
         SetRam(arm9.data(), (uint32_t)arm9.size());
         if (palTable)
@@ -168,7 +169,57 @@ public:
         return img.px.empty() ? nullptr : &img;
     }
 
+    // An item's icon (a/0/1/8), 32 x 32, or null.
+    const Image* ItemIcon(int item)
+    {
+        if (item <= 0 || item >= (int)itemNarc.size() / 4) return nullptr;
+        auto it = itemCache.find(item);
+        if (it != itemCache.end()) return it->second.px.empty() ? nullptr : &it->second;
+        Image& img = itemCache[item];
+        const uint32_t g = itemNarc[4 * item + 1], p = itemNarc[4 * item + 2];
+        if (g < itemIcons.size() && p < itemIcons.size())
+        {
+            const std::vector<uint32_t> pal = NdsPalette(Rom + itemIcons[p].first, itemIcons[p].second);
+            if (pal.size() >= 16) img = NdsTiles(Rom + itemIcons[g].first, itemIcons[g].second, 32, 32, pal.data(), 16);
+        }
+        return img.px.empty() ? nullptr : &img;
+    }
+
+    // An item's price (the first field of its data in a/0/1/7), or -1 if unknown.
+    int ItemPrice(int item) const
+    {
+        if (item <= 0 || item >= (int)itemNarc.size() / 4 || itemNarc[4 * item] >= itemData.size()) return -1;
+        const auto& f = itemData[itemNarc[4 * item]];
+        return f.second >= 2 ? (int)RomGet16(Rom + f.first) : -1;
+    }
+
+    // The move a TM or HM teaches (ITEM_TM01 is 328: 92 TMs, then 8 HMs), or 0.
+    int TmMove(int item) const { return item >= 328 && item < 428 && tmMoves.size() == 100 ? tmMoves[item - 328] : 0; }
+
 private:
+    // sItemNarcIds (per item: its data, icon tiles and icon palette in the archives, and its
+    // Gen 3 number) and the TMs' moves, found in the game's code by their first entries.
+    void FindItemTables(const std::vector<uint8_t>& arm9)
+    {
+        itemNarc.clear();
+        tmMoves.clear();
+        itemCache.clear();
+        itemIcons = NdsNarcFiles(Rom, RomSize, "a/0/1/8");
+        itemData = NdsNarcFiles(Rom, RomSize, "a/0/1/7");
+        static const uint8_t none[] = { 0, 0, 0x19, 3, 0x1A, 3 }, master[] = { 1, 0, 2, 0, 3, 0 }; // data, tiles, palette
+        static const uint8_t tms[] = { 0x08, 1, 0x51, 1, 0x60, 1, 0x5B, 1 }; // Focus Punch, Dragon Claw, Water Pulse, Calm Mind
+        const size_t n = arm9.size();
+        for (size_t a = 0; a + 537 * 8 <= n && itemNarc.empty(); a += 2)
+            if (!memcmp(arm9.data() + a, none, sizeof none) && !memcmp(arm9.data() + a + 8, master, sizeof master))
+                for (int i = 0; i < 537 * 4; i++) itemNarc.push_back((uint16_t)RomGet16(arm9.data() + a + 2 * i));
+        for (size_t a = 0; a + 200 <= n && tmMoves.empty(); a += 2)
+            if (!memcmp(arm9.data() + a, tms, sizeof tms))
+                for (int i = 0; i < 100; i++) tmMoves.push_back((uint16_t)RomGet16(arm9.data() + a + 2 * i));
+    }
+
+    std::vector<std::pair<uint32_t, uint32_t>> itemIcons, itemData;
+    std::vector<uint16_t> itemNarc, tmMoves;
+    std::map<int, Image> itemCache;
     const uint8_t* Rom = nullptr;
     size_t RomSize = 0;
     std::vector<std::pair<uint32_t, uint32_t>> icons;
