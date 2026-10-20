@@ -294,6 +294,12 @@ copies of the models (already in memory, with their textures bound, for the whol
 area); textures the game scrolls (the sea) take the texture matrix the game used for
 the same texture that frame (`WideState::TexAnim`). Checked by drawing the loaded
 blocks a second time (`SSR_FARMAP_ALL=1`), which must leave the picture unchanged.
+People of the neighbouring maps are drawn too, as "ghosts" seen only in the wide
+picture: their map's event data (ROM `a/0/3/2`) gives where they stand, their sprite
+(`a/0/8/1`, decoded into a texture the wide renderer takes from the frontend,
+`WideState::ExternalTextures`) and the flag that hides them (read from the save in
+memory); each is a quad facing the screen like the game's, on the ground the player
+stands on. The game creates the real ones at the same places when the player enters.
 "NIGHT EFFECTS" (`night_fx`, `frontend/nightfx.h`) works out two small layers per
 frame from the wide picture (bright warm pixels become a glow and wider, lower light
 pools; fireflies are placed on tall-grass and headbutt-tree tiles from the map data and
@@ -574,8 +580,9 @@ To start tests at fixed places without playing there, `tools/places.py` edits a 
 save so that Continue warps the player to a place (it sets the flag the game uses to warp
 on Continue after the Hall of Fame). `snapshots <rom> <save>` boots once per place in
 `tools/test_places.json` (towns, routes, a house, a cave) and keeps a snapshot of the arrival
-in `test/places/`; `run <rom> --set zoom=60` loads them all with those settings, walks
-each place's route and tiles the screenshots into `test/places/sheet.png`; `lockstep <rom>`
+in `test/places/snapshots/`; `run <rom> --set zoom=60` loads them all with those settings,
+walks each place's route and tiles the screenshots (kept in `test/places/runs/`) into
+`test/places/sheets/sheet.png`; `lockstep <rom>`
 checks the recompiled code against the interpreter at every place; `save <in> <out>
 <place|map,x,y>` only writes the save. `--time day,night` (also `morning`, `evening`) does any of
 these at other times of day, with snapshots of their own (`<place>.night.st`), and

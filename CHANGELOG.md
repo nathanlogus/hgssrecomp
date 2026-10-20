@@ -19,6 +19,9 @@
   and lamps carry on to the edge of the screen, and the sea there flows like the sea
   nearby. It works in towns, on routes, in caves and forests, and in the Safari Zone
   (there without the objects you placed, which come from your save).
+- With FAR MAP, the people of the next town or route are already standing there
+  before you walk in (the game only creates them once you enter their map). They
+  stand still until then, facing the way they start.
 - **NIGHT EFFECTS** in the pause menu (on by default): in the evening and at night,
   lit windows and street lamps glow and cast warm light around them, fireflies drift
   over tall grass and woods, and the night gets deeper colours with darker edges. They

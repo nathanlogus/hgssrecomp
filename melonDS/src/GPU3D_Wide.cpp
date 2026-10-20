@@ -532,8 +532,10 @@ struct WideAccess
                     if (g.MatrixMode == 0) MatrixMult3x3(g.ProjMatrix, params);
                     else MatrixMult3x3(g.PosMatrix, params);
                     if (g.MatrixMode == 2) MatrixMult3x3(g.VecMatrix, params);
+                    g.ClipMatrixDirty = true;
+                    break;
                 }
-                else if (cmd == 0x16) { if (g.MatrixMode == 0) MatrixLoad4x4(g.ProjMatrix, params); else MatrixLoad4x4(g.PosMatrix, params); }
+                if (cmd == 0x16) { if (g.MatrixMode == 0) MatrixLoad4x4(g.ProjMatrix, params); else MatrixLoad4x4(g.PosMatrix, params); }
                 else if (cmd == 0x17) { if (g.MatrixMode == 0) MatrixLoad4x3(g.ProjMatrix, params); else MatrixLoad4x3(g.PosMatrix, params); }
                 else { if (g.MatrixMode == 0) MatrixMult4x3(g.ProjMatrix, params); else MatrixMult4x3(g.PosMatrix, params); }
                 if (g.MatrixMode == 2)
@@ -802,12 +804,32 @@ struct WideAccess
             t->Texels.assign((size_t)t->W * t->H, 0);
             return t;
         };
+        // Textures from the frontend (Wide.ExternalTextures), copied in decoded: the drawing
+        // threads only read the copies.
+        auto findExternal = [&](u32 index) -> Texture* {
+            if (index >= Wide.ExternalTextures.size()) return nullptr;
+            const WideState::ExternalTexture& e = Wide.ExternalTextures[index];
+            if (e.W <= 0 || e.H <= 0 || e.Texels.size() != (size_t)e.W * e.H) return nullptr;
+            const u32 param = Wide.ExternalTexParam + index;
+            for (size_t i = 0; i < texturesUsed; i++)
+                if (Textures[i]->Param == param && Textures[i]->Palette == 0xFFFFFFFF) return Textures[i].get();
+            if (texturesUsed == Textures.size()) Textures.push_back(std::make_unique<Texture>());
+            Texture* t = Textures[texturesUsed++].get();
+            t->Param = param;
+            t->Palette = 0xFFFFFFFF;
+            t->W = e.W;
+            t->H = e.H;
+            t->Texels = e.Texels;
+            return t;
+        };
         for (u32 p = 0; p < npolys; p++)
         {
             const Polygon* poly = list[p];
             if (!poly || poly->Degenerate || poly->IsShadowMask || poly->IsShadow || poly->Type != 0) continue;
             if (poly->NumVertices < 3) continue;
             Texture* tex = texturing && ((poly->TexParam >> 26) & 0x7) ? findTexture(poly->TexParam, poly->TexPalette) : nullptr;
+            if (!tex && texturing && (poly->TexParam & 0xFFFFF000) == Wide.ExternalTexParam)
+                tex = findExternal(poly->TexParam & 0xFFF);
             WideVertex v[10];
             for (u32 i = 0; i < poly->NumVertices; i++)
             {

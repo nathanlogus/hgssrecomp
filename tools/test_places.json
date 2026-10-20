@@ -34,6 +34,20 @@
       "check": "standing just past the middle of a map block: a zoomed-out view reaches blocks the game has not loaded (black, haze, or with FAR MAP the real map)"
     },
     {
+      "name": "new_bark_border",
+      "map": 33,
+      "x": 668,
+      "y": 400,
+      "dir": 3,
+      "walk": [
+        [
+          "LEFT",
+          30
+        ]
+      ],
+      "check": "on Route 29 at the New Bark border: New Bark's people are in view but the game only creates them on entering; with FAR MAP they stand there as ghosts"
+    },
+    {
       "name": "route_29",
       "map": 33,
       "x": 581,

@@ -37,6 +37,19 @@ struct WideState
     // the texture matrix, so that Extra can animate the same textures the same way.
     std::map<u32, std::array<s32, 17>> TexAnim;
 
+    // Textures that are not in the DS's texture memory, for Extra's geometry (the sprites
+    // of people on neighbouring maps): a polygon whose texture parameters are
+    // ExternalTexParam + index (texture format 0, so "no texture" to anything else) is drawn
+    // with ExternalTextures[index]. Texels as the wide renderer keeps them: bit 31 set, red,
+    // green and blue in 6 bits from bits 0, 8 and 16, alpha in 5 bits from bit 24.
+    static constexpr u32 ExternalTexParam = 0x00F0E000;
+    struct ExternalTexture
+    {
+        int W = 0, H = 0;
+        std::vector<u32> Texels;
+    };
+    std::vector<ExternalTexture> ExternalTextures;
+
     // The image that belongs to the frame the 2D renderer has just output: XRGB, with
     // the top byte 0 where no polygon was drawn.
     std::vector<u32> Front;
