@@ -4606,10 +4606,14 @@ int main(int argc, char** argv)
             const uint32_t soundWork = 0x02111958;
             const int seq = (int)(readRam(soundWork + 0xBEBFC) & 0xFFFF);
             const bool jingle = (readRam(soundWork + 0xBEC00) >> 16 & 0xFFFF) != 0;
-            bool busy = false;
+            bool busy = false, effects = false;
             for (int i = 0; i < 16; i++)
-                if ((SongPlayer::MusicChannels >> i & 1) && (nds->SPU.Read32(0x04000400 + 16 * i) >> 31)) busy = true;
-            songs.Update(cfg.newSongs && !opt.lockstep, seq, busy, jingle, frame);
+                if (nds->SPU.Read32(0x04000400 + 16 * i) >> 31)
+                {
+                    busy |= (SongPlayer::MusicChannels >> i & 1) != 0;
+                    effects |= (SongPlayer::EffectChannels >> i & 1) != 0;
+                }
+            songs.Update(cfg.newSongs && !opt.lockstep, seq, busy, effects, jingle, frame);
             melonDS::ssr_SpuHearMute = songs.Mute();
             if (got > 0) songs.Mix(audioBuf.data(), got);
         }

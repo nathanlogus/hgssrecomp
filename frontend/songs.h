@@ -21,8 +21,10 @@ class SongPlayer
 public:
     // The game's music players (1: overworld, 7: battles and the title screen) use channels
     // 1-10, 13 and 15; sound effects use 11, 12, 14 and 15, cries 14 and 15 (the sound
-    // archive's player table). 15 is shared, so it stays heard.
-    static constexpr uint16_t MusicChannels = 0x27FE;
+    // archive's player table). Music keeps 15 busy nearly all the time, so it is left out
+    // too, except while an effect or a cry plays (then 15 may be theirs: they take 11, 12
+    // and 14 first).
+    static constexpr uint16_t MusicChannels = 0x27FE, SharedChannel = 0x8000, EffectChannels = 0x5800;
     // How loud songs are next to the game's sounds: each is brought to this loudness (RMS,
     // measured on its first 20 seconds), about that of the game's own music.
     static constexpr float Loudness = 0.09f;
@@ -55,8 +57,9 @@ public:
 
     // Once per frame: whether songs are on, the game's music now (`seq`), whether its music
     // channels make any sound, and whether a jingle is on (the game's own is heard then).
-    void Update(bool on, int seq, bool channelsBusy, bool jingle, uint32_t frame)
+    void Update(bool on, int seq, bool channelsBusy, bool effects, bool jingle, uint32_t frame)
     {
+        effectsOn = effects;
         if (channelsBusy) lastBusy = frame;
         // The game's music silent for a few seconds (a pause in a scene): the song waits too.
         const bool silent = frame - lastBusy > 150;
@@ -81,12 +84,14 @@ public:
     }
 
     // The game's channels to leave out of what is heard.
-    uint16_t Mute() const { return cur && !cur->fadingOut && !paused ? MusicChannels : 0; }
+    uint16_t Mute() const { return cur && !cur->fadingOut && !paused ? MusicChannels | (effectsOn ? 0 : SharedChannel) : 0; }
 
     // Adds the song to `frames` stereo frames at 48 kHz.
     void Mix(int16_t* out, int frames)
     {
-        if (!cur) return;
+        // (SSR_SONGS_TEST_SILENT=1 leaves the song out: for checking that none of the game's
+        // music is heard under it.)
+        if (!cur || getenv("SSR_SONGS_TEST_SILENT")) return;
         Song& s = *cur;
         const double step = (double)s.rate / 48000.0;
         for (int i = 0; i < frames; i++)
@@ -162,7 +167,7 @@ private:
     std::future<std::unique_ptr<Song>> loading;
     std::string loadingName;
     uint32_t lastBusy = 0;
-    bool paused = false;
+    bool paused = false, effectsOn = false;
 
     static std::string Trim(std::string s)
     {
