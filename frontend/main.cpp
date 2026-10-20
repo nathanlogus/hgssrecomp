@@ -52,6 +52,7 @@
 #include "hudmenu.h"
 #include "hudtoast.h"
 #include "hudscreens.h"
+#include "hudbattle.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
 #include "merged.h"
@@ -1306,6 +1307,9 @@ int main(int argc, char** argv)
     Party_SetRom(rom.data(), rom.size());
     RomArt romArt;
     romArt.SetRom(rom.data(), rom.size());
+    HudBattle::Moves battleMoves;
+    battleMoves.SetRom(rom.data(), rom.size());
+    HudBattle::Hud battleHud;
     const HudOnline::IconFn monIcon = [&](int species) { return romArt.PokemonIcon(species); };
     Party_SetSave(sav.data(), sav.size());
     nds->ARM9.RecompEnable = opt.recomp;
@@ -1592,6 +1596,8 @@ int main(int argc, char** argv)
     uint32_t battleStripUntil = 0;
     // The button chosen in a battle strip (see the input handling before the frame runs).
     int battleSel = 0;
+    // The strip `battleSel` belongs to (its scene's name); on a new strip it starts again at 0.
+    std::string battleStripKind;
     // Per application, the overlay that holds its code when no other application's code is
     // there (-1 otherwise), and per section the frames on which it has run since it started
     // running (see where it is counted).
@@ -2867,7 +2873,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the trainer card.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the trainer card and the battle commands.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -4179,10 +4185,15 @@ int main(int argc, char** argv)
         // cursor moves in the touch screen's arrangement (FIGHT above the other three),
         // which does not match a row, so the arrows and A do not reach it here.
         {
-            static std::string stripKind;
+            std::string& stripKind = battleStripKind;
             static uint32_t prevStripKeys = 0;
             static int stripTouch = 0, stripTouchX = 0, stripTouchY = 0;
             const bool cmd = merged && !strcmp(scene.name, "battle-cmd"), moves = merged && !strcmp(scene.name, "battle-moves");
+            // With the redrawn commands (hudbattle.h) the discs are in another order and the
+            // moves in a column; what the game shows is read from its memory.
+            HudBattle::State bs;
+            const bool redrawnBattle = cfg.redrawn && spritesOk && (cmd || moves) && HudBattle::Read(nds->MainRAM, nds->MainRAMMask, bs) &&
+                !bs.idle && bs.moves == moves;
             if (!uiOpen && (cmd || moves))
             {
                 if (stripKind != scene.name)
@@ -4199,13 +4210,21 @@ int main(int argc, char** argv)
                 const u32* screenImagesPrev = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get();
                 auto usable = [&](int i) {
                     if (cmd) return true;
+                    if (redrawnBattle) return bs.move[i] != 0;
                     uint32_t c = screenImagesPrev[(movY[i] - 14) * 256 + movX[i]];
                     return ((c >> 16) & 0xFF) > 200 && ((c >> 8) & 0xFF) > 200 && (c & 0xFF) > 200;
                 };
-                for (int dir : { (edge & (1 << KEY_RIGHT)) ? 1 : 0, (edge & (1 << KEY_LEFT)) ? -1 : 0 })
+                // The buttons in the order they are shown, as indices of the touch screen's.
+                static const int sameOrder[4] = { 0, 1, 2, 3 };
+                const int* order = redrawnBattle && cmd ? HudBattle::CmdOrder : sameOrder;
+                const int pos = int(std::find(order, order + 4, battleSel) - order);
+                // The redrawn moves are a column: up and down walk it as well.
+                const bool column = redrawnBattle && moves;
+                const uint32_t next = 1u << KEY_RIGHT | (column ? 1u << KEY_DOWN : 0), prev = 1u << KEY_LEFT | (column ? 1u << KEY_UP : 0);
+                for (int dir : { (edge & next) ? 1 : 0, (edge & prev) ? -1 : 0 })
                     if (dir)
-                        for (int i = battleSel + dir; i >= 0 && i < 4; i += dir)
-                            if (usable(i)) { battleSel = i; break; }
+                        for (int p = pos + dir; p >= 0 && p < 4; p += dir)
+                            if (usable(order[p])) { battleSel = order[p]; break; }
                 if (opt.logSections && edge) fprintf(stderr, "[strip] frame %u: keys %03x, chosen %d\n", frame, edge, battleSel);
                 if (edge & (1 << KEY_A))
                 {
@@ -4889,6 +4908,28 @@ int main(int argc, char** argv)
         }
         ui.Set(canvas.w, canvas.h);
         sprites.HiRes = ui.s > 1.01f;
+        // The battle's commands and moves redrawn over the strip under the field (hudbattle.h);
+        // also while one set slides out and the other in, as long as the game's memory says
+        // which is up. Otherwise the strip stays as it is.
+        if (spritesOk && cfg.redrawn && merged && hudFree &&
+            (!strcmp(scene.name, "battle-cmd") || !strcmp(scene.name, "battle-moves") || !strcmp(scene.name, "battle-strip")))
+        {
+            HudBattle::State bs;
+            // (Between menus, idle, only while the strip is kept up for the slide.)
+            if (HudBattle::Read(nds->MainRAM, nds->MainRAMMask, bs) && (!bs.idle || !strcmp(scene.name, "battle-strip")))
+            {
+                // The chosen button once the input has taken this strip over (it starts at 0).
+                const bool agree = !bs.idle && !strcmp(scene.name, bs.moves ? "battle-moves" : "battle-cmd");
+                const int sel = !agree ? -1 : battleStripKind == scene.name ? battleSel : 0;
+                const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints;
+                if (!bs.idle) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Confirm" } };
+                if (bs.moves) hints.push_back({ { back }, "Back" });
+                battleHud.Draw(canvas, ui, sprites, font, battleMoves, bs, sel, romArt.PokemonIcon(bs.species),
+                    romArt.PokemonIcon(bs.foeSpecies), hints, (view.originY + 137 * view.unit) / ui.s);
+                overlayUsed = true;
+            }
+        }
         if (menu.open && spritesOk)
         {
             // The buttons as they are labelled on the controller (see PadButtonFor).
