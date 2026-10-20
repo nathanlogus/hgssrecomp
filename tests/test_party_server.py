@@ -62,6 +62,11 @@ class PartyServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await host.until('S'), bytes([1, 1]) + struct.pack('<H', 33) + bytes([2]))
         guest.send('E', bytes([1]) + struct.pack('<H', 163))
         self.assertEqual(await host.until('E'), bytes([1, 1]) + struct.pack('<H', 163))
+        walk = bytes([1]) + struct.pack('<HHiiiBH', 0, 33, 0x10000, 0, 0x20000, 1, 97)
+        guest.send('O', walk)
+        self.assertEqual(await host.until('O'), bytes([1]) + walk)
+        guest.send('W', bytes([5]))
+        self.assertEqual(await host.until('W'), bytes([1, 5]))
         guest.send('Q', struct.pack('<I', 1234))
         self.assertEqual(await guest.until('q'), struct.pack('<I', 1234))
 

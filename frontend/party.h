@@ -15,6 +15,20 @@ enum class PartyLink { Off, Connecting, Online, Lost };
 // What this player is doing, sent to the others.
 enum PartyState { PS_FIELD = 0, PS_BATTLE = 1, PS_MENU = 2, PS_LINK = 3 };
 
+// Where a player's trainer is on the overworld, sent about ten times a second.
+struct PartyWalker
+{
+    bool shown = false;    // on the overworld and visible
+    int matrix = -1;       // the map matrix (0 is the whole outdoors) and the map
+    int map = -1;
+    int32_t x = 0, y = 0, z = 0; // world position (fx32: a tile is 16 << 12)
+    int facing = 1;        // 0 north, 1 south, 2 west, 3 east
+    int sprite = 0;        // the game's sprite id (the boy, the girl, on a bike...)
+    uint32_t at = 0;       // when it was heard (Ms clock)
+    int emote = -1;        // the emote shown (EmoteNames index) and since when
+    uint32_t emoteAt = 0;
+};
+
 struct PartyPeer
 {
     bool present = false;
@@ -27,6 +41,7 @@ struct PartyPeer
     int badges = 0;
     int rtt = -1;          // their round trip to the server, ms
     uint32_t sinceMs = 0;  // when they joined (Ms clock)
+    PartyWalker walk;
 };
 
 // What happened in the party, for the HUD's toasts.
@@ -71,6 +86,10 @@ uint32_t Party_SessionSeconds();
 int Party_DexCount();                // Pokemon caught in the Pokedex (-1 not known yet)
 std::vector<int> Party_MySpecies();  // the species in this player's party
 void Party_SetPartner(int species);  // the Pokemon shown with this player
+void Party_SendEmote(int emote);     // shows an emote over this player's trainer to the others
+uint32_t Party_Now();                // the clock of PartyWalker::at (ms)
+// A map's place name ("Route 30"), from the ROM's text.
+std::string Party_PlaceName(int map);
 // The name of a species (from the ROM's text), e.g. "Hoothoot".
 std::string Party_SpeciesName(int species);
 // The rom, for names (set once).

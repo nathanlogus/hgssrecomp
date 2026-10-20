@@ -2355,8 +2355,20 @@ int main(int argc, char** argv)
     const bool spritesOk = sprites.Load(ReadUiFile);
     const bool fontOk = font.Load(rom.data(), rom.size());
     fprintf(stderr, "[hud] sprites %s, font %s\n", spritesOk ? g_uiDir.c_str() : "missing (plain menu)", fontOk ? "from the ROM" : "missing");
+    // Other players' trainers near this one (online), moved smoothly towards where they
+    // were last heard and drawn into the widescreen world as the far map's people are.
+    struct RemoteTrainer
+    {
+        bool on = false;
+        double x = 0, y = 0, z = 0;
+        int step = 0;
+    };
+    RemoteTrainer remotes[4];
+    std::vector<WorldBlocks::Trainer> remoteDraw;
+    bool emoteWheel = false;
     melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
         if (cfg.farMap) worldBlocks.Build(*nds, commands);
+        worldBlocks.EmitTrainers(*nds, remoteDraw, commands);
     };
     const bool cpuCompose = getenv("SSR_CPU_COMPOSE") != nullptr;
     int mergedTexW = 0, mergedTexH = 0;
@@ -3470,6 +3482,23 @@ int main(int argc, char** argv)
                 if (ps.rt > 0.3f) curPress = true;
             }
         }
+        // The emote wheel: online on the overworld, hold R and press the D-pad, which then
+        // goes to the wheel instead of the game.
+        {
+            static uint32_t wheelPrev = 0;
+            const uint32_t dpad = keys & ((1u << KEY_UP) | (1u << KEY_LEFT) | (1u << KEY_RIGHT) | (1u << KEY_DOWN));
+            emoteWheel = !paused && Party_Link() == PartyLink::Online && fieldActive() && (keys & (1u << KEY_R));
+            if (emoteWheel)
+            {
+                const uint32_t down = dpad & ~wheelPrev;
+                if (down & (1u << KEY_UP)) Party_SendEmote(0);
+                else if (down & (1u << KEY_LEFT)) Party_SendEmote(1);
+                else if (down & (1u << KEY_RIGHT)) Party_SendEmote(2);
+                else if (down & (1u << KEY_DOWN)) Party_SendEmote(3);
+                keys &= ~dpad;
+            }
+            wheelPrev = emoteWheel ? dpad : 0;
+        }
         if (!paused && (fastLock || kbFast || ps.lt > 0.5f)) speed = 4;
         prevPad = ps;
 
@@ -3734,6 +3763,46 @@ int main(int argc, char** argv)
             const int pstate = paused ? PS_MENU : sectionActive("OVY_12") && !fieldActive() ? PS_BATTLE
                 : pmap == 2 || pmap == 4 || pmap == 5 ? PS_LINK : PS_FIELD;
             Party_Process(pstate, pmap);
+            // The others' trainers: on this map, or anywhere outdoors (the outdoors is one map
+            // matrix, whose places all players share).
+            {
+                const PartyPeer* peers = Party_Peers();
+                const int me = Party_Me();
+                const PartyWalker mine = me >= 0 ? peers[me].walk : PartyWalker();
+                remoteDraw.clear();
+                for (int i = 0; i < 4; i++)
+                {
+                    RemoteTrainer& r = remotes[i];
+                    const PartyWalker& w = peers[i].walk;
+                    const bool here = Party_Link() != PartyLink::Off && i != me && peers[i].present && w.shown && mine.shown &&
+                        w.matrix == mine.matrix && (mine.matrix == 0 || w.map == mine.map);
+                    if (!here)
+                    {
+                        r.on = false;
+                        continue;
+                    }
+                    const double dx = w.x - r.x, dy = w.y - r.y, dz = w.z - r.z;
+                    const double gap = std::max(std::fabs(dx), std::fabs(dz));
+                    if (!r.on || gap > 4 * 0x10000)
+                    {
+                        // Just seen, or jumped (a door, flying): no walk there.
+                        r.x = w.x;
+                        r.y = w.y;
+                        r.z = w.z;
+                        r.on = true;
+                    }
+                    else
+                    {
+                        // A quarter of the way each frame: messages come every 100 ms or so.
+                        r.x += dx / 4;
+                        r.y += dy / 4;
+                        r.z += dz / 4;
+                    }
+                    // Walking: standing, a step, standing, the other step, 4 frames each.
+                    r.step = gap > 0x800 ? r.step + 1 : 0;
+                    remoteDraw.push_back({ w.sprite, w.facing, r.step ? (r.step / 4 + 1) % 4 : 0, (int32_t)r.x, (int32_t)r.y, (int32_t)r.z });
+                }
+            }
             if (frame % 60 == 0) romArt.SetRam(nds->MainRAM, nds->MainRAMMask + 1);
             // A new session: its numbers start again. Battles started in the Colosseum or the
             // Union Room and trades while online are this session's link battles and trades.
@@ -4077,6 +4146,45 @@ int main(int argc, char** argv)
         const bool hudFree = !menu.open && screen == SCR_NONE && !startOpen;
         const bool online = spritesOk && Party_Link() != PartyLink::Off && hudFree;
         const bool trayShown = online && view.width >= 300 && fieldActive();
+        if (online && trayShown && melonDS::Wide.Owner)
+        {
+            // Names over the trainers, emotes, the emote wheel, and pointers to the others
+            // when they are off the screen.
+            const float W = ui.W / ui.s, H = ui.H / ui.s;
+            const PartyPeer* peers = Party_Peers();
+            const uint32_t now = Party_Now();
+            const int me = Party_Me();
+            auto emoteOf = [&](const PartyPeer& p) { return p.walk.emote >= 0 && now - p.walk.emoteAt < 3000 ? p.walk.emote : -1; };
+            // Above the head: a person is 32 world units tall, drawn a little towards the camera.
+            auto headAt = [&](double x, double y, double z, float& u, float& v) {
+                return worldBlocks.PlaceInView(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, x / 4096, y / 4096 + 30,
+                    (z + 0x6000) / 4096, u, v);
+            };
+            float u, v;
+            for (int i = 0; i < 4; i++)
+            {
+                if (i == me || !remotes[i].on) continue;
+                const PartyPeer& p = peers[i];
+                const bool seen = headAt(remotes[i].x, remotes[i].y, remotes[i].z, u, v);
+                if (seen && u > 0.03f && u < 0.97f && v > 0.08f && v < 0.97f)
+                    HudOnline::NamePill(canvas, ui, sprites, font, u * W, v * H, p, emoteOf(p));
+                else if (me >= 0)
+                {
+                    // On the edge of the screen, the way they are from this player (the camera
+                    // looks north, so the world's x and z are the screen's across and down).
+                    const float ang = (float)std::atan2(remotes[i].z - peers[me].walk.z, remotes[i].x - peers[me].walk.x);
+                    const float ca = std::cos(ang), sa = std::sin(ang);
+                    const float k = std::min((W / 2 - 80) / std::max(std::fabs(ca), 1e-3f), (H / 2 - 150) / std::max(std::fabs(sa), 1e-3f));
+                    HudOnline::OffscreenPointer(canvas, ui, sprites, font, W / 2 + ca * k, H / 2 + sa * k, ang, p,
+                        p.walk.map != peers[me].walk.map ? Party_PlaceName(p.walk.map) : "", W);
+                }
+            }
+            if (me >= 0 && peers[me].walk.shown && headAt(peers[me].walk.x, peers[me].walk.y, peers[me].walk.z, u, v))
+            {
+                if (emoteWheel) HudOnline::EmoteWheel(canvas, ui, sprites, u * W, v * H - 40);
+                else HudOnline::NamePill(canvas, ui, sprites, font, u * W, v * H, peers[me], emoteOf(peers[me]));
+            }
+        }
         if (online)
         {
             HudOnline::SessionBadge(canvas, ui, sprites, font, 32, 32 + cornerY / ui.s, cfg.showPing);

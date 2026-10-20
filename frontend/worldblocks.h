@@ -93,12 +93,7 @@ public:
         }
 
         const size_t start = out.size();
-        // The game's projection, as it loaded it for its own blocks.
-        out.push_back(0x10); out.push_back(0);
-        out.push_back(0x16);
-        for (int i = 0; i < 16; i++) out.push_back(Read32(Glb + 0x08 + 4 * i));
-        out.push_back(0x10); out.push_back(2);
-        out.push_back(0x60); out.push_back(0xBFFF0000); // the whole screen
+        EmitProjection(out);
         Colours[0] = Read32(Glb + 0x94);
         Colours[1] = Read32(Glb + 0x98);
         Colours[2] = Read32(Glb + 0x9C);
@@ -193,6 +188,40 @@ public:
     // Street lamps and lanterns around the camera (props with a lamp's build model), as
     // places in the wide picture like Fireflies: the oval their light makes on the ground
     // and the lamp's head.
+    // A place in the world (world units: a tile is 16) as a place in the wide picture (0 to
+    // 1 across and down), with the camera of the frame last drawn; false behind the camera.
+    bool PlaceInView(melonDS::NDS& nds, float viewWidth, float zoom, double x, double y, double z, float& u, float& v)
+    {
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        return Place(viewWidth, zoom, x, y, z, u, v);
+    }
+
+    // Other players' trainers (online), drawn as the game draws a person.
+    struct Trainer
+    {
+        int sprite, facing, frame; // the game's sprite id; 0 north, 1 south, 2 west, 3 east; 0-3 of the walk
+        int32_t x, y, z;           // world position (fx32), as the game's map objects keep it
+    };
+    void EmitTrainers(melonDS::NDS& nds, const std::vector<Trainer>& trainers, std::vector<uint32_t>& out)
+    {
+        if (trainers.empty() || Sprites.empty()) return;
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        if (!InRam(Read32(FieldSystemPtr)) || Read16(SpriteGfx) != 1) return; // overlay 1 is not where expected
+        const size_t start = out.size();
+        EmitProjection(out);
+        int drawn = 0;
+        for (const Trainer& t : trainers)
+        {
+            const int tex = GetSpriteTexture((uint16_t)t.sprite, t.facing & 3, t.frame & 3);
+            if (tex < 0) continue;
+            EmitBillboard(tex, t.x, t.y, (int64_t)t.z + 0x6000, out);
+            drawn++;
+        }
+        if (!drawn) out.resize(start);
+    }
+
     void Lights(melonDS::NDS& nds, float viewWidth, float zoom, std::vector<NightLight>& out)
     {
         Ram = nds.MainRAM;
@@ -205,20 +234,7 @@ public:
         if (width < 1 || height < 1 || width * height > 799) return;
         const uint32_t models = ((matrix + 4 + 2 + 799 * 2 + 799 + 1) & ~1u);
         const int cx = ((int32_t)Read32(Glb + 0x258) >> 16) / 32, cz = ((int32_t)Read32(Glb + 0x260) >> 16) / 32;
-        double cam[12], proj[16];
-        for (int i = 0; i < 12; i++) cam[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
-        for (int i = 0; i < 16; i++) proj[i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
-        const double sx = 256.0 / std::max(256.0f, viewWidth) * zoom;
-        // World units (a tile is 16) to a place in the wide picture; false behind the camera.
-        auto place = [&](double x, double y, double z, float& u, float& v) {
-            double c[3], clip[4];
-            for (int j = 0; j < 3; j++) c[j] = x * cam[j] + y * cam[3 + j] + z * cam[6 + j] + cam[9 + j];
-            for (int j = 0; j < 4; j++) clip[j] = c[0] * proj[j] + c[1] * proj[4 + j] + c[2] * proj[8 + j] + proj[12 + j];
-            if (clip[3] <= 0) return false;
-            u = (float)((sx * clip[0] / clip[3] + 1) / 2);
-            v = (float)((1 - zoom * clip[1] / clip[3]) / 2);
-            return true;
-        };
+        auto place = [&](double x, double y, double z, float& u, float& v) { return Place(viewWidth, zoom, x, y, z, u, v); };
         for (int z = cz - Radius; z <= cz + Radius; z++)
             for (int x = cx - Radius; x <= cx + Radius; x++)
             {
@@ -260,6 +276,31 @@ private:
         return false;
     }
 
+    // The game's projection, as it loaded it for its own blocks.
+    void EmitProjection(std::vector<uint32_t>& out)
+    {
+        out.push_back(0x10); out.push_back(0);
+        out.push_back(0x16);
+        for (int i = 0; i < 16; i++) out.push_back(Read32(Glb + 0x08 + 4 * i));
+        out.push_back(0x10); out.push_back(2);
+        out.push_back(0x60); out.push_back(0xBFFF0000); // the whole screen
+    }
+
+    bool Place(float viewWidth, float zoom, double x, double y, double z, float& u, float& v)
+    {
+        double cam[12], proj[16];
+        for (int i = 0; i < 12; i++) cam[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
+        for (int i = 0; i < 16; i++) proj[i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
+        const double sx = 256.0 / std::max(256.0f, viewWidth) * zoom;
+        double c[3], clip[4];
+        for (int j = 0; j < 3; j++) c[j] = x * cam[j] + y * cam[3 + j] + z * cam[6 + j] + cam[9 + j];
+        for (int j = 0; j < 4; j++) clip[j] = c[0] * proj[j] + c[1] * proj[4 + j] + c[2] * proj[8 + j] + proj[12 + j];
+        if (clip[3] <= 0) return false;
+        u = (float)((sx * clip[0] / clip[3] + 1) / 2);
+        v = (float)((1 - zoom * clip[1] / clip[3]) / 2);
+        return true;
+    }
+
     static constexpr uint32_t FieldSystemPtr = 0x021D1110; // the game's FieldSystem pointer
     static constexpr uint32_t MapHeaders = 0x020F6BE0;     // sMapHeaders: 24 bytes per map
     static constexpr uint32_t SpriteGfx = 0x022074A8;      // overlay 1: sprite id -> overworld graphics
@@ -273,7 +314,7 @@ private:
     };
     std::vector<std::pair<uint32_t, uint32_t>> Events, Sprites; // ROM archives' members
     std::map<uint16_t, std::vector<Person>> ZoneObjects;         // by events bank
-    std::map<uint32_t, int> SpriteTex;                           // (member << 2 | facing) -> external texture, -1 if none
+    std::map<uint32_t, int> SpriteTex;                           // (member << 4 | facing << 2 | frame) -> external texture, -1 if none
 
     std::vector<std::pair<uint32_t, uint32_t>> NarcMembers(const char* path) const { return NdsNarcFiles(Rom, RomSize, path); }
 
@@ -310,10 +351,11 @@ private:
         return people;
     }
 
-    // A person's standing frame as an external texture (Wide.ExternalTextures), from the
-    // overworld sprite archive: 16 frames of 32 x 32, ".1" facing north, ".5" south, ".9"
-    // west and ".13" east, 16 colours with colour 0 transparent.
-    int GetSpriteTexture(uint16_t sprite, int facing)
+    // A person's frame as an external texture (Wide.ExternalTextures), from the overworld
+    // sprite archive: 16 frames of 32 x 32, four for each way they face (".1" to ".4" north,
+    // ".5" south, ".9" west and ".13" east): standing, a step, standing, the other step.
+    // 16 colours with colour 0 transparent.
+    int GetSpriteTexture(uint16_t sprite, int facing, int frame = 0)
     {
         // The game's table: sprite id, archive member, and how it is drawn (bits 5-9: 15
         // is a 3D model, not a billboard).
@@ -330,7 +372,7 @@ private:
             }
         }
         if (member >= Sprites.size() || member > 0x3FFF) return -1;
-        const uint32_t key = member << 2 | (uint32_t)facing;
+        const uint32_t key = member << 4 | (uint32_t)facing << 2 | (uint32_t)frame;
         auto it = SpriteTex.find(key);
         if (it != SpriteTex.end()) return it->second;
         int& index = SpriteTex[key];
@@ -342,12 +384,12 @@ private:
         if (t0 + 0x3C > size) return -1;
         const uint8_t* t = b + t0;
         const uint32_t ofsTex = Get32(t + 0x14), ofsPltt = Get32(t + 0x38);
-        const char* wanted[4] = { ".1", ".5", ".9", ".13" };
+        const std::string wanted = "." + std::to_string(facing * 4 + 1 + frame);
         const uint8_t* texEntry = nullptr;
         for (const auto& e : Dict(t + Get16(t + 0x0E)))
         {
             const size_t dot = e.first.rfind('.');
-            if (dot != std::string::npos && e.first.substr(dot) == wanted[facing]) texEntry = e.second;
+            if (dot != std::string::npos && e.first.substr(dot) == wanted) texEntry = e.second;
         }
         const auto pals = Dict(t + Get16(t + 0x34));
         if (!texEntry || pals.empty()) return -1;
@@ -423,44 +465,51 @@ private:
                     : groundY + ((int64_t)(Read8(altitudes + ghostCell) - Read8(altitudes + playerCell)) << 15);
                 const int64_t wx = (int64_t)person.x * 0x10000 + 0x8000;
                 const int64_t wz = (int64_t)person.z * 0x10000 + 0x8000 + 0x6000;
-                int64_t v[3];
-                for (int j = 0; j < 3; j++)
-                {
-                    const int64_t c0 = (int32_t)Read32(Glb + 0x4C + 4 * j), c1 = (int32_t)Read32(Glb + 0x4C + 12 + 4 * j);
-                    const int64_t c2 = (int32_t)Read32(Glb + 0x4C + 24 + 4 * j), c3 = (int32_t)Read32(Glb + 0x4C + 36 + 4 * j);
-                    v[j] = ((wx * c0 + wy * c1 + wz * c2) >> 12) + c3;
-                }
-                // Facing the screen: the quad is laid out in camera space.
-                out.push_back(0x10); out.push_back(2);
-                const uint32_t m[12] = { 0x1000, 0, 0, 0, 0x1000, 0, 0, 0, 0x1000, (uint32_t)v[0], (uint32_t)v[1], (uint32_t)v[2] };
-                out.push_back(0x17);
-                out.insert(out.end(), m, m + 12);
-                out.push_back(0x10); out.push_back(1);
-                out.push_back(0x1B); out.push_back(0x10000); out.push_back(0x10000); out.push_back(0x10000);
-                out.push_back(0x10); out.push_back(2);
-                // White ambient, no diffuse: the colour is that of the game's first light.
-                out.push_back(0x30); out.push_back(0x7FFF0000);
-                out.push_back(0x31); out.push_back(0);
-                out.push_back(0x29); out.push_back(0x001F80C1); // light 0, both sides, opaque, fog
-                out.push_back(0x2A); out.push_back(melonDS::WideState::ExternalTexParam + (uint32_t)tex);
-                out.push_back(0x2B); out.push_back(0);
-                out.push_back(0x21); out.push_back(0x1FF00000); // facing the camera
-                out.push_back(0x40); out.push_back(1);
-                const int16_t corner[4][2] = { { -0x1000, 0x2000 }, { -0x1000, 0 }, { 0x1000, 0 }, { 0x1000, 0x2000 } };
-                const uint16_t st[4][2] = { { 0, 0 }, { 0, 512 }, { 512, 512 }, { 512, 0 } };
-                for (int k = 0; k < 4; k++)
-                {
-                    out.push_back(0x22); out.push_back((uint32_t)st[k][0] | ((uint32_t)st[k][1] << 16));
-                    out.push_back(0x23);
-                    out.push_back((uint16_t)corner[k][0] | ((uint32_t)(uint16_t)corner[k][1] << 16));
-                    out.push_back(0);
-                }
-                out.push_back(0x41);
+                EmitBillboard(tex, wx, wy, wz, out);
                 drawn++;
             }
         }
         return drawn;
     }
+    // A person's 32 x 32 quad (2 x 2 tiles) facing the screen, its bottom centre at world
+    // position (wx, wy, wz) (fx32), lit by the game's light.
+    void EmitBillboard(int tex, int64_t wx, int64_t wy, int64_t wz, std::vector<uint32_t>& out)
+    {
+        int64_t v[3];
+        for (int j = 0; j < 3; j++)
+        {
+            const int64_t c0 = (int32_t)Read32(Glb + 0x4C + 4 * j), c1 = (int32_t)Read32(Glb + 0x4C + 12 + 4 * j);
+            const int64_t c2 = (int32_t)Read32(Glb + 0x4C + 24 + 4 * j), c3 = (int32_t)Read32(Glb + 0x4C + 36 + 4 * j);
+            v[j] = ((wx * c0 + wy * c1 + wz * c2) >> 12) + c3;
+        }
+        // Facing the screen: the quad is laid out in camera space.
+        out.push_back(0x10); out.push_back(2);
+        const uint32_t m[12] = { 0x1000, 0, 0, 0, 0x1000, 0, 0, 0, 0x1000, (uint32_t)v[0], (uint32_t)v[1], (uint32_t)v[2] };
+        out.push_back(0x17);
+        out.insert(out.end(), m, m + 12);
+        out.push_back(0x10); out.push_back(1);
+        out.push_back(0x1B); out.push_back(0x10000); out.push_back(0x10000); out.push_back(0x10000);
+        out.push_back(0x10); out.push_back(2);
+        // White ambient, no diffuse: the colour is that of the game's first light.
+        out.push_back(0x30); out.push_back(0x7FFF0000);
+        out.push_back(0x31); out.push_back(0);
+        out.push_back(0x29); out.push_back(0x001F80C1); // light 0, both sides, opaque, fog
+        out.push_back(0x2A); out.push_back(melonDS::WideState::ExternalTexParam + (uint32_t)tex);
+        out.push_back(0x2B); out.push_back(0);
+        out.push_back(0x21); out.push_back(0x1FF00000); // facing the camera
+        out.push_back(0x40); out.push_back(1);
+        const int16_t corner[4][2] = { { -0x1000, 0x2000 }, { -0x1000, 0 }, { 0x1000, 0 }, { 0x1000, 0x2000 } };
+        const uint16_t st[4][2] = { { 0, 0 }, { 0, 512 }, { 512, 512 }, { 512, 0 } };
+        for (int k = 0; k < 4; k++)
+        {
+            out.push_back(0x22); out.push_back((uint32_t)st[k][0] | ((uint32_t)st[k][1] << 16));
+            out.push_back(0x23);
+            out.push_back((uint16_t)corner[k][0] | ((uint32_t)(uint16_t)corner[k][1] << 16));
+            out.push_back(0);
+        }
+        out.push_back(0x41);
+    }
+
     static constexpr uint32_t Glb = 0x021DA49C;            // NitroSystem's NNS_G3dGlb (camera, projection)
 
     struct Material

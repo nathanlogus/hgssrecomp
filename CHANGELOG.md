@@ -55,6 +55,11 @@
   Pokémon from your party next to your name. Catch messages show the Pokémon caught,
   and the summary before leaving a session counts its link battles, trades and each
   player's catches. The pictures come from your own ROM.
+- **See each other on the overworld.** While playing together, the other players'
+  own trainers (boy or girl, on foot or on a bike) walk around in your world with
+  their names over them, and an arrow at the edge of the screen shows the way to
+  anyone out of view, with where they are. Hold R and press the D-pad for an emote
+  over your trainer (Hi!, ?, a heart, thanks) that the others see.
 - A **start screen** before the game: Play, Online, Settings, Quit (Play is already
   chosen, so one press starts the game). It can be turned off in the Game tab.
 - Fewer flashes when the view changes: the world no longer starts at normal size and

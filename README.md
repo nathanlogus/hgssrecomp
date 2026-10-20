@@ -227,6 +227,10 @@ Then one player chooses **Host a session** and tells the others the code shown
 Pokemon Center's wireless club counters (the two ladies at the back) as you
 would with consoles side by side. From the command line, `--party <server>
 --party-code <code>` joins straight away.
+On the overworld you see the others' trainers walking around with their names
+over them (with the widescreen world on), and an arrow at the edge of the screen
+points to anyone out of view. Hold **R** and press the D-pad for an emote over your
+trainer: up Hi!, left a question mark, right a heart, down thanks.
 
 `run.sh` also writes what the game prints to `game.log` next to it; a bug report
 about a controller should include it (it lists every controller SDL sees).

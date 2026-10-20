@@ -146,6 +146,10 @@ class Relay:
             p.status = body[:6]
             for q in self.others(p):
                 self.send(q, 'S', bytes([p.slot]) + p.status)
+        elif kind in 'OW' and len(body) >= 1:
+            # Where a trainer is on the overworld, and emotes: to the others as they are.
+            for q in self.others(p):
+                self.send(q, kind, bytes([p.slot]) + body[:40])
         elif kind == 'E' and len(body) >= 3:
             for q in self.others(p):
                 self.send(q, 'E', bytes([p.slot]) + body[:3])

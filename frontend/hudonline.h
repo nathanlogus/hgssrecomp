@@ -3,7 +3,9 @@
 // 16-menu-session): the session badge with the signal bars, the player chips, the card
 // shown while a lost connection is retried, the session screen (players and the code),
 // code entry, the start screen and the summary shown on leaving. Data from party.h.
+#include <cmath>
 #include <functional>
+#include <map>
 #include "hudtoast.h"
 #include "party.h"
 #include "romart.h"
@@ -26,6 +28,12 @@ inline uint32_t TextColourOf(int colour)
 inline const char* ColourName(int colour)
 {
     static const char* n[] = { "Blue", "Green", "Orange", "Red" };
+    return n[colour & 3];
+}
+
+inline std::string PillOf(int colour)
+{
+    static const char* n[] = { "people/name_pill_blue", "people/name_pill_green", "people/name_pill_orange", "people/name_pill_red" };
     return n[colour & 3];
 }
 
@@ -293,6 +301,75 @@ struct SessionStats
     int lastCaught[4] = {};  // and the species of their last one
 };
 
+// The co-op overworld (03-overworld, 04-tags): emotes, name pills over the trainers and
+// pointers to those off the screen. The emotes in the order of the 'W' message.
+inline const char* EmoteSprite(int e)
+{
+    static const char* n[] = { "emotes/emote_hi", "emotes/emote_question", "emotes/emote_heart", "emotes/emote_thanks",
+        "emotes/emote_angry", "emotes/emote_music", "emotes/emote_sweat", "emotes/emote_sleep" };
+    return e >= 0 && e < 8 ? n[e] : nullptr;
+}
+
+// A player's name pill centred on x with its bottom at y, and their emote (or the battle
+// burst while they are in a battle) beside it.
+inline void NamePill(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x, float y, const PartyPeer& p, int emote)
+{
+    const float w = HudTextWidth(ui, f, 32, p.name) + 48, h = 48;
+    DrawSprite(c, sp.Get(PillOf(p.colour)), ui(x - w / 2), ui(y - h), ui(w), ui(h), ui.s);
+    HudText(c, ui, f, x, y - h + 8, 32, p.name, HudColour::White, 1);
+    const char* bubble = emote >= 0 ? EmoteSprite(emote) : p.state == PS_BATTLE ? "emotes/emote_battle" : nullptr;
+    if (bubble) HudSprite(c, ui, sp, bubble, x + w / 2 - 12, y - h - 52, 72, 72);
+}
+
+// The pointer sprite (an arrow to the right in a white disc) turned by `angle` radians,
+// in 32 steps, made once each.
+inline const Image* TurnedPointer(Sprites& sp, float angle)
+{
+    const Sprite* s = sp.Get("people/pointer");
+    if (!s) return nullptr;
+    const int step = (int)std::lround(angle / 6.2831853f * 32) & 31;
+    static std::map<std::pair<const Sprite*, int>, Image> turned;
+    Image& img = turned[{ s, step }];
+    if (!img.px.empty()) return &img;
+    const Image& src = s->img;
+    img.w = src.w;
+    img.h = src.h;
+    img.px.assign((size_t)src.w * src.h, 0);
+    const float a = step * 6.2831853f / 32, ca = std::cos(a), sa = std::sin(a);
+    const float cx = src.w / 2.0f, cy = src.h / 2.0f;
+    for (int y = 0; y < src.h; y++)
+        for (int x = 0; x < src.w; x++)
+        {
+            const float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
+            const int sx = (int)std::floor(ca * dx + sa * dy + cx), sy = (int)std::floor(-sa * dx + ca * dy + cy);
+            if (sx >= 0 && sy >= 0 && sx < src.w && sy < src.h) img.px[(size_t)y * src.w + x] = src.px[(size_t)sy * src.w + sx];
+        }
+    return &img;
+}
+
+// A player off the screen: the pointer at (x, y) turned towards them, and a pill with their
+// name and place on the side towards the middle of the screen.
+inline void OffscreenPointer(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x, float y, float angle,
+    const PartyPeer& p, const std::string& place, float screenW)
+{
+    if (const Image* img = TurnedPointer(sp, angle)) Blit(c, *img, 0, 0, (float)img->w, (float)img->h, ui(x - 32), ui(y - 32), ui(64), ui(64));
+    const std::string text = place.empty() ? p.name : p.name + " Â· " + place;
+    const float w = HudTextWidth(ui, f, 32, text) + 48, h = 48;
+    const float px = x < screenW / 2 ? x + 44 : x - 44 - w;
+    DrawSprite(c, sp.Get(PillOf(p.colour)), ui(px), ui(y - h / 2), ui(w), ui(h), ui.s);
+    HudText(c, ui, f, px + w / 2, y - h / 2 + 8, 32, text, HudColour::White, 1);
+}
+
+// The emote wheel around this player's trainer (at x, y): one emote for each way of the D-pad.
+inline void EmoteWheel(Canvas& c, const Ui& ui, Sprites& sp, float x, float y)
+{
+    const float r = 120, s = 80;
+    HudSprite(c, ui, sp, EmoteSprite(0), x - s / 2, y - r - s / 2, s, s);
+    HudSprite(c, ui, sp, EmoteSprite(1), x - r - s / 2, y - s / 2, s, s);
+    HudSprite(c, ui, sp, EmoteSprite(2), x + r - s / 2, y - s / 2, s, s);
+    HudSprite(c, ui, sp, EmoteSprite(3), x - s / 2, y + r - s / 2, s, s);
+}
+
 // The Profile tab's preview of what the others see (15-menu-profile's trainer card).
 inline void TrainerCardPreview(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const HudRect& r, const PartyPeer& me, int dex,
     int badges, const SessionStats& st, const IconFn& icon)
@@ -306,8 +383,7 @@ inline void TrainerCardPreview(Canvas& c, const Ui& ui, Sprites& sp, const RomFo
     HudText(c, ui, f, cx, y + 90 + d / 2 - 32, 64, Initials(me.name), HudColour::Ink, 1, true);
     if (me.partner && icon) HudPixelArt(c, ui, icon(me.partner), cx + d / 2 - 30, y + 90 + d - 80, 96, 96);
     const float pw = HudTextWidth(ui, f, 32, me.name) + 48;
-    DrawSprite(c, sp.Get(std::string("people/name_pill_") + (me.colour == 1 ? "green" : me.colour == 2 ? "orange" : me.colour == 3 ? "red" : "blue")),
-        ui(cx - pw / 2), ui(y + 90 + d + 6), ui(pw), ui(48), ui.s);
+    DrawSprite(c, sp.Get(PillOf(me.colour)), ui(cx - pw / 2), ui(y + 90 + d + 6), ui(pw), ui(48), ui.s);
     HudText(c, ui, f, cx, y + 90 + d + 14, 32, me.name, HudColour::White, 1);
     const std::pair<std::string, std::string> rows[] = { { "Badges", std::to_string(badges) },
         { "Pok\xC3\xA9" "dex", dex < 0 ? "-" : std::to_string(dex) }, { "Link battles", std::to_string(st.linkBattles) },

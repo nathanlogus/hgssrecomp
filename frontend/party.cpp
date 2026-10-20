@@ -72,6 +72,8 @@ const Socket NoSocket = -1;
 
 // The game's code (HeartGold/SoulSilver US).
 constexpr u32 WmGlobal = 0x021D4124;    // +4: pointer to the WirelessManager
+constexpr u32 FieldSystemPtr = 0x021D4158; // sFieldSysPtr
+constexpr u32 MapHeaders = 0x020F6BE0;     // sMapHeaders: 24 bytes per map
 constexpr u32 CommGlobal = 0x021D4150;  // pointer; +0x4E: the kind of link (CommManager_GetCommType)
 constexpr u32 Pad = 0x02032874;         // WirelessManager_SetParentParameter: only ConnectServer calls it
 constexpr u32 ConnectClientAuto = 0x02032B84, ConnectClientScan = 0x02032C1C, StartMeasureChannel = 0x020332C0,
@@ -413,6 +415,28 @@ void Message(char kind, const u8* p, size_t n)
             q.map = p[2] | p[3] << 8;
             q.badges = p[4];
             if (n >= 7) q.rtt = p[5] | p[6] << 8;
+        }
+        break;
+    case 'O': // where a player's trainer is: player, flags, matrix, map (u16), x, y, z (s32), facing, sprite (u16)
+        if (n >= 20 && p[0] < 4 && p[0] != Me)
+        {
+            PartyWalker& w = Peers[p[0]].walk;
+            w.shown = p[1] & 1;
+            w.matrix = RomGet16(p + 2);
+            w.map = RomGet16(p + 4);
+            w.x = (int32_t)RomGet32(p + 6);
+            w.y = (int32_t)RomGet32(p + 10);
+            w.z = (int32_t)RomGet32(p + 14);
+            w.facing = p[18] & 3;
+            w.sprite = n >= 21 ? RomGet16(p + 19) : 0;
+            w.at = Ms();
+        }
+        break;
+    case 'W': // an emote: player, emote
+        if (n >= 2 && p[0] < 4)
+        {
+            Peers[p[0]].walk.emote = p[1];
+            Peers[p[0]].walk.emoteAt = Ms();
         }
         break;
     case 'E': // an event: player, kind, argument (u16)
@@ -1034,6 +1058,48 @@ void Party_Attach(NDS& nds)
 
 int Party_Count();
 
+// This player's trainer, read every frame (for the HUD) and sent to the others when `send`
+// (when it changed, and every second anyway):
+// sFieldSysPtr -> location (the map) and playerAvatar -> its map object, whose sprite,
+// facing and world position the others draw.
+u32 LastWalk = 0, LastWalkSent = 0;
+std::vector<u8> SentWalk;
+void SendWalk(u32 now, int state, bool send)
+{
+    // In a battle or a menu the others keep seeing the trainer where it was.
+    if (state != PS_FIELD && state != PS_LINK) return;
+    const u32 fs = R32(FieldSystemPtr), loc = R32(fs + 0x20), obj = R32(R32(fs + 0x40) + 0x30);
+    const u32 map = R32(loc);
+    const bool shown = state == PS_FIELD && fs && obj && map < 540 && !(R32(obj) & 0x200);
+    const u32 matrix = shown ? R16(MapHeaders + 24 * map + 4) : 0xFFFF;
+    std::vector<u8> b = { (u8)shown, (u8)matrix, (u8)(matrix >> 8), (u8)map, (u8)(map >> 8) };
+    for (int k = 0; k < 3; k++)
+    {
+        const u32 v = shown ? R32(obj + 0x70 + 4 * k) : 0;
+        for (int i = 0; i < 4; i++) b.push_back((u8)(v >> (8 * i)));
+    }
+    const u32 sprite = R32(obj + 0x10);
+    b.push_back((u8)(R32(obj + 0x28) & 3));
+    b.push_back((u8)sprite);
+    b.push_back((u8)(sprite >> 8));
+    PartyWalker& w = Peers[Me & 3].walk;
+    w.shown = shown;
+    w.matrix = (int)matrix;
+    w.map = (int)map;
+    w.x = (int32_t)R32(obj + 0x70);
+    w.y = (int32_t)R32(obj + 0x74);
+    w.z = (int32_t)R32(obj + 0x78);
+    w.facing = R32(obj + 0x28) & 3;
+    w.sprite = (int)sprite;
+    w.at = now;
+    if (!send) return;
+    LastWalk = now;
+    if (b == SentWalk && now - LastWalkSent < 1000) return;
+    SentWalk = b;
+    LastWalkSent = now;
+    Send('O', b);
+}
+
 void Party_Process(int state, int map)
 {
     MyState = state;
@@ -1068,6 +1134,7 @@ void Party_Process(int state, int map)
                 Send('Q', { (u8)now, (u8)(now >> 8), (u8)(now >> 16), (u8)(now >> 24) });
                 LastPing = now;
             }
+            if (Sock != NoSocket) SendWalk(now, state, now - LastWalk >= 100);
             if (Sock != NoSocket && (now - LastStatus >= 2000 || state != SentState || map != SentMap))
             {
                 const int r = std::max(0, std::min(65535, Rtt));
@@ -1117,6 +1184,26 @@ void Party_Leave()
 void Party_SetMax(int maxPlayers)
 {
     if (Link == PartyLink::Online) Send('M', { (u8)std::max(2, std::min(4, maxPlayers)) });
+}
+
+void Party_SendEmote(int emote)
+{
+    if (Link != PartyLink::Online || Me < 0) return;
+    Send('W', { (u8)emote });
+    Peers[Me].walk.emote = emote;
+    Peers[Me].walk.emoteAt = Ms();
+}
+
+uint32_t Party_Now() { return Ms(); }
+
+std::string Party_PlaceName(int map)
+{
+    // The map header's place (mapsec, the low byte at 0x12) names it in text bank 279.
+    if (map < 0 || map >= 540 || !Nds) return "";
+    static std::map<int, std::string> names;
+    auto it = names.find(map);
+    if (it != names.end()) return it->second;
+    return names[map] = NdsMessage(RomData, RomSize, 279, R16(MapHeaders + 24 * map + 0x12) & 0xFF);
 }
 
 void Party_SetPartner(int species)
