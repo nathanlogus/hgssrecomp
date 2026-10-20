@@ -56,6 +56,7 @@
 #include "hudbag.h"
 #include "hudparty.h"
 #include "huddex.h"
+#include "hudgear.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -2983,7 +2984,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, and the battle commands.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear and the battle commands.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -5323,6 +5324,58 @@ int main(int argc, char** argv)
                     break;
                 }
         bagShown = bagNow;
+        // The Pokégear redrawn (hudgear.h): its phone and map tabs, read from the game's
+        // memory each frame; calls, menus and the other tabs are the game's own picture.
+        static uint32_t gearManager = 0;
+        static bool gearShown = false;
+        static HudGear::Book gearBook(rom.data(), rom.size());
+        bool gearNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Pokegear"))
+        {
+            auto app = [](const char* name) -> const RcApp* {
+                for (unsigned i = 0; i < rc_num_apps; i++)
+                    if (!strcmp(rc_apps[i].name, name)) return &rc_apps[i];
+                return nullptr;
+            };
+            HudGear::State gs;
+            int step = -1;
+            bool between = false;
+            // The last picture stays while the Pokégear changes tabs (about 40 frames), so
+            // the game's own does not flash up between them.
+            static HudGear::State gearLast;
+            static int gearHeld = 0;
+            if (HudGear::ReadState(readRam, app, gearManager, gs, step, between) && HudGear::Shown(gs, step, gearShown))
+            {
+                gearNow = true;
+                gearLast = gs;
+                gearHeld = 0;
+            }
+            else if (between && gearShown && ++gearHeld < 90)
+            {
+                gearNow = true;
+                gs = gearLast;
+            }
+            if (gearNow)
+            {
+                HudGear::Env env;
+                env.me.name = onlineName();
+                env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                env.me.map = partyMap;
+                env.rd = readRam;
+                int year, month, day, hour, minute, second;
+                nds->RTC.GetDateTime(year, month, day, hour, minute, second);
+                // Sakamoto's day of the week (0 Sunday), as the DS clock counts it.
+                static const int t[] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+                if (year < 100) year += 2000;
+                const int y = year - (month < 3);
+                env.weekday = (y + y / 4 - y / 100 + y / 400 + t[(month + 11) % 12] + day) % 7;
+                const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env,
+                    { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Select" }, { { back }, gs.inTabs ? "Close" : "Back" } });
+                overlayUsed = true;
+            }
+        }
+        gearShown = gearNow;
         // The party menu and the summary redrawn (hudparty.h), mirroring the game's own
         // applications, which keep the input; on any step they do not draw, the game shows.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen)

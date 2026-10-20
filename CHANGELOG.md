@@ -37,6 +37,11 @@
   nature's raised and lowered stats in red and blue), its moves coloured by type with
   their PP, and its ribbons. The game's own buttons work as always. Using an item on a
   Pokémon, a move's details and the like still show the game's own screens.
+- A **new Pokégear** (NEW SCREENS): its tabs as round buttons along the top, the game's
+  clock with the day, the phone's contacts with their trainer class and home, and a map of
+  the region with you on it (and, in an online session, your friends) and the game's words
+  about the place under the cursor. The game's own buttons work as always; phone calls,
+  the phone's menu, the zoomed map, the radio and the settings show the game's own screens.
 - **Autosave** (Game tab, on by default): every few minutes and when you quit, a resume
   point is kept beside your save, and **Continue** carries on from it straight away (the
   save card says where and when). The game also saves by itself when you enter a Pokémon
