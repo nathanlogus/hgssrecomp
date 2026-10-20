@@ -257,6 +257,28 @@ brought to about the loudness of the game's music; sound effects, cries and jing
 the game's own. **Music** in the Game tab switches between the songs and the original
 tunes. The songs are yours: they are not part of this project and are never uploaded with it.
 
+### Autosave
+
+With **Autosave** on (Game tab, on by default) your place is kept two ways:
+
+- **Resume points.** Every few minutes on the overworld, after each save and when you quit,
+  the game quietly keeps a snapshot of where you are, next to your save file
+  (`soulsilver.sav.resume`, and the one before as `soulsilver.sav.resume.bak`). A small
+  circle shows in the top right corner when one is made. **Continue** on the start screen
+  then carries on from there straight away, without the game's title screen; the save card
+  says where and when ("Resume: Route 30 · 5 min ago"). A resume point is only used while
+  it holds the same game save as your save file, so it can never take you back to before a
+  save you made: after a newer save, Continue starts from that save as usual.
+- **Game saves.** The game's own save runs by itself when you walk into a Pokémon Center
+  and after you earn a badge (at most every ten minutes, a badge always), once you stand
+  still for a second with nothing open. A "Saving..." note shows in the corner meanwhile
+  and your buttons wait. Pressing a button before the save has started stops it; it is
+  tried again a little later. A first save after starting the game takes about half a
+  minute, the game writing all of its data; later ones about fifteen seconds.
+
+The note's animation can be your own: put an animated GIF at `assets/autosave.gif`.
+Like songs, it is yours and not part of the project.
+
 ### Your own font and button pictures
 
 The menus and the HUD use the game's own letters and coloured button pictures. A font file
