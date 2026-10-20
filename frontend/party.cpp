@@ -1209,6 +1209,24 @@ void Party_SendEmote(int emote)
 
 uint32_t Party_Now() { return Ms(); }
 
+PartyCard Party_MyCard()
+{
+    // PlayerProfile: name, id (+0x10), money (+0x14), gender (+0x18), Johto's badges (+0x1A),
+    // Kanto's (+0x1F); then the coins (u16) and the play time (hours u16, minutes, seconds).
+    PartyCard c;
+    if (!Nds || !ProfileAt || ProfileAt + 0x26 > Nds->MainRAMMask + 1) return c;
+    const uint8_t* p = Nds->MainRAM + ProfileAt;
+    c.known = true;
+    c.id = RomGet32(p + 0x10);
+    c.money = RomGet32(p + 0x14);
+    c.gender = p[0x18] & 1;
+    c.johto = p[0x1A];
+    c.kanto = p[0x1F];
+    c.hours = RomGet16(p + 0x22);
+    c.minutes = p[0x24];
+    return c;
+}
+
 void Party_SendInvite(int player, int invite)
 {
     if (Link == PartyLink::Online && player >= 0 && player < 4 && player != Me) Send('V', { (u8)player, (u8)invite });

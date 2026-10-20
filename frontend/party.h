@@ -53,6 +53,17 @@ struct PartyEvent
     std::string text;      // Failed: why
 };
 
+// This player's trainer card, from their save in memory.
+struct PartyCard
+{
+    bool known = false;
+    uint32_t id = 0, money = 0;
+    int gender = 0;            // 0 boy, 1 girl
+    int johto = 0, kanto = 0;  // badges, one bit each
+    int hours = 0, minutes = 0;
+};
+PartyCard Party_MyCard();
+
 // Invites from one player to another, and their answers.
 enum PartyInvite { PI_BATTLE = 1, PI_TRADE = 2, PI_YES = 0x10, PI_NO = 0x20, PI_BUSY = 0x40 }; // answers: PI_YES | PI_BATTLE...
 

@@ -25,6 +25,7 @@
 #include "ndsrom.h"
 #include "GPU3D_Wide.h"
 #include "nightfx.h"
+#include "hud.h"
 
 class WorldBlocks
 {
@@ -195,6 +196,27 @@ public:
         Ram = nds.MainRAM;
         RamMask = nds.MainRAMMask;
         return Place(viewWidth, zoom, x, y, z, u, v);
+    }
+
+    // A person's frame as a picture (for the HUD), or false. Needs the overworld running.
+    bool SpriteImage(melonDS::NDS& nds, uint16_t sprite, int facing, Image& out)
+    {
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        if (Sprites.empty() || !InRam(Read32(FieldSystemPtr)) || Read16(SpriteGfx) != 1) return false;
+        const int tex = GetSpriteTexture(sprite, facing & 3);
+        if (tex < 0) return false;
+        const auto& t = melonDS::Wide.ExternalTextures[tex];
+        out.w = t.W;
+        out.h = t.H;
+        out.px.resize(t.Texels.size());
+        for (size_t i = 0; i < t.Texels.size(); i++)
+        {
+            const uint32_t v = t.Texels[i];
+            const uint32_t r = (v & 63) * 255 / 63, g = (v >> 8 & 63) * 255 / 63, b = (v >> 16 & 63) * 255 / 63;
+            out.px[i] = (v >> 24 & 31) ? 0xFF000000 | r << 16 | g << 8 | b : 0;
+        }
+        return true;
     }
 
     // Other players' trainers (online), drawn as the game draws a person.

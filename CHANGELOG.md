@@ -64,6 +64,10 @@
   and they get a card to answer it (yes or not now, within 20 seconds). It also lists
   the players you have met before and when you last saw them. During a link battle a
   banner at the top shows who is battling whom.
+- A **new trainer card**, drawn in the style of the pause menu: your trainer, your
+  partner Pokémon, money, Pokédex, play time and the badges you have, and while playing
+  together the session's link battles and trades. NEW SCREENS in the Display tab turns
+  it off. More of the game's screens may follow.
 - A **start screen** before the game: Play, Online, Settings, Quit (Play is already
   chosen, so one press starts the game). It can be turned off in the Game tab.
 - Fewer flashes when the view changes: the world no longer starts at normal size and

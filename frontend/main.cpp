@@ -50,7 +50,7 @@
 #include "hud.h"
 #include "hudmenu.h"
 #include "hudtoast.h"
-#include "hudonline.h"
+#include "hudscreens.h"
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
@@ -1021,6 +1021,7 @@ struct Settings
     int zoom = 100;       // world zoom, percent (one of ZoomSteps)
     bool voidFill = true; // haze instead of black where the world reaches past the loaded map
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
+    bool redrawn = true;  // the game's screens redrawn in the HUD style (so far the trainer card)
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
     bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
     int windowH = 0;      // window height chosen in the menu; 0 = from --scale
@@ -1076,6 +1077,7 @@ struct Settings
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "void_fill") voidFill = v == "1";
             else if (k == "night_fx") nightFx = v == "1";
+            else if (k == "redrawn_screens") redrawn = v == "1";
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v == "1";
             else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), ZoomSteps[0], ZoomSteps[ZoomCount - 1]);
@@ -1114,6 +1116,7 @@ struct Settings
         f << "zoom=" << zoom << "\n";
         f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
+        f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
         f << "window_height=" << windowH << "\n";
@@ -2513,7 +2516,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2556,6 +2559,7 @@ int main(int argc, char** argv)
     int inviteFrom = -1, inviteKind = 0;
     uint32_t inviteAt = 0;
     int partyMap = -1; // this player's map, as last given to the party
+    Image trainerArt;  // this player's trainer, for the trainer card
     // The frontend's own start screen, before the game runs (not for tests or a party or
     // snapshot from the command line).
     bool startOpen = spritesOk && ((cfg.startScreen && !opt.headless && opt.party.empty() && opt.stateLoad.empty()) || getenv("SSR_START_SCREEN"));
@@ -2623,6 +2627,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_FARMAP, "Far map", onOff(cfg.farMap), "Draws the map beyond the part the game has loaded, so a wide or zoomed-out view has no gaps.");
         add(T_DISPLAY, M_VOIDFILL, "Void fill", onOff(cfg.voidFill), "Fills any ground not loaded yet with a soft haze instead of black.");
         add(T_DISPLAY, M_NIGHTFX, "Night effects", onOff(cfg.nightFx), "In the evening and at night: night colours, lamp light, glowing windows and fireflies.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style. So far the trainer card.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -3480,6 +3485,9 @@ int main(int argc, char** argv)
             case M_NIGHTFX:
                 cfg.nightFx = !cfg.nightFx;
                 break;
+            case M_REDRAWN:
+                cfg.redrawn = !cfg.redrawn;
+                break;
             case M_VOIDFILL:
                 cfg.voidFill = !cfg.voidFill;
                 break;
@@ -3949,6 +3957,8 @@ int main(int argc, char** argv)
                 if (Party_Me() >= 0) sessionStats.caught[Party_Me()] = Party_CaughtThisSession();
             }
             partyMap = pmap;
+            if (trainerArt.px.empty() && frame % 60 == 0 && fieldActive())
+                worldBlocks.SpriteImage(*nds, Party_MyCard().gender ? 97 : 0, 1, trainerArt); // the boy or the girl, facing south
             // The players met: remembered as friends (every few seconds while together).
             if (Party_Link() == PartyLink::Online && frame % 300 == 0)
             {
@@ -4499,6 +4509,20 @@ int main(int argc, char** argv)
         {
             menu.Draw(canvas, "POKEMON SOULSILVER", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
             overlayUsed = true;
+        }
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("TrainerCard"))
+        {
+            PartyPeer me;
+            me.name = onlineName();
+            me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+            const PartyCard card = Party_MyCard();
+            if (card.known)
+            {
+                HudScreens::TrainerCard(canvas, ui, sprites, font, me, card, Party_DexCount(), sessionStats, Party_Link() != PartyLink::Off,
+                    trainerArt.px.empty() ? nullptr : &trainerArt, cfg.onlinePartner ? romArt.PokemonIcon(cfg.onlinePartner) : nullptr,
+                    { { { PadGlyph(cfg.byLabel ? PAD_B : PAD_A) }, "Back" } });
+                overlayUsed = true;
+            }
         }
         if (spritesOk && (screen != SCR_NONE || (startOpen && !menu.open)))
         {
