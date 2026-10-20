@@ -351,25 +351,28 @@ public:
     bool Ok() const { return ok; }
 
     // Width in canvas pixels at `scale` (canvas pixels per font pixel).
-    int Width(const std::string& text, int scale, bool bold = false) const
+    int Width(const std::string& text, float scale, bool bold = false) const
     {
-        if (!ok) return Canvas::TextWidth(text, scale);
+        if (!ok) return Canvas::TextWidth(text, std::max(1, (int)std::lround(scale)));
         int w = 0;
         for (uint32_t cp : Utf8(text))
-            w += Advance(faces[bold], Glyph(cp)) * scale;
-        return w;
+            w += Advance(faces[bold], Glyph(cp));
+        return (int)std::lround(w * scale);
     }
-    int Height(int scale) const { return 16 * scale; }
 
     // Draws `text` with its top left at (x, y): the letters in `ink` and their shadow in
     // `shadow` (0 for none). Without the ROM's font the 5x7 one stands in.
-    void Draw(Canvas& c, int x, int y, const std::string& text, int scale, uint32_t ink, uint32_t shadow, bool bold = false) const
+    // A scale between whole numbers gives some font pixels one canvas pixel more than
+    // others; the letters stay sharp.
+    void Draw(Canvas& c, int x, int y, const std::string& text, float scale, uint32_t ink, uint32_t shadow, bool bold = false) const
     {
         if (!ok)
         {
-            c.Text(x, y + 4 * scale, text, scale, ink);
+            const int k = std::max(1, (int)std::lround(scale));
+            c.Text(x, y + 4 * k, text, k, ink);
             return;
         }
+        int pen = 0; // in font pixels, so rounding does not add up along the line
         const Face& f = faces[bold];
         for (uint32_t cp : Utf8(text))
         {
@@ -386,12 +389,15 @@ public:
                             const int v = (row >> ((7 - tx) * 2)) & 3;
                             const uint32_t col = v == 1 ? ink : v == 2 ? shadow : 0;
                             if (col >> 24)
-                                FillBlend(c, (float)x + ((t & 1) * 8 + tx) * scale, (float)y + ((t >> 1) * 8 + ty) * scale,
-                                    (float)scale, (float)scale, col);
+                            {
+                                const float px0 = x + std::round((pen + (t & 1) * 8 + tx) * scale), py0 = y + std::round(((t >> 1) * 8 + ty) * scale);
+                                const float px1 = x + std::round((pen + (t & 1) * 8 + tx + 1) * scale), py1 = y + std::round(((t >> 1) * 8 + ty + 1) * scale);
+                                FillBlend(c, px0, py0, px1 - px0, py1 - py0, col);
+                            }
                         }
                     }
             }
-            x += Advance(f, g) * scale;
+            pen += Advance(f, g);
         }
     }
 
@@ -463,8 +469,13 @@ struct Ui
         s = h / 1080.0f;
     }
     float operator()(float design) const { return design * s; }
-    // The font scale for text `px` design pixels tall (a cell is 16).
-    int Font(float px) const { return std::max(1, (int)std::lround(px * s / 16)); }
+    // The font scale for text `px` design pixels tall (a cell is 16): a whole number when it
+    // is close to one, as the pixel art looks best then.
+    float Font(float px) const
+    {
+        const float k = px * s / 16, r = std::round(k);
+        return r >= 1 && std::fabs(k - r) < 0.15f ? r : std::max(1.0f, k);
+    }
     // Positions measured from the right or bottom edge of the design canvas, for screens
     // wider or narrower than 16:9.
     float Right(float design) const { return W - design * s; }

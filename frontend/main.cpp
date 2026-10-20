@@ -48,6 +48,7 @@
 #include "layout.h"
 #include "ui.h"
 #include "hud.h"
+#include "hudmenu.h"
 #include "merged.h"
 #include "gpucompose.h"
 #include "battlewide.h"
@@ -944,24 +945,55 @@ static PadState ReadPad(Pads& pads)
     return st;
 }
 
-// DS buttons from the controller. With byLabel the button printed "A" is A on any pad;
-// otherwise the DS diamond is mapped by position (right = A, bottom = B).
-static uint32_t PadKeys(const PadState& p, bool byLabel)
+// The DS buttons that can be given another controller button, in the Controls tab's order.
+static const int RemapKeys[] = { KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_START, KEY_SELECT };
+static const int RemapCount = (int)(sizeof(RemapKeys) / sizeof(RemapKeys[0]));
+
+// The controller button for a DS button (RemapKeys[i]): the one chosen in the Controls tab,
+// or else by the label printed on it ("A" is A on any pad) or by position (the DS diamond:
+// right = A, bottom = B).
+static int PadButtonFor(int i, bool byLabel, const int* map)
+{
+    if (map && map[i] >= 0) return map[i];
+    static const int labels[] = { PAD_A, PAD_B, PAD_X, PAD_Y, PAD_LB, PAD_RB, PAD_START, PAD_BACK };
+    static const int positions[] = { PAD_B, PAD_A, PAD_Y, PAD_X, PAD_LB, PAD_RB, PAD_START, PAD_BACK };
+    return byLabel ? labels[i] : positions[i];
+}
+
+// DS buttons from the controller.
+static uint32_t PadKeys(const PadState& p, bool byLabel, const int* map)
 {
     uint32_t k = 0;
-    if (p.btn[byLabel ? PAD_A : PAD_B]) k |= 1 << KEY_A;
-    if (p.btn[byLabel ? PAD_B : PAD_A]) k |= 1 << KEY_B;
-    if (p.btn[byLabel ? PAD_X : PAD_Y]) k |= 1 << KEY_X;
-    if (p.btn[byLabel ? PAD_Y : PAD_X]) k |= 1 << KEY_Y;
-    if (p.btn[PAD_LB]) k |= 1 << KEY_L;
-    if (p.btn[PAD_RB]) k |= 1 << KEY_R;
-    if (p.btn[PAD_START]) k |= 1 << KEY_START;
-    if (p.btn[PAD_BACK]) k |= 1 << KEY_SELECT;
+    for (int i = 0; i < RemapCount; i++)
+        if (p.btn[PadButtonFor(i, byLabel, map)]) k |= 1 << RemapKeys[i];
     if (p.btn[PAD_UP] || p.ly < -0.5f) k |= 1 << KEY_UP;
     if (p.btn[PAD_DOWN] || p.ly > 0.5f) k |= 1 << KEY_DOWN;
     if (p.btn[PAD_LEFT] || p.lx < -0.5f) k |= 1 << KEY_LEFT;
     if (p.btn[PAD_RIGHT] || p.lx > 0.5f) k |= 1 << KEY_RIGHT;
     return k;
+}
+
+// The HUD sprite showing a controller button.
+static std::string PadGlyph(int b)
+{
+    switch (b)
+    {
+    case PAD_A: return "buttons/button_a";
+    case PAD_B: return "buttons/button_b";
+    case PAD_X: return "buttons/button_x";
+    case PAD_Y: return "buttons/button_y";
+    case PAD_LB: return "buttons/button_l";
+    case PAD_RB: return "buttons/button_r";
+    case PAD_START: return "buttons/button_plus";
+    case PAD_BACK: return "buttons/button_minus";
+    case PAD_LS: return "buttons/stick_l";
+    case PAD_RS: return "buttons/stick_r";
+    case PAD_UP: return "buttons/button_dpad_up";
+    case PAD_DOWN: return "buttons/button_dpad_down";
+    case PAD_LEFT: return "buttons/button_dpad_left";
+    case PAD_RIGHT: return "buttons/button_dpad_right";
+    default: return "buttons/button_dpad";
+    }
 }
 
 // Shapes the single-screen view can be held to, with bars beside it on a wider window.
@@ -987,6 +1019,7 @@ struct Settings
     bool wide = true;   // widescreen 3D overworld
     int wideLines = 720; // height the widescreen 3D is drawn at, at most
     bool byLabel = true;
+    int padMap[8] = { -1, -1, -1, -1, -1, -1, -1, -1 }; // controller button per DS button (RemapKeys); -1 by label/position
     bool fps60 = true;
     // Right stick as a touch cursor, right trigger as the press, and the stick clicks that
     // switch screens. Off unless asked for: brushing the stick put the bottom screen up.
@@ -1017,6 +1050,16 @@ struct Settings
             else if (k == "wide") wide = v == "1";
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "buttons") byLabel = v != "positions";
+            else if (k == "pad_map")
+            {
+                std::istringstream ss(v);
+                for (int i = 0; i < 8 && ss; i++)
+                {
+                    int b = -1;
+                    ss >> b;
+                    padMap[i] = b >= 0 && b < PAD_COUNT ? b : -1;
+                }
+            }
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
@@ -1042,6 +1085,8 @@ struct Settings
         f << "wide=" << (wide ? 1 : 0) << "\n";
         f << "wide_lines=" << wideLines << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
+        f << "pad_map=";
+        for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
@@ -2406,11 +2451,22 @@ int main(int argc, char** argv)
     uint32_t scriptClock = frame; // equals frame unless --battle-mash holds it during battles
 
     Canvas canvas;
+    Ui ui;
     Menu menu;
     enum
     {
-        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_ASPECT, M_WINDOWSIZE, M_WIDE, M_ZOOM, M_FARMAP, M_VOIDFILL, M_NIGHTFX, M_BLUR, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT
+        M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_ASPECT, M_WINDOWSIZE, M_WIDE, M_ZOOM, M_FARMAP, M_VOIDFILL, M_NIGHTFX, M_BLUR, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT,
+        M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
+        M_REMAP_RESET = M_REMAP + 8,
     };
+    // The pause menu's tabs.
+    enum { T_RESUME, T_GAME, T_DISPLAY, T_CONTROLS, T_ONLINE, T_STATES };
+    menu.tabs = { { "RESUME", "menu/menu_resume" }, { "GAME", "menu/menu_party" }, { "DISPLAY", "menu/menu_options" },
+        { "CONTROLS", "menu/menu_controls" }, { "ONLINE", "menu/menu_online" }, { "STATES", "menu/menu_states" } };
+    menu.tab = T_DISPLAY;
+    // The DS button waiting for a controller button in the Controls tab (-1 none), and since when.
+    int remapping = -1;
+    uint32_t remapSince = 0;
     bool fastLock = false;
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
     static const int detailLines[] = { 192, 288, 384, 540, 720, 1080, 1440, 2160 };
@@ -2420,33 +2476,67 @@ int main(int argc, char** argv)
         while (i + 1 < detailCount && detailLines[i + 1] <= cfg.wideLines) i++;
         return i;
     };
+    auto partyStatus = [&]() { return PartyPlayer >= 0 ? "Player " + std::to_string(PartyPlayer + 1) : std::string("Offline"); };
     auto buildMenu = [&]() {
-        static const char* large[] = { "AUTO", "TOP", "BOTTOM" };
-        menu.items = {
-            { "RESUME", "" },
-            { "SCREEN LAYOUT", LayoutName(layout.mode) },
-            { "LARGE SCREEN", large[focus.mode] },
-            { "60 FPS", cfg.fps60 ? "ON" : "OFF" },
-            { "FULLSCREEN", cfg.fullscreen ? "ON" : "OFF" },
-            { "SMOOTH SCALING", cfg.smooth ? "ON" : "OFF" },
-            { "ASPECT RATIO", AspectRatios[cfg.aspect].name },
-            { "WINDOW SIZE", cfg.windowH ? std::to_string(cfg.windowH) + "P" : "DEFAULT" },
-            { "WIDESCREEN WORLD", cfg.wide ? "ON" : "OFF" },
-            { "WORLD ZOOM", std::to_string(cfg.zoom) + "%" },
-            { "FAR MAP", cfg.farMap ? "ON" : "OFF" },
-            { "VOID FILL", cfg.voidFill ? "ON" : "OFF" },
-            { "NIGHT EFFECTS", cfg.nightFx ? "ON" : "OFF" },
-            { "BLUR", cfg.blur == 2 ? "STRONG" : cfg.blur == 1 ? "LIGHT" : "OFF" },
-            { "WORLD DETAIL", std::to_string(detailLines[detailIndex()]) },
-            { "FPS COUNTER", cfg.showFps ? "ON" : "OFF" },
-            { "BUTTONS", cfg.byLabel ? "BY LABEL" : "BY POSITION" },
-            { "STICK TOUCH CURSOR", cfg.padTouch ? "ON" : "OFF" },
-            { "FAST FORWARD", fastLock ? "ON" : "OFF" },
-            { "SAVE STATE", "" },
-            { "LOAD STATE", "" },
-            { "RESET GAME", "" },
-            { "QUIT", "" },
+        auto onOff = [](bool v) { return std::string(v ? "On" : "Off"); };
+        static const char* large[] = { "Auto", "Top", "Bottom" };
+        static const char* layoutNames[] = { "Merged", "Hybrid", "Side by side", "Vertical", "Top only", "Bottom only" };
+        static const char* dsNames[] = { "A", "B", "X", "Y", "L", "R", "START", "SELECT" };
+        std::string aspect = AspectRatios[cfg.aspect].name;
+        if (aspect == "FILL WINDOW") aspect = "Fill window";
+        menu.items.clear();
+        auto add = [&](int tab, int id, const std::string& label, const std::string& value, const std::string& desc) {
+            MenuItem it;
+            it.tab = tab;
+            it.id = id;
+            it.label = label;
+            it.value = value;
+            it.desc = desc;
+            menu.items.push_back(it);
+            return &menu.items.back();
         };
+        add(T_RESUME, M_RESUME, "Back to the game", "", "Close this menu and carry on playing.");
+
+        add(T_GAME, M_FPS60, "60 fps", onOff(cfg.fps60), "Draws a picture between each two of the game's, so the world moves at 60 frames a second.");
+        add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
+        add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
+        add(T_GAME, M_QUIT, "Quit", "", "Closes the game. The in-game save is kept; play since your last save is not.")->danger = true;
+
+        add(T_DISPLAY, M_LAYOUT, "Screen layout", layoutNames[(int)layout.mode % 6],
+            layout.mode == LayoutMode::Merged ? "Merged: both DS screens in one picture. The world behind this menu is the live preview."
+                                              : "How the two DS screens are arranged in the window.");
+        add(T_DISPLAY, M_LARGE, "Large screen", large[focus.mode], "Which DS screen is shown large: chosen for you, or always the top or the bottom one.");
+        add(T_DISPLAY, M_FULLSCREEN, "Fullscreen", onOff(cfg.fullscreen), "Fills the whole screen. F11 does the same.");
+        add(T_DISPLAY, M_SMOOTH, "Smooth scaling", onOff(cfg.smooth), "Smooths the pixels when the picture is enlarged.");
+        add(T_DISPLAY, M_ASPECT, "Aspect ratio", aspect, "The shape of the picture; on a wider screen there are bars beside it.");
+        add(T_DISPLAY, M_WINDOWSIZE, "Window size", cfg.windowH ? std::to_string(cfg.windowH) + "p" : "Default", "The height of the window.");
+        add(T_DISPLAY, M_WIDE, "Widescreen world", onOff(cfg.wide), "Shows more of the overworld to the left and right instead of bars.");
+        MenuItem* zoom = add(T_DISPLAY, M_ZOOM, "World zoom", std::to_string(cfg.zoom) + "%",
+            "Below 100% the camera pulls back and you see more of the world; above it the world is drawn larger.");
+        zoom->bar = (cfg.zoom - ZoomSteps[0]) / (float)(ZoomSteps[ZoomCount - 1] - ZoomSteps[0]);
+        add(T_DISPLAY, M_FARMAP, "Far map", onOff(cfg.farMap), "Draws the map beyond the part the game has loaded, so a wide or zoomed-out view has no gaps.");
+        add(T_DISPLAY, M_VOIDFILL, "Void fill", onOff(cfg.voidFill), "Fills any ground not loaded yet with a soft haze instead of black.");
+        add(T_DISPLAY, M_NIGHTFX, "Night effects", onOff(cfg.nightFx), "In the evening and at night: night colours, lamp light, glowing windows and fireflies.");
+        add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
+        add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
+        add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
+
+        for (int i = 0; i < RemapCount; i++)
+        {
+            MenuItem* it = add(T_CONTROLS, M_REMAP + i, dsNames[i], "",
+                std::string("The controller button for the DS's ") + dsNames[i] + ". Press A to choose another, Y to go back to the usual one.");
+            if (remapping == i) it->value = "Press a button...";
+            else it->glyph = PadGlyph(PadButtonFor(i, cfg.byLabel, cfg.padMap));
+        }
+        add(T_CONTROLS, M_BUTTONS, "Face buttons", cfg.byLabel ? "By label" : "By position",
+            "By label: the button marked A is the DS's A. By position: the DS's layout, so the right-hand button is A.");
+        add(T_CONTROLS, M_PADTOUCH, "Stick touch cursor", onOff(cfg.padTouch), "Moves a cursor on the touch screen with the right stick; click the stick to touch.");
+        add(T_CONTROLS, M_REMAP_RESET, "Usual buttons", "", "Gives every DS button its usual controller button again.");
+
+        add(T_ONLINE, -1, "Status", partyStatus(), "Playing together over the internet. Start the game with --party to join a party.")->disabled = true;
+
+        add(T_STATES, M_SAVESTATE, "Save state", "", "Saves this exact moment to come back to with Load state (F5).");
+        add(T_STATES, M_LOADSTATE, "Load state", "", "Goes back to the moment saved with Save state (F8).");
     };
     buildMenu();
 
@@ -2573,6 +2663,8 @@ int main(int argc, char** argv)
                         else if (k == SDLK_RIGHT) nav.right = true;
                         else if (k == SDLK_RETURN || k == SDLK_x) nav.accept = true;
                         else if (k == SDLK_z) nav.back = true;
+                        else if (k == SDLK_q) nav.tabPrev = true;
+                        else if (k == SDLK_w) nav.tabNext = true;
                     }
                     else if (k == SDLK_TAB) layout = LayoutNext(layout);
                     else if (k == SDLK_F1) focus.manualFlip = !focus.manualFlip;
@@ -2886,6 +2978,8 @@ int main(int argc, char** argv)
             nav.right |= heldNow.right && !heldNav.right;
             nav.accept |= pressed(cfg.byLabel ? PAD_A : PAD_B);
             nav.back |= pressed(cfg.byLabel ? PAD_B : PAD_A);
+            nav.tabPrev |= pressed(PAD_LB);
+            nav.tabNext |= pressed(PAD_RB);
         }
         heldNav = heldNow;
 
@@ -2899,6 +2993,28 @@ int main(int argc, char** argv)
             }
             else swallowMenuButtons = true;
         }
+        else if (menu.open && remapping >= 0)
+        {
+            // Waiting for the controller button for a DS button: the next one pressed, unless
+            // Escape is pressed or 5 seconds go by.
+            int got = -1;
+            for (int b = 0; b < PAD_COUNT && got < 0; b++)
+                if (b != PAD_GUIDE && pressed(b)) got = b;
+            if (got >= 0)
+            {
+                // A button another DS button had swaps places with this one's.
+                const int old = PadButtonFor(remapping, cfg.byLabel, cfg.padMap);
+                for (int i = 0; i < RemapCount; i++)
+                    if (i != remapping && PadButtonFor(i, cfg.byLabel, cfg.padMap) == got) cfg.padMap[i] = old;
+                cfg.padMap[remapping] = got;
+            }
+            if (got >= 0 || nav.back || frame - remapSince > 300)
+            {
+                remapping = -1;
+                swallowMenuButtons = true;
+                buildMenu();
+            }
+        }
         else if (menu.open)
         {
             if (nav.back)
@@ -2906,8 +3022,19 @@ int main(int argc, char** argv)
                 menu.open = false;
                 swallowMenuButtons = true;
             }
+            // Y on a button row: back to the usual controller button.
+            if (const MenuItem* sel = menu.Selected(); sel && sel->id >= M_REMAP && sel->id < M_REMAP + RemapCount && pressed(PAD_Y))
+            {
+                cfg.padMap[sel->id - M_REMAP] = -1;
+                buildMenu();
+            }
             int dir = 0;
             int hit = menu.Update(nav, dir);
+            if (hit >= M_REMAP && hit < M_REMAP + RemapCount && dir == 0)
+            {
+                remapping = hit - M_REMAP;
+                remapSince = frame;
+            }
             switch (hit)
             {
             case M_RESUME:
@@ -3002,6 +3129,10 @@ int main(int argc, char** argv)
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;
+            case M_REMAP_RESET:
+                for (int& b : cfg.padMap) b = -1;
+                say("USUAL BUTTONS");
+                break;
             case M_FAST:
                 fastLock = !fastLock;
                 break;
@@ -3042,7 +3173,7 @@ int main(int argc, char** argv)
         int speed = 1;
         if (!paused && !swallowMenuButtons)
         {
-            keys |= PadKeys(ps, cfg.byLabel);
+            keys |= PadKeys(ps, cfg.byLabel, cfg.padMap);
             if (cfg.padTouch)
             {
                 if (pressed(PAD_RS)) focus.manualFlip = !focus.manualFlip;
@@ -3613,7 +3744,30 @@ int main(int argc, char** argv)
             canvas.Text(tx + 4 * sc, ty + 3 * sc, toast, sc, 0xFFFFFFFF);
             overlayUsed = true;
         }
-        if (menu.open)
+        ui.Set(canvas.w, canvas.h);
+        sprites.HiRes = ui.s > 1.01f;
+        if (menu.open && spritesOk)
+        {
+            // The buttons as they are labelled on the controller (see PadButtonFor).
+            const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+            std::vector<HudHint> hints = { { { "buttons/button_l", "buttons/button_r" }, "Tab" } };
+            const MenuItem* sel = menu.Selected();
+            if (remapping >= 0)
+                hints = { { {}, "Press the button to use" } };
+            else if (sel && sel->id >= M_REMAP && sel->id < M_REMAP + RemapCount)
+            {
+                hints.push_back({ { accept }, "Remap" });
+                hints.push_back({ { PadGlyph(PAD_Y) }, "Usual" });
+            }
+            else if (sel && (!sel->value.empty() || !sel->glyph.empty()) && !sel->disabled)
+                hints.push_back({ { "buttons/button_dpad" }, "Change" });
+            else if (sel && !sel->disabled)
+                hints.push_back({ { accept }, "Select" });
+            if (remapping < 0) hints.push_back({ { back }, "Back" });
+            DrawPauseMenu(canvas, ui, sprites, font, menu, hints);
+            overlayUsed = true;
+        }
+        else if (menu.open)
         {
             menu.Draw(canvas, "POKEMON SOULSILVER", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
             overlayUsed = true;

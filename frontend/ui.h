@@ -137,69 +137,107 @@ struct Canvas
 struct MenuInput
 {
     bool up = false, down = false, left = false, right = false, accept = false, back = false;
+    bool tabPrev = false, tabNext = false; // L and R: the tab to the left or right
 };
 
 struct MenuItem
 {
     std::string label;
     std::string value; // shown right-aligned; empty for plain actions
+    int id = -1;       // what Update returns when it is used
+    int tab = 0;
+    std::string desc;  // shown above the rows while it is selected
+    bool danger = false, disabled = false;
+    float bar = -1;    // 0..1: a bar beside the value (e.g. a zoom level)
+    std::string glyph; // a button sprite shown as the value ("buttons/button_a")
+};
+
+struct MenuTab
+{
+    std::string name, icon; // icon: a menu disc sprite ("menu/menu_options")
 };
 
 struct Menu
 {
     bool open = false;
-    int selected = 0;
+    int tab = 0;
+    int selected = 0; // among the rows of the current tab
+    std::vector<MenuTab> tabs;
     std::vector<MenuItem> items;
 
-    // Returns the index of an item that was activated this frame, or -1.
+    // The items shown on the current tab.
+    std::vector<int> Rows() const
+    {
+        std::vector<int> r;
+        for (int i = 0; i < (int)items.size(); i++)
+            if (items[i].tab == tab) r.push_back(i);
+        return r;
+    }
+    const MenuItem* Selected() const
+    {
+        const std::vector<int> r = Rows();
+        return selected >= 0 && selected < (int)r.size() ? &items[r[selected]] : nullptr;
+    }
+
+    // Returns the id of an item that was used this frame, or -1.
     // dir is -1/+1 when left/right was used on it, 0 for accept.
     int Update(const MenuInput& in, int& dir)
     {
         dir = 0;
-        if (!open || items.empty()) return -1;
-        int n = (int)items.size();
+        if (!open) return -1;
+        const int tabCount = tabs.empty() ? 1 : (int)tabs.size();
+        if (in.tabPrev || in.tabNext)
+        {
+            tab = (tab + (in.tabPrev ? tabCount - 1 : 1)) % tabCount;
+            selected = 0;
+        }
+        const std::vector<int> rows = Rows();
+        if (rows.empty()) return -1;
+        const int n = (int)rows.size();
+        if (selected >= n) selected = n - 1;
         if (in.up) selected = (selected + n - 1) % n;
         if (in.down) selected = (selected + 1) % n;
-        if (in.accept) return selected;
-        if (in.left && !items[selected].value.empty())
+        const MenuItem& it = items[rows[selected]];
+        if (it.disabled) return -1;
+        if (in.accept) return it.id;
+        if ((in.left || in.right) && (!it.value.empty() || !it.glyph.empty()))
         {
-            dir = -1;
-            return selected;
-        }
-        if (in.right && !items[selected].value.empty())
-        {
-            dir = 1;
-            return selected;
+            dir = in.left ? -1 : 1;
+            return it.id;
         }
         return -1;
     }
 
+    // The plain menu, when the HUD's sprites are missing: the rows of the current tab.
     void Draw(Canvas& c, const std::string& title, const std::string& hint) const
     {
+        const std::vector<int> rows = Rows();
         int scale = c.h / 240;
         if (scale < 1) scale = 1;
         // Rows close up a little when there are too many to fit the screen.
-        int lineH = std::min(11 * scale, (c.h - 8 * scale) / ((int)items.size() + 3));
+        int lineH = std::min(11 * scale, (c.h - 8 * scale) / ((int)rows.size() + 3));
         int boxW = 190 * scale;
         if (boxW > c.w - 8) boxW = c.w - 8;
-        int boxH = lineH * ((int)items.size() + 3) + 6 * scale;
+        int boxH = lineH * ((int)rows.size() + 3) + 6 * scale;
         int bx = (c.w - boxW) / 2, by = (c.h - boxH) / 2;
 
         c.Fill(0, 0, c.w, c.h, 0xA0000000);
         c.Fill(bx - scale, by - scale, boxW + 2 * scale, boxH + 2 * scale, 0xFFE8E8E8);
         c.Fill(bx, by, boxW, boxH, 0xFF1C2A44);
-        c.Text(bx + (boxW - Canvas::TextWidth(title, scale)) / 2, by + 3 * scale, title, scale, 0xFFFFD75E);
+        const std::string t = tabs.empty() ? title : "< " + tabs[tab].name + " >";
+        c.Text(bx + (boxW - Canvas::TextWidth(t, scale)) / 2, by + 3 * scale, t, scale, 0xFFFFD75E);
 
         int y = by + lineH + 5 * scale;
-        for (int i = 0; i < (int)items.size(); i++)
+        for (int k = 0; k < (int)rows.size(); k++)
         {
-            bool sel = i == selected;
+            const MenuItem& it = items[rows[k]];
+            bool sel = k == selected;
             if (sel) c.Fill(bx + 2 * scale, y - 2 * scale, boxW - 4 * scale, lineH, 0xFF3D6FD1);
             uint32_t col = sel ? 0xFFFFFFFF : 0xFFC8D0E0;
-            c.Text(bx + 6 * scale, y, items[i].label, scale, col);
-            if (!items[i].value.empty())
+            c.Text(bx + 6 * scale, y, it.label, scale, col);
+            if (!it.value.empty())
             {
-                std::string v = "< " + items[i].value + " >";
+                std::string v = "< " + it.value + " >";
                 c.Text(bx + boxW - 6 * scale - Canvas::TextWidth(v, scale), y, v, scale, col);
             }
             y += lineH;

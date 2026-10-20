@@ -204,15 +204,18 @@ Everything can be done from a controller:
 | L / R | shoulders | Q / W |
 | Start / Select | Start / Back | Enter / Right Shift |
 | Pause menu | Guide, or Start + Select together | Esc |
-| Touch screen | off by default; with "STICK TOUCH CURSOR" on in the pause menu: right stick moves a cursor, right trigger presses | mouse, or I J K L and Space |
+| Touch screen | off by default; with "Stick touch cursor" on in the pause menu: right stick moves a cursor, right trigger presses | mouse, or I J K L and Space |
 | Fast forward (4x) | hold left trigger | hold Left Shift |
-| Swap the large screen | click right stick (only with "STICK TOUCH CURSOR" on) | F1 |
-| Next layout | click left stick (only with "STICK TOUCH CURSOR" on) | Tab |
+| Swap the large screen | click right stick (only with "Stick touch cursor" on) | F1 |
+| Next layout | click left stick (only with "Stick touch cursor" on) | Tab |
 | Quick save / load state | pause menu | F5 / F8 |
 | Fullscreen | pause menu | F11 |
 
-The pause menu also has the view, 60 FPS, smooth scaling, button mapping by
-label or by position, reset and quit.
+The pause menu has tabs (L and R, or Q and W on the keyboard): **Game** (60 fps,
+fast forward, reset, quit), **Display** (the view, zoom, far map, night effects and
+the rest), **Controls**, **Online** and **States** (save and load state). In
+**Controls** each DS button can be given another controller button: choose the
+row, press A, then press the button to use; Y puts the usual one back.
 
 `run.sh` also writes what the game prints to `game.log` next to it; a bug report
 about a controller should include it (it lists every controller SDL sees).

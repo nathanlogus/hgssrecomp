@@ -52,6 +52,9 @@
   black first.
 - The setup program's package now includes the `assets` folder: the Windows build
   needs the program icon from it.
+- **A new pause menu**: bright cards in the style of Pokémon: Let's Go, in the game's own
+  font, with tabs (L and R switch them) and a sentence explaining each option. The
+  new **Controls** tab lets you give any DS button another controller button.
 
 ## v0.4.2 — Faster widescreen
 
