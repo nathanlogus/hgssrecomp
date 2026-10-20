@@ -67,7 +67,9 @@ inline void SessionBadge(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f,
     const PartyLink link = Party_Link();
     const bool lost = link == PartyLink::Lost;
     const std::string label = link == PartyLink::Connecting ? "JOINING" : lost ? "OFFLINE" : "ONLINE";
-    const std::string count = std::to_string(Party_Count()) + "/" + std::to_string(Party_Max());
+    // The session's code too, while there is room for more: it is what others need to join.
+    const std::string count = std::to_string(Party_Count()) + "/" + std::to_string(Party_Max()) +
+        (link == PartyLink::Online && Party_Count() < Party_Max() && !Party_Code().empty() ? "  " + Party_Code() : "");
     const int rtt = Party_RttMs();
     const std::string ms = !showPing ? "" : lost ? "- -" : rtt < 0 ? "..." : std::to_string(rtt) + " ms";
     float w = 20 + HudTextWidth(ui, f, 32, label) + 14 + HudTextWidth(ui, f, 32, count) + 14 + 40 + (ms.empty() ? 0 : 14 + HudTextWidth(ui, f, 32, ms)) + 20;

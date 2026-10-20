@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Host when playing** (Online tab, on by default): once you are in the game, a session is
+  started by itself on your party server, and its code is shown (and stays in the badge at
+  the top left while there is room), so friends can join at any time with that code.
 - A **title screen** before the start screen when there is a video in
   `assets/animations/intro.mpg`: it plays in a loop with the logo on it, and A (or + or
   Enter) goes on to the start screen. The game's title music (or your song for it) starts

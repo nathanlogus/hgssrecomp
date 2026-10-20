@@ -1049,6 +1049,7 @@ struct Settings
     std::string friends;    // players met in sessions: "name:colour:last seen (Unix time)," ...
     int onlineColour = -1;  // -1: by player number
     int hostMax = 4;        // players a hosted session allows
+    bool autoHost = true;   // host a session by itself once the player is in the world
     int onlinePartner = 0;  // the Pokemon shown with this player (species, 0 none)
     bool showPing = true;
     bool onlineToasts = true;
@@ -1076,6 +1077,7 @@ struct Settings
             else if (k == "online_name") onlineName = v.substr(0, 10);
             else if (k == "online_colour") onlineColour = std::clamp(atoi(v.c_str()), -1, 3);
             else if (k == "host_max") hostMax = std::clamp(atoi(v.c_str()), 2, 4);
+            else if (k == "auto_host") autoHost = v == "1";
             else if (k == "friends") friends = v;
             else if (k == "online_partner") onlinePartner = std::clamp(atoi(v.c_str()), 0, 493);
             else if (k == "show_ping") showPing = v == "1";
@@ -1126,6 +1128,7 @@ struct Settings
         f << "online_name=" << onlineName << "\n";
         f << "online_colour=" << onlineColour << "\n";
         f << "host_max=" << hostMax << "\n";
+        f << "auto_host=" << (autoHost ? 1 : 0) << "\n";
         f << "online_partner=" << onlinePartner << "\n";
         f << "friends=" << friends << "\n";
         f << "show_ping=" << (showPing ? 1 : 0) << "\n";
@@ -2752,7 +2755,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2960,6 +2963,8 @@ int main(int argc, char** argv)
                 "Starts a session for up to " + std::to_string(cfg.hostMax) + " players, with a code to give to the others.");
             add(T_ONLINE, M_JOIN, "Join with a code", "", "Joins a friend's session: type the code they give you (SSR- and four letters).");
             add(T_ONLINE, M_HOSTMAX, "Players", std::to_string(cfg.hostMax), "How many players a session you host allows, you included.");
+            add(T_ONLINE, M_AUTOHOST, "Host when playing", onOff(cfg.autoHost),
+                "Starts a session by itself once you are in the game, so others can join with its code at any time.");
         }
         else
         {
@@ -3864,6 +3869,9 @@ int main(int argc, char** argv)
             case M_PADTOUCH:
                 cfg.padTouch = !cfg.padTouch;
                 break;
+            case M_AUTOHOST:
+                cfg.autoHost = !cfg.autoHost;
+                break;
             case M_HOST:
                 if (cfg.onlineServer.empty()) startEdit(E_SERVER);
                 else
@@ -4506,6 +4514,22 @@ int main(int argc, char** argv)
                 if (Party_Me() >= 0) sessionStats.caught[Party_Me()] = Party_CaughtThisSession();
             }
             partyMap = pmap;
+            // Hosting by itself (Host when playing): once, when the player is first in the world
+            // and not already in a party; the code is then shown so it can be shared.
+            static bool autoHosted = false;
+            if (!autoHosted && cfg.autoHost && !startOpen && bootMode == BOOT_NONE && fieldActive() && Party_Link() == PartyLink::Off &&
+                !cfg.onlineServer.empty() && opt.party.empty() && (!opt.headless || getenv("SSR_AUTO_HOST")) && !opt.lockstep)
+            {
+                autoHosted = true;
+                Party_Host(cfg.onlineServer, cfg.hostMax);
+            }
+            static std::string announcedCode;
+            if (Party_Link() == PartyLink::Online && Party_Me() >= 0 && Party_Peers()[Party_Me()].host && !Party_Code().empty() &&
+                Party_Code() != announcedCode)
+            {
+                announcedCode = Party_Code();
+                say("Your session is " + announcedCode + ": share the code to play together", "icons/icon_wifi", 420);
+            }
             if (trainerArt.px.empty() && frame % 60 == 0 && fieldActive())
                 worldBlocks.SpriteImage(*nds, Party_MyCard().gender ? 97 : 0, 1, trainerArt); // the boy or the girl, facing south
             // The players met: remembered as friends (every few seconds while together).
