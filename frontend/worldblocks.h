@@ -11,6 +11,7 @@
 // Addresses and layouts are those of HeartGold/SoulSilver (US) and Definitive HeartGold,
 // found with the pret decompilation; everything is checked before use, and anything that
 // does not look as expected (another game, a cutscene, a map being loaded) draws nothing.
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +20,7 @@
 #include <vector>
 #include "NDS.h"
 #include "GPU3D_Wide.h"
+#include "nightfx.h"
 
 class WorldBlocks
 {
@@ -124,6 +126,57 @@ public:
         if (!drawn) out.resize(start);
     }
 
+    // Fireflies over tall grass and woods around the camera, placed in the world (so they
+    // stay where they are while the view moves) and given as places in the wide picture,
+    // whose view is `viewWidth` DS pixels wide and zoomed by `zoom` (see WideState).
+    void Fireflies(melonDS::NDS& nds, float seconds, float viewWidth, float zoom, std::vector<NightFly>& out)
+    {
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        const uint32_t fs = Read32(FieldSystemPtr);
+        if (Land.empty() || !InRam(fs)) return;
+        const uint32_t matrix = Read32(fs + 0x30);
+        if (!InRam(matrix) || Read32(fs + 0x70) > 1) return;
+        const int width = Read8(matrix), height = Read8(matrix + 1);
+        if (width < 1 || height < 1 || width * height > 799) return;
+        const uint32_t altitudes = matrix + 4 + 2 + 799 * 2, models = (altitudes + 799 + 1) & ~1u;
+        const int tx = (int32_t)Read32(Glb + 0x258) >> 16, tz = (int32_t)Read32(Glb + 0x260) >> 16;
+        double cam[12], proj[16];
+        for (int i = 0; i < 12; i++) cam[i] = (int32_t)Read32(Glb + 0x4C + 4 * i) / 4096.0;
+        for (int i = 0; i < 16; i++) proj[i] = (int32_t)Read32(Glb + 0x08 + 4 * i) / 4096.0;
+        const double sx = 256.0 / std::max(256.0f, viewWidth) * zoom;
+        for (int z = tz - 22; z <= tz + 14; z++)
+            for (int x = tx - 28; x <= tx + 28; x++)
+            {
+                if (x < 0 || z < 0 || x >= width * 32 || z >= height * 32) continue;
+                uint32_t h = (uint32_t)x * 73856093u ^ (uint32_t)z * 19349663u;
+                h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+                if (h % 100 >= 10) continue;
+                const int cell = (z / 32) * width + x / 32;
+                const Block* b = GetBlock(Read16(models + 2 * cell));
+                if (!b || b->behaviour.empty()) continue;
+                const uint8_t beh = b->behaviour[(z % 32) * 32 + x % 32];
+                if (beh != 2 && beh != 3 && beh != 6) continue; // tall grass, very tall grass, headbutt trees
+                // Drifting, bobbing and blinking, each at its own pace.
+                const float ph = (h >> 8 & 0xFF) / 40.0f, speed = 0.6f + (h >> 16 & 0x3F) / 90.0f;
+                const double fx = x + (h >> 4 & 0xF) / 16.0 + 0.45 * std::sin(seconds * 0.7 * speed + ph);
+                const double fz = z + (h >> 20 & 0xF) / 16.0 + 0.45 * std::cos(seconds * 0.55 * speed + ph * 1.3);
+                const double fy = 0.4 + 0.5 * (h >> 24 & 0xF) / 15.0 + 0.15 * std::sin(seconds * 1.7 + ph);
+                const float blink = 0.5f + 0.5f * std::sin(seconds * 2.3f * speed + ph * 2);
+                const float brightness = blink * blink;
+                if (brightness < 0.05f) continue;
+                // World units: 1.0 = 0x1000, a tile is 16.
+                const double w[3] = { fx * 16, (Read8(altitudes + cell) << 15) / 4096.0 + fy * 16, fz * 16 };
+                double c[3], clip[4];
+                for (int j = 0; j < 3; j++) c[j] = w[0] * cam[j] + w[1] * cam[3 + j] + w[2] * cam[6 + j] + cam[9 + j];
+                for (int j = 0; j < 4; j++) clip[j] = c[0] * proj[j] + c[1] * proj[4 + j] + c[2] * proj[8 + j] + proj[12 + j];
+                if (clip[3] <= 0) continue;
+                const float u = (float)((sx * clip[0] / clip[3] + 1) / 2), v = (float)((1 - zoom * clip[1] / clip[3]) / 2);
+                if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+                out.push_back({ u, v, brightness });
+            }
+    }
+
 private:
     static constexpr uint32_t FieldSystemPtr = 0x021D1110; // the game's FieldSystem pointer
     static constexpr uint32_t Glb = 0x021DA49C;            // NitroSystem's NNS_G3dGlb (camera, projection)
@@ -161,6 +214,7 @@ private:
     {
         Model ground;
         std::vector<PropPlace> props;
+        std::vector<uint8_t> behaviour; // per tile (32 x 32): tall grass, trees, water...
     };
 
     const uint8_t* Rom = nullptr;
@@ -267,6 +321,11 @@ private:
         const uint32_t perm = Get32(f), props = Get32(f + 4), mdlSize = Get32(f + 8);
         uint32_t p = 16;
         if (Get16(f + p) == 0x1234) p += 4 + Get16(f + p + 2);
+        if (perm >= 32 * 32 * 2 && (uint64_t)p + perm <= size)
+        {
+            b.behaviour.resize(32 * 32);
+            for (int i = 0; i < 32 * 32; i++) b.behaviour[i] = f[p + 2 * i];
+        }
         p += perm;
         if ((uint64_t)p + props + mdlSize > size) return false;
         // Props: build model, translation, rotation (not used by the game), scale; 0x30 each.

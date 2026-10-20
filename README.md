@@ -294,6 +294,12 @@ copies of the models (already in memory, with their textures bound, for the whol
 area); textures the game scrolls (the sea) take the texture matrix the game used for
 the same texture that frame (`WideState::TexAnim`). Checked by drawing the loaded
 blocks a second time (`SSR_FARMAP_ALL=1`), which must leave the picture unchanged.
+"NIGHT EFFECTS" (`night_fx`, `frontend/nightfx.h`) works out two small layers per
+frame from the wide picture (bright warm pixels become a glow and wider, lower light
+pools; fireflies are placed on tall-grass and headbutt-tree tiles from the map data and
+projected with the game's camera) and the graphics card multiplies the world by one and
+adds the other (the CPU compositor bakes them in the same way). Their strength follows
+the DS clock: all of it from 20:00 to 4:00, coming in from 17:00 and gone by 6:00.
 Where even that leaves ground empty, "VOID FILL" (`void_fill`) fills it with the
 nearby ground's colours, blurred and dimmed (`frontend/voidfill.h`, checked by
 `tests/voidfill_test.cpp`). It is left out when the DS's own view has empty parts
@@ -571,7 +577,9 @@ on Continue after the Hall of Fame). `snapshots <rom> <save>` boots once per pla
 in `test/places/`; `run <rom> --set zoom=60` loads them all with those settings, walks
 each place's route and tiles the screenshots into `test/places/sheet.png`; `lockstep <rom>`
 checks the recompiled code against the interpreter at every place; `save <in> <out>
-<place|map,x,y>` only writes the save.
+<place|map,x,y>` only writes the save. `--time day,night` (also `morning`, `evening`) does any of
+these at other times of day, with snapshots of their own (`<place>.night.st`), and
+puts each place's rows for those times next to each other on the sheet.
 
 To get around the game world in tests, `--nav "x,z;x,z;..."` walks the player to
 a list of tiles (door tiles included; `x,z,L` keeps walking left into a side

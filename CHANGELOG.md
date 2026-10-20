@@ -19,6 +19,10 @@
   and lamps carry on to the edge of the screen, and the sea there flows like the sea
   nearby. It works in towns, on routes, in caves and forests, and in the Safari Zone
   (there without the objects you placed, which come from your save).
+- **NIGHT EFFECTS** in the pause menu (on by default): in the evening and at night,
+  lit windows and street lamps glow and cast warm light around them, fireflies drift
+  over tall grass and woods, and the night gets deeper colours with darker edges. They
+  follow the game's clock, cover the far map too, and leave text boxes and menus alone.
 - **VOID FILL** in the pause menu (on by default): when a far zoom or a wide screen
   shows ground the game has not loaded yet, that corner is filled with a dimmed haze
   continuing the nearby ground instead of black. The black around rooms indoors is

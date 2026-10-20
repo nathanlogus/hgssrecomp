@@ -126,6 +126,20 @@
       "check": "town at the south edge of the map"
     },
     {
+      "name": "goldenrod_east",
+      "map": 76,
+      "x": 335,
+      "y": 336,
+      "dir": 1,
+      "walk": [
+        [
+          "RIGHT",
+          60
+        ]
+      ],
+      "check": "the east of Goldenrod is in a block the game has not loaded: with FAR MAP its buildings, lamps and lit windows at night"
+    },
+    {
       "name": "goldenrod",
       "map": 76,
       "x": 352,

@@ -3,14 +3,19 @@
 
     places.py save <in.sav> <out.sav> <place | map,x,y[,dir]>
         a copy of the save in which Continue takes the player to that place
-    places.py snapshots <rom> <save> [--only a,b]
+    places.py snapshots <rom> <save> [--only a,b] [--time day,night]
         boots the game once per place in tools/test_places.json and keeps a snapshot of
-        the moment it arrives in test/places/<name>.st (and a picture, <name>.png)
-    places.py run <rom> [--only a,b] [--set key=value ...] [--frames N] [--size WxH]
+        the moment it arrives in test/places/<name>.st (and a picture, <name>.png); other
+        times of day than "day" go to <name>.<time>.st
+    places.py run <rom> [--only a,b] [--time day,night] [--set key=value ...] [--frames N] [--size WxH]
         loads every snapshot with these settings (as in ssrecomp.cfg, e.g. zoom=60),
-        walks the place's route and tiles the screenshots into test/places/sheet.png
-    places.py lockstep <rom> [--only a,b] [--frames N]
+        walks the place's route and tiles the screenshots into test/places/sheet.png, one
+        row per place and time of day
+    places.py lockstep <rom> [--only a,b] [--time day,night] [--frames N]
         runs every snapshot with --lockstep (recompiled code against the interpreter)
+
+Times of day: day (12:00), morning (07:00), evening (18:00), night (22:00). The game
+clock is part of a snapshot, so each time of day has snapshots of its own.
 
 The save trick: Continue normally rebuilds the map from the saved objects, but when save
 flag 0x966 is set (the game sets it after the Hall of Fame) it warps the player to the
@@ -36,6 +41,8 @@ MAGIC = 0x20060623
 FLAGS = 0x10C4                # SaveVarsFlags.flags
 FLAG_WARP_ON_CONTINUE = 0x966
 DYNAMIC_WARP = 0x1270         # LocalFieldData.dynamicWarp (a Location: map, warp, x, y, dir)
+
+TIMES = {'day': '12:00', 'morning': '07:00', 'evening': '18:00', 'night': '22:00'}
 
 ARRIVE = 1500                 # frame of the snapshot: the place is shown well before this
 BOOT_TAPS = range(400, 1100, 90)  # A through the intro, title and Continue
@@ -93,9 +100,24 @@ def selected(only):
     return places
 
 
-def run_game(args, log):
+def run_game(args, log, time='day'):
+    # The game clock the console starts with (a snapshot brings its own back).
+    env = dict(os.environ, SSR_CLOCK='2026-01-01 ' + TIMES[time])
     with open(log, 'w') as f:
-        return subprocess.run([EXE] + args, stdout=f, stderr=subprocess.STDOUT).returncode
+        return subprocess.run([EXE] + args, stdout=f, stderr=subprocess.STDOUT, env=env).returncode
+
+
+def times(text):
+    out = text.split(',')
+    for t in out:
+        if t not in TIMES:
+            raise SystemExit(f'no such time of day: {t} (one of {", ".join(TIMES)})')
+    return out
+
+
+def snap_name(p, time):
+    """File name (without extension) of a place's snapshot at a time of day."""
+    return p['name'] if time == 'day' else f'{p["name"]}.{time}'
 
 
 def write_input(path, lines):
@@ -110,18 +132,20 @@ def cmd_snapshots(a):
         make_save(a.save, sav, p)
         boot = os.path.join(OUT, 'boot.txt')
         write_input(boot, [f'{f} {f + 5} A' for f in BOOT_TAPS])
-        shots = os.path.join(OUT, 'tmp')
-        shutil.rmtree(shots, ignore_errors=True)
-        os.makedirs(shots)
-        code = run_game([a.rom, '--headless', '--save', sav, '--no-save', '--input', boot,
-                         '--frames', str(ARRIVE + 2), '--state-save', os.path.join(OUT, p['name'] + '.st'),
-                         '--state-at', str(ARRIVE), '--shot-dir', shots + '/', '--shot-at', str(ARRIVE),
-                         '--compose', '640x360'], os.path.join(OUT, p['name'] + '.log'))
-        shot = os.path.join(shots, f'frame_{ARRIVE:06d}.png')
-        if os.path.exists(shot):
-            shutil.move(shot, os.path.join(OUT, p['name'] + '.png'))
-        shutil.rmtree(shots, ignore_errors=True)
-        print(f'{p["name"]}: {"ok" if code == 0 else "exit " + str(code)} -> test/places/{p["name"]}.png')
+        for t in times(a.time):
+            name = snap_name(p, t)
+            shots = os.path.join(OUT, 'tmp')
+            shutil.rmtree(shots, ignore_errors=True)
+            os.makedirs(shots)
+            code = run_game([a.rom, '--headless', '--save', sav, '--no-save', '--input', boot,
+                             '--frames', str(ARRIVE + 2), '--state-save', os.path.join(OUT, name + '.st'),
+                             '--state-at', str(ARRIVE), '--shot-dir', shots + '/', '--shot-at', str(ARRIVE),
+                             '--compose', '640x360'], os.path.join(OUT, name + '.log'), t)
+            shot = os.path.join(shots, f'frame_{ARRIVE:06d}.png')
+            if os.path.exists(shot):
+                shutil.move(shot, os.path.join(OUT, name + '.png'))
+            shutil.rmtree(shots, ignore_errors=True)
+            print(f'{name}: {"ok" if code == 0 else "exit " + str(code)} -> test/places/{name}.png')
 
 
 def walk_input(p, start):
@@ -139,24 +163,27 @@ def cmd_run(a):
     w, h = (int(v) for v in a.size.split('x'))
     sheet_rows = []
     for p in selected(a.only):
-        snap = os.path.join(OUT, p['name'] + '.st')
-        if not os.path.exists(snap):
-            print(f'{p["name"]}: no snapshot (run "snapshots" first)')
-            continue
-        lines, end = walk_input(p, ARRIVE)
-        end = max(end, ARRIVE + a.frames)
-        inp = os.path.join(OUT, 'walk.txt')
-        write_input(inp, lines)
-        shots = os.path.join(OUT, 'run', p['name'])
-        shutil.rmtree(shots, ignore_errors=True)
-        os.makedirs(shots)
-        at = [ARRIVE + 30 + (end - ARRIVE - 30) * k // 3 for k in range(4)]
-        code = run_game([a.rom, '--headless', '--no-save', '--save', os.path.join(OUT, p['name'] + '.sav'),
-                         '--config', cfg, '--state-load', snap, '--input', inp, '--frames', str(end + 1),
-                         '--shot-dir', shots + '/', '--shot-at', ','.join(map(str, at)), '--compose', a.size],
-                        os.path.join(shots, 'game.log'))
-        sheet_rows.append((p, [os.path.join(shots, f'frame_{f:06d}.png') for f in at]))
-        print(f'{p["name"]}: {"ok" if code == 0 else "exit " + str(code)}  ({p["check"]})')
+        for t in times(a.time):
+            name = snap_name(p, t)
+            snap = os.path.join(OUT, name + '.st')
+            if not os.path.exists(snap):
+                print(f'{name}: no snapshot (run "snapshots --time {t}" first)')
+                continue
+            lines, end = walk_input(p, ARRIVE)
+            end = max(end, ARRIVE + a.frames)
+            inp = os.path.join(OUT, 'walk.txt')
+            write_input(inp, lines)
+            shots = os.path.join(OUT, 'run', name)
+            shutil.rmtree(shots, ignore_errors=True)
+            os.makedirs(shots)
+            at = [ARRIVE + 30 + (end - ARRIVE - 30) * k // 3 for k in range(4)]
+            code = run_game([a.rom, '--headless', '--no-save', '--save', os.path.join(OUT, p['name'] + '.sav'),
+                             '--config', cfg, '--state-load', snap, '--input', inp, '--frames', str(end + 1),
+                             '--shot-dir', shots + '/', '--shot-at', ','.join(map(str, at)), '--compose', a.size],
+                            os.path.join(shots, 'game.log'), t)
+            label = p['name'] if t == 'day' and a.time == 'day' else f'{p["name"]} ({t})'
+            sheet_rows.append((label, p['check'], [os.path.join(shots, f'frame_{f:06d}.png') for f in at]))
+            print(f'{name}: {"ok" if code == 0 else "exit " + str(code)}  ({p["check"]})')
     make_sheet(sheet_rows, w, h)
 
 
@@ -169,34 +196,44 @@ def make_sheet(rows, w, h):
     tw, th = 400, 400 * h // w
     sheet = Image.new('RGB', (4 * (tw + 4), len(rows) * (th + 18)), (40, 40, 40))
     d = ImageDraw.Draw(sheet)
-    for r, (p, paths) in enumerate(rows):
+    for r, (label, check, paths) in enumerate(rows):
         y = r * (th + 18)
-        d.text((4, y + 2), f'{p["name"]}: {p["check"]}', fill=(255, 220, 90))
+        d.text((4, y + 2), f'{label}: {check}', fill=(255, 220, 90))
         for c, path in enumerate(paths):
             if os.path.exists(path):
                 sheet.paste(Image.open(path).convert('RGB').resize((tw, th)), (c * (tw + 4), y + 16))
     out = os.path.join(OUT, 'sheet.png')
-    sheet.save(out)
+    try:
+        sheet.save(out)
+    except OSError:
+        # Open in an image viewer that locks it (Windows): next to it instead.
+        k = 2
+        while os.path.exists(os.path.join(OUT, f'sheet-{k}.png')):
+            k += 1
+        out = os.path.join(OUT, f'sheet-{k}.png')
+        sheet.save(out)
     print(f'contact sheet: {out}')
 
 
 def cmd_lockstep(a):
     failed = 0
     for p in selected(a.only):
-        snap = os.path.join(OUT, p['name'] + '.st')
-        if not os.path.exists(snap):
-            print(f'{p["name"]}: no snapshot (run "snapshots" first)')
-            continue
-        lines, end = walk_input(p, ARRIVE)
-        inp = os.path.join(OUT, 'walk.txt')
-        write_input(inp, lines)
-        log = os.path.join(OUT, p['name'] + '.lockstep.log')
-        run_game([a.rom, '--headless', '--lockstep', '--no-save', '--save', os.path.join(OUT, p['name'] + '.sav'),
-                  '--state-load', snap, '--input', inp, '--frames', str(max(end, ARRIVE + a.frames))], log)
-        result = [l for l in open(log, errors='replace') if l.startswith('[lockstep] PASS') or 'differ' in l or 'FAIL' in l]
-        ok = any(l.startswith('[lockstep] PASS') for l in result)
-        failed += not ok
-        print(f'{p["name"]}: {"PASS" if ok else "FAIL (see " + log + ")"}')
+        for t in times(a.time):
+            name = snap_name(p, t)
+            snap = os.path.join(OUT, name + '.st')
+            if not os.path.exists(snap):
+                print(f'{name}: no snapshot (run "snapshots --time {t}" first)')
+                continue
+            lines, end = walk_input(p, ARRIVE)
+            inp = os.path.join(OUT, 'walk.txt')
+            write_input(inp, lines)
+            log = os.path.join(OUT, name + '.lockstep.log')
+            run_game([a.rom, '--headless', '--lockstep', '--no-save', '--save', os.path.join(OUT, p['name'] + '.sav'),
+                      '--state-load', snap, '--input', inp, '--frames', str(max(end, ARRIVE + a.frames))], log, t)
+            result = [l for l in open(log, errors='replace') if l.startswith('[lockstep] PASS') or 'differ' in l or 'FAIL' in l]
+            ok = any(l.startswith('[lockstep] PASS') for l in result)
+            failed += not ok
+            print(f'{name}: {"PASS" if ok else "FAIL (see " + log + ")"}')
     sys.exit(1 if failed else 0)
 
 
@@ -211,15 +248,18 @@ def main():
     s.add_argument('rom')
     s.add_argument('save')
     s.add_argument('--only')
+    s.add_argument('--time', default='day', help='times of day, e.g. day,night')
     s = sub.add_parser('run')
     s.add_argument('rom')
     s.add_argument('--only')
+    s.add_argument('--time', default='day', help='times of day, e.g. day,night')
     s.add_argument('--set', action='append', default=[], help='a settings line, e.g. zoom=60')
     s.add_argument('--frames', type=int, default=240)
     s.add_argument('--size', default='1280x720')
     s = sub.add_parser('lockstep')
     s.add_argument('rom')
     s.add_argument('--only')
+    s.add_argument('--time', default='day', help='times of day, e.g. day,night')
     s.add_argument('--frames', type=int, default=600)
     a = ap.parse_args()
     if a.cmd == 'save':
