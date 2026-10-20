@@ -287,9 +287,11 @@ inline float DrawLogo(Canvas& c, const Ui& ui, const RomFont& f, const Image* lo
 // The save on the start screen (17-save): the trainer and their first Pokemon on the
 // left, the numbers in rows, the badges on the right.
 inline void SaveCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x, float y, float w, const std::string& name,
-    const PartyCard& card, const Image* trainer, const Image* partner)
+    const PartyCard& card, const Image* trainer, const Image* partner, const std::string& note = "")
 {
     const float h = 400, lw = 260;
+    // A line under the card (where Continue resumes from, autosave.h).
+    if (!note.empty()) HudText(c, ui, f, x + w / 2, y + h + 22, 32, note, HudColour::Muted, 1);
     HudPanel(c, ui, sp, "panels/card", x, y, w, h);
     FillBlend(c, ui(x + 24), ui(y + 24), ui(lw), ui(h - 48), 0xFFFDF6E4);
     if (trainer) HudPixelArt(c, ui, trainer, x + 24 + lw / 2 - 96, y + 40, 192, 192);

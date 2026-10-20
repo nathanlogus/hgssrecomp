@@ -16,6 +16,12 @@
   nature's raised and lowered stats in red and blue), its moves coloured by type with
   their PP, and its ribbons. The game's own buttons work as always. Using an item on a
   Pokémon, a move's details and the like still show the game's own screens.
+- **Autosave** (Game tab, on by default): every few minutes and when you quit, a resume
+  point is kept beside your save, and **Continue** carries on from it straight away (the
+  save card says where and when). The game also saves by itself when you enter a Pokémon
+  Center and after a badge, with only a small "Saving..." note in the corner. A resume
+  point never takes you back past a newer save. An animated GIF at `assets/autosave.gif`
+  replaces the note's animation.
 - **Your own font and button pictures** for the menus and the HUD: a font file (.otf or
   .ttf) in `assets/fonts` and button pictures in `assets/buttons` (named like the Switch's
   `icon_key_a_00.png`) are used when they are there. TEXT in the Display tab chooses

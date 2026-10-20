@@ -11,6 +11,9 @@
 *.nds
 *.sav
 *.sav.state
+*.resume
+*.resume.bak
+*.resume.tmp
 *.state
 *.st
 *.sbin

@@ -55,6 +55,8 @@
 #include "hudbattle.h"
 #include "hudbag.h"
 #include "hudparty.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
 #define PL_MPEG_IMPLEMENTATION
@@ -1051,6 +1053,7 @@ struct Settings
     bool showPing = true;
     bool onlineToasts = true;
     bool startScreen = true; // the frontend's own start screen before the game
+    bool autosave = true;    // resume points and the game's own save at calm moments (autosave.h)
 
     void Load(const std::string& path)
     {
@@ -1078,6 +1081,7 @@ struct Settings
             else if (k == "show_ping") showPing = v == "1";
             else if (k == "online_toasts") onlineToasts = v == "1";
             else if (k == "start_screen") startScreen = v == "1";
+            else if (k == "autosave") autosave = v == "1";
             else if (k == "pad_map")
             {
                 std::istringstream ss(v);
@@ -1127,6 +1131,7 @@ struct Settings
         f << "show_ping=" << (showPing ? 1 : 0) << "\n";
         f << "online_toasts=" << (onlineToasts ? 1 : 0) << "\n";
         f << "start_screen=" << (startScreen ? 1 : 0) << "\n";
+        f << "autosave=" << (autosave ? 1 : 0) << "\n";
         f << "pad_map=";
         for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
@@ -2747,7 +2752,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_TEXTFONT, M_BUTTONPICS,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2811,6 +2816,49 @@ int main(int argc, char** argv)
     uint32_t bootFrames = 0;
     bool bootSawMenu = false;
     uint32_t bootMenuFrames = 0;
+    // Autosave (autosave.h). Not in tests unless asked for (SSR_AUTOSAVE=1), nor with
+    // --lockstep, whose two consoles must get the same buttons.
+    const bool autosaveOk = !ref && (!opt.headless || getenv("SSR_AUTOSAVE"));
+    Autosave::Resume resume;
+    resume.path = opt.save + ".resume";
+    Autosave::GameSave gameSave;
+    Autosave::Indicator saveIndicator;
+    saveIndicator.Load(ReadFile(g_uiDir + "../autosave.gif"));
+    bool played = false;           // the overworld has run since the game started or was reset
+    uint32_t resumeAt = frame;     // when the last resume point was made
+    uint32_t resumeShownUntil = 0; // its indicator
+    bool resumeDue = false;        // one is wanted at the next calm moment (a save was written)
+    static const uint32_t resumeEvery = getenv("SSR_AUTOSAVE_RESUME") ? (uint32_t)atoi(getenv("SSR_AUTOSAVE_RESUME")) : 60 * 60 * 3;
+    // A resume point CONTINUE can start from: one holding the save there is now.
+    Autosave::ResumeHeader resumeInfo;
+    const bool haveResume = autosaveOk && !opt.noSave && resume.Find(*nds, resumeInfo) >= 0;
+    auto tryResume = [&]() {
+        bool broken = false;
+        if (!haveResume || !cfg.autosave || !resume.Load(*nds, broken))
+        {
+            if (broken)
+            {
+                // Refused halfway through: the game starts again as without one.
+                fprintf(stderr, "[autosave] the resume point could not be loaded\n");
+                nds->Reset();
+                nds->SetupDirectBoot("game.nds");
+                nds->Start();
+                rc_reset();
+            }
+            return false;
+        }
+        rc_reset();
+        if (!opt.headless || getenv("SSR_CLOCK")) SetClock(*nds, opt.headless);
+        fprintf(stderr, "[autosave] resumed from %s\n", resume.path.c_str());
+        return true;
+    };
+    // The loading picture stays a few frames after a resume, until the widescreen world is drawn.
+    uint32_t resumeCoverUntil = 0;
+    if (bootMode == BOOT_CONTINUE && tryResume())
+    {
+        bootMode = BOOT_NONE;
+        resumeCoverUntil = frame + 10;
+    }
     // Typing a text: the nickname, the server's address or a party's code.
     enum { E_NAME, E_SERVER, E_CODE };
     struct TextEdit
@@ -2860,6 +2908,8 @@ int main(int argc, char** argv)
         add(T_GAME, M_FPSMAX, "Frame rate", cfg.fpsUnlimited ? "Unlimited" : "60",
             "Unlimited: as many pictures of the world as your computer can draw, for screens faster than 60 Hz. The game runs at its normal speed either way.");
         add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
+        add(T_GAME, M_AUTOSAVE, "Autosave", onOff(cfg.autosave),
+            "Saves the game by itself in Pok\xC3\xA9mon Centers and after a badge, and keeps your place every few minutes and when you quit, for Continue.");
         add(T_GAME, M_STARTSCREEN, "Start screen", onOff(cfg.startScreen), "Shows the start screen (play, online, settings) when the game starts.");
         add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
         add(T_GAME, M_QUIT, "Quit", "", "Closes the game. The in-game save is kept; play since your last save is not.")->danger = true;
@@ -3128,6 +3178,13 @@ int main(int argc, char** argv)
                 {
                     // A phone may close the app at any time once it is in the background.
                     if (!opt.noSave) FlushSave(opt.save);
+                    if (autosaveOk && cfg.autosave && played && !opt.noSave)
+                    {
+                        int m = -1, x, z;
+                        if (!playerPos(m, x, z)) m = -1;
+                        resume.Write(*nds, m, Party_PlaceName(m));
+                        resume.Finish();
+                    }
                     cfg.Save(opt.config);
                 }
                 else if (touchPadUsed && (ev.type == SDL_FINGERDOWN || ev.type == SDL_FINGERMOTION || ev.type == SDL_FINGERUP))
@@ -3615,6 +3672,11 @@ int main(int argc, char** argv)
                     startOpen = false;
                     swallowMenuButtons = true;
                     if (bootSkipOk) bootMode = act == ST_CONTINUE ? BOOT_CONTINUE : BOOT_NEW;
+                    if (act == ST_CONTINUE && tryResume())
+                    {
+                        bootMode = BOOT_NONE;
+                        resumeCoverUntil = frame + 10;
+                    }
                 }
                 else if (act == ST_QUIT) running = false;
                 else
@@ -3859,6 +3921,9 @@ int main(int argc, char** argv)
             case M_STARTSCREEN:
                 cfg.startScreen = !cfg.startScreen;
                 break;
+            case M_AUTOSAVE:
+                cfg.autosave = !cfg.autosave;
+                break;
             case M_REMAP_RESET:
                 for (int& b : cfg.padMap) b = -1;
                 say("The usual buttons are back", "icons/icon_gamepad");
@@ -3878,6 +3943,7 @@ int main(int argc, char** argv)
                 swallowMenuButtons = true;
                 break;
             case M_RESET:
+                played = false; // (no resume point at the title screen)
                 nds->Reset();
                 nds->SetupDirectBoot("game.nds");
                 nds->Start();
@@ -3933,6 +3999,49 @@ int main(int argc, char** argv)
             }
             wheelPrev = emoteWheel ? dpad : 0;
         }
+        // Autosave (autosave.h): the game's own save at calm moments, and resume points.
+        {
+            int amap = -1, ax = 0, az = 0;
+            if (!playerPos(amap, ax, az)) amap = -1;
+            const bool writingNow = saveWriting();
+            static bool wasWriting = false;
+            if (wasWriting && !writingNow)
+            {
+                // Any save, the player's own too: the next autosave waits, a resume point follows.
+                gameSave.Saved(frame);
+                resumeDue = true;
+            }
+            wasWriting = writingNow;
+            if (bootMode == BOOT_NONE && !startOpen && fieldActive()) played = true;
+            const bool on = autosaveOk && cfg.autosave && bootMode == BOOT_NONE && !startOpen;
+            // Test aid: SSR_AUTOSAVE_AT=<frame> asks for a save then.
+            static const char* saveAt = getenv("SSR_AUTOSAVE_AT");
+            if (saveAt && frame == (uint32_t)atoi(saveAt)) gameSave.Want(frame, true);
+            if (on || gameSave.Busy())
+            {
+                Autosave::GameSave::In in;
+                in.frame = frame;
+                in.idle = fieldIdle() && !uiOpen;
+                in.startMenu = probeActive(probeStartMenu);
+                in.saveApp = findSaveApp() != 0;
+                in.writing = writingNow;
+                in.player = keys;
+                in.map = amap;
+                in.x = ax;
+                in.z = az;
+                in.badges = Party_MyBadges();
+                in.read = readRam;
+                gameSave.Step(in, keys, KEY_A, KEY_B, KEY_X, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT);
+            }
+            if (on && !opt.noSave && played && !gameSave.Busy() && !uiOpen && fieldIdle() && (resumeDue || frame - resumeAt >= resumeEvery))
+            {
+                // The save file first, so that the two agree if the game is not quit normally.
+                FlushSave(opt.save);
+                if (resume.Write(*nds, amap, Party_PlaceName(amap))) resumeShownUntil = frame + 90;
+                resumeAt = frame;
+                resumeDue = false;
+            }
+        }
         // The save screen redrawn (HudScreens::SaveScreen): -1 not shown, else its phase. The
         // answer is chosen on the card and then given to the game's yes/no prompt as presses
         // read off the prompt: A to leave touch mode, up to Yes, then A; or B for No.
@@ -3940,7 +4049,8 @@ int main(int argc, char** argv)
         static int saveSel = 0, saveTarget = -1, saveGap = 0, saveLastPhase = -1, saveHold = 0;
         static uint32_t saveHoldKey = 0;
         static uint32_t saveKeysBefore = 0;
-        if (cfg.redrawn && spritesOk && !uiOpen && bootMode == BOOT_NONE)
+        // (An autosave answers it the same way: Yes, and Yes to writing over the save there is.)
+        if (((cfg.redrawn && spritesOk && !uiOpen) || gameSave.Busy()) && bootMode == BOOT_NONE)
             if (const uint32_t app = findSaveApp())
             {
                 const int st = (int)readRam(app + 0x0C), next = st == 2 ? (int)readRam(app + 0x10) : st;
@@ -3954,6 +4064,7 @@ int main(int argc, char** argv)
                     saveSel = 0;
                 }
                 saveLastPhase = savePhase;
+                if (gameSave.Busy() && (savePhase == 0 || savePhase == 1)) saveTarget = 0;
                 const uint32_t newKeys = keys & ~saveKeysBefore;
                 saveKeysBefore = keys;
                 if (savePhase >= 0)
@@ -4269,12 +4380,15 @@ int main(int argc, char** argv)
             }
         }
 
-        if (uiOpen && bootMode == BOOT_NONE)
+        if (uiOpen && bootMode == BOOT_NONE && !gameSave.Busy())
         {
-            // The buttons are the menu's (scripted test input and the keyboard too).
+            // The buttons are the menu's (scripted test input and the keyboard too); an autosave
+            // goes on behind the menu.
             keys = 0;
             touching = false;
         }
+        else if (gameSave.Busy())
+            touching = false; // (its buttons are already in keys)
         if (ref)
         {
             TraceLog.clear();
@@ -4607,7 +4721,8 @@ int main(int argc, char** argv)
                 if (probeActive(probeStartMenu) && fieldActive()) menuReturn = 0;
                 else if (strip && merged) menuReturn = 30;
                 else if (menuReturn > 0) menuReturn--;
-                bool menuOpen = merged && ((probeActive(probeStartMenu) && fieldActive()) || menuReturn > 0);
+                // (Also all through an autosave, whose menu task goes quiet while the save is written.)
+                bool menuOpen = merged && ((probeActive(probeStartMenu) && fieldActive()) || menuReturn > 0 || gameSave.Covering(frame));
                 rc_hide_layers[topUnit] = menuOpen ? 0x18 : 0;
                 rc_hide_layers[1 - topUnit] = 0;
             }
@@ -4672,6 +4787,13 @@ int main(int argc, char** argv)
                     pending = 0;
                 }
             }
+        }
+        {
+            // While an autosave runs the overworld's layout stays, with the pill over it: the X
+            // menu and the save screen it goes through are not shown.
+            static Scene beforeSave;
+            if (!gameSave.Covering(frame)) beforeSave = scene;
+            else scene = beforeSave;
         }
         if (opt.logSections)
         {
@@ -4872,6 +4994,12 @@ int main(int argc, char** argv)
             cornerY += 13 * sc;
             overlayUsed = true;
         }
+        if (spritesOk && (gameSave.Busy() || frame < resumeShownUntil))
+        {
+            // Saving the game; a resume point made (the animation alone).
+            pillY = saveIndicator.Draw(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, gameSave.Busy() ? "Saving..." : "", frame * 1000 / 60);
+            overlayUsed = true;
+        }
         if (speed > 1 && spritesOk)
         {
             DrawCornerPill(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, ">> Fast forward");
@@ -5004,7 +5132,7 @@ int main(int argc, char** argv)
             menu.Draw(canvas, "POKEMON SOULSILVER", cfg.byLabel ? "A: SELECT   B: BACK" : "RIGHT: SELECT   BOTTOM: BACK");
             overlayUsed = true;
         }
-        if (savePhase >= 0)
+        if (savePhase >= 0 && !gameSave.Busy())
         {
             int year, month, day, hour, minute, second;
             nds->RTC.GetDateTime(year, month, day, hour, minute, second);
@@ -5099,10 +5227,10 @@ int main(int argc, char** argv)
                 overlayUsed = true;
             }
         }
-        if (spritesOk && bootMode != BOOT_NONE && !menu.open && screen == SCR_NONE)
+        if (spritesOk && (bootMode != BOOT_NONE || frame < resumeCoverUntil) && !menu.open && screen == SCR_NONE)
         {
             HudOnline::LoadingScreen(canvas, ui, sprites, font, logo.px.empty() ? nullptr : &logo, "POK\xC3\xA9MON",
-                bootMode == BOOT_CONTINUE ? "Loading your adventure" : "Starting a new adventure", frame);
+                bootMode != BOOT_NEW ? "Loading your adventure" : "Starting a new adventure", frame);
             overlayUsed = true;
         }
         if (spritesOk && (screen != SCR_NONE || (startOpen && !menu.open)))
@@ -5185,7 +5313,8 @@ int main(int argc, char** argv)
                     if (!saveCard.known) return;
                     const Image* partner = romArt.PokemonIcon(cfg.onlinePartner ? cfg.onlinePartner : saveCard.party.empty() ? 0 : saveCard.party[0]);
                     HudOnline::SaveCard(canvas, ui, sprites, font, ui.W / ui.s / 2 - 700, y, 1400, onlineName(), saveCard,
-                        saveTrainer.px.empty() ? nullptr : &saveTrainer, partner);
+                        saveTrainer.px.empty() ? nullptr : &saveTrainer, partner,
+                        haveResume && cfg.autosave ? Autosave::ResumeLine(resumeInfo.place, resumeInfo.time) : "");
                 };
                 const PartyLink link = Party_Link();
                 std::string footer = onlineName() + (link == PartyLink::Online ? " \xC2\xB7 online, " + Party_Code() : link == PartyLink::Connecting ? " \xC2\xB7 joining..." : "");
@@ -5473,6 +5602,14 @@ int main(int argc, char** argv)
         fprintf(stderr, "[audio] %llu samples, peak %d, rms %.1f\n", (unsigned long long)AudioSamples, AudioPeak,
             sqrt(AudioSumSq / AudioSamples));
     if (!opt.noSave) FlushSave(opt.save);
+    if (autosaveOk && cfg.autosave && played && !opt.noSave)
+    {
+        // Where the player is, for CONTINUE (autosave.h): whatever is going on, a battle too.
+        int m = -1, x, z;
+        if (!playerPos(m, x, z)) m = -1;
+        if (resume.Write(*nds, m, Party_PlaceName(m))) fprintf(stderr, "[autosave] resume point written\n");
+        resume.Finish();
+    }
     Party_Leave();
     if (!opt.headless) SDL_Quit();
     if (nds->ARM9.RecompEnable) rc_print_stats();
