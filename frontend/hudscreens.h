@@ -14,6 +14,41 @@ inline std::string Thousands(uint32_t v)
     return s;
 }
 
+// "SUMMARY" -> "Summary", "ROCK SMASH" -> "Rock Smash"; names with small letters are kept.
+inline std::string TitleCase(std::string s)
+{
+    for (char ch : s)
+        if (ch >= 'a' && ch <= 'z') return s;
+    bool first = true;
+    for (char& ch : s)
+    {
+        if (ch >= 'A' && ch <= 'Z' && !first) ch = (char)(ch - 'A' + 'a');
+        first = !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'));
+    }
+    return s;
+}
+
+// The text of a game String in main RAM (src/pm_string.c: the most it holds, its length, a
+// magic number, then the codes), without its text commands (0xFFFE, the command, how many
+// arguments, those), which colour or pause it; false unless it checks out. `rd16` reads a
+// halfword of main RAM.
+template <class Read16>
+bool GameString(Read16 rd16, uint32_t s, std::string& out)
+{
+    if (s < 0x02000000 || s >= 0x02400000 || (s & 3) || (rd16(s + 4) | rd16(s + 6) << 16) != 0xB6F8D2ECu) return false;
+    const uint32_t most = rd16(s), n = rd16(s + 2);
+    if (n > most || n > 1024) return false;
+    std::vector<uint16_t> codes;
+    for (uint32_t i = 0; i < n; i++)
+    {
+        const uint16_t c = (uint16_t)rd16(s + 8 + 2 * i);
+        if (c == 0xFFFE) i += 2 + rd16(s + 8 + 2 * (i + 2));
+        else codes.push_back(c);
+    }
+    out = NdsText(codes.data(), codes.size());
+    return true;
+}
+
 // A label on the left and a value on the right in a row; gold for the online numbers.
 inline void StatRow(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x, float y, float w, const std::string& label,
     const std::string& value, bool gold = false)

@@ -57,48 +57,44 @@ inline bool ReadParty(const Ram& ram, uint32_t party, int& count, PartyMon* mons
     return true;
 }
 
-// Text of the game's String (src/pm_string.c: most, length, a magic number, the codes).
+// Text of the game's String (HudScreens::GameString).
 inline bool ReadString(const Ram& ram, uint32_t s, std::string& out)
 {
-    if (!ram.Ptr(s) || ram.R32(s + 4) != 0xB6F8D2EC) return false;
-    const uint32_t n = ram.R16(s + 2);
-    if (n > 64 || !ram.Ok(s + 8, 2 * n)) return false;
-    std::vector<uint16_t> codes(n);
-    for (uint32_t i = 0; i < n; i++) codes[i] = (uint16_t)ram.R16(s + 8 + 2 * i);
-    out = NdsText(codes.data(), n);
-    return true;
+    return HudScreens::GameString([&](uint32_t a) { return ram.R16(a); }, s, out);
 }
 
-// "SUMMARY" -> "Summary", "ROCK SMASH" -> "Rock Smash"; names with small letters are kept.
-inline std::string TitleCase(std::string s)
-{
-    for (char ch : s)
-        if (ch >= 'a' && ch <= 'z') return s;
-    bool first = true;
-    for (char& ch : s)
-    {
-        if (ch >= 'A' && ch <= 'Z' && !first) ch = (char)(ch - 'A' + 'a');
-        first = !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'));
-    }
-    return s;
-}
+using HudScreens::TitleCase;
 
-// The party menu (src/party_menu.c), from the field only.
+// The party menu (src/party_menu.c), from the field's menu or from the bag (using or giving
+// an item).
 struct PartyScreen
 {
     int count = 0;
     PartyMon mons[6];
     int cursor = 0;                  // 0-5 a Pokemon, 7 Cancel (6 too: the selection's own number for it)
     int step = 0;                    // PartyMenuState
+    int context = 0;                 // PartyMenuContext: 0 the field, 5 using an item, 9 and 10 giving one
     std::vector<std::string> items;  // the context menu, when open
     int sel = 0;                     // its cursor
     int from = -1;                   // the Pokemon being moved (Switch)
+    std::string prompt;              // what the game asks at the top, when it is not the usual
+    std::string message;             // the game's message, while one is shown
+    int yesNo = -1;                  // the cursor of the yes/no under it, -1 when there is none
 };
 
-// PartyMenu (include/party_menu.h): args +0x654, the context menu's cursor +0x824, the
-// Pokemon the cursor is on +0xC65, the one being switched (6 bits) and whether that is
-// going on (bit 6) at +0xC63. PartyMenuArgs: the party +0, the field system +0x1C, the
-// context +0x24 (0: from the field's menu).
+// "POKéMON" in the game's text as the HUD writes it.
+inline std::string PokemonCase(std::string s)
+{
+    for (size_t at; (at = s.find("POK\xC3\xA9MON")) != std::string::npos;) s.replace(at, 8, "Pok\xC3\xA9mon");
+    return s;
+}
+
+// PartyMenu (include/party_menu.h): args +0x654, the context menu's cursor +0x824, what is
+// drawn of each Pokemon (+0x828, 0x30 each: the species +4, HP +6 of +8, which an item's
+// healing counts up), the message being shown (formattedStrBuf +0x7C8), the yes/no
+// (+0xC88), the Pokemon the cursor is on +0xC65, the one being switched (6 bits) and
+// whether that is going on (bit 6) at +0xC63. PartyMenuArgs: the party +0, the field system
+// +0x1C, the context +0x24, the item being used or given +0x28.
 inline bool ReadPartyScreen(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, uint32_t exit, PartyScreen& s)
 {
     const uint32_t fs = ram.R32(0x021D4158);
@@ -108,15 +104,52 @@ inline bool ReadPartyScreen(const Ram& ram, uint32_t& cache, uint32_t init, uint
     });
     if (!mgr || ram.R32(mgr + 0x10) != 2) return false;
     const uint32_t pm = ram.R32(mgr + 0x1C), args = ram.R32(mgr + 0x18);
-    if (ram.R8(args + 0x24) != 0) return false;
+    s.context = (int)ram.R8(args + 0x24);
     s.step = (int)ram.R32(mgr + 0x14);
-    // Drawn: opening, choosing, the context menu and the Item one under it, choosing where to
-    // move a Pokemon and moving it, closing.
-    static const int shown[] = { 0, 1, 2, 15, 28, 29, 32, 33 };
-    if (std::find(std::begin(shown), std::end(shown), s.step) == std::end(shown)) return false;
+    const int item = (int)ram.R16(args + 0x28);
+    // Drawn, by context: opening and closing (0, 32, 33), choosing (1, 4, 8), the context
+    // menu and the Item one under it (2, 15), choosing where to move a Pokemon and moving it
+    // (28, 29), an item used (5) or given (16), and the messages (9, 11, 17, 24, 25) and
+    // yes/no (10, 27).
+    // Not drawn: choosing a move to restore the PP of, learning a move, the level-up
+    // window of a Rare Candy, form changes, an evolution stone (whose ABLE / NOT ABLE on each
+    // Pokemon is not read), the other contexts (battle, contests...).
+    static const std::vector<int> field = { 0, 1, 2, 9, 10, 11, 15, 17, 24, 25, 27, 28, 29, 32, 33 };
+    static const std::vector<int> use = { 0, 4, 5, 24, 25, 32, 33 }, give = { 0, 8, 9, 10, 11, 16, 24, 25, 32, 33 };
+    const std::vector<int>* shown = s.context == 0 ? &field : s.context == 5 ? &use
+        : s.context == 9 || s.context == 10 ? &give : nullptr;
+    if (!shown || std::find(shown->begin(), shown->end(), s.step) == shown->end() || (s.step == 5 && item == 50)) return false;
     if (!ReadParty(ram, ram.R32(args), s.count, s.mons)) return false;
     s.cursor = (int)ram.R8(pm + 0xC65);
     if (s.cursor > 7) return false;
+    // HP as drawn, which counts up while an item heals.
+    int hpNow = -1;
+    for (int i = 0; i < s.count; i++)
+    {
+        const uint32_t d = pm + 0x828 + 0x30 * i;
+        const int hp = (int)ram.R16(d + 6);
+        if ((int)ram.R16(d + 4) != s.mons[i].species || (int)ram.R16(d + 8) != s.mons[i].stats[0] || hp > s.mons[i].stats[0]) continue;
+        if (i == s.cursor) hpNow = s.mons[i].hp;
+        s.mons[i].hp = hp;
+    }
+    if (s.context == 5) s.prompt = PokemonCase(Party_Text(300, 33)); // "Use on which POKéMON?"
+    if (s.context == 9) s.prompt = PokemonCase(Party_Text(300, 32)); // "Give to which POKéMON?"
+    // The message, once an item's healing has counted up.
+    static const int messageSteps[] = { 9, 10, 11, 17, 24, 25, 27 };
+    const bool message = std::find(std::begin(messageSteps), std::end(messageSteps), s.step) != std::end(messageSteps);
+    if (message ||(s.step == 5 && (s.cursor >= s.count || s.mons[s.cursor].hp == hpNow)))
+    {
+        if (!ReadString(ram, ram.R32(pm + 0x7C8), s.message) || s.message.empty()) return false;
+        s.message = PokemonCase(s.message);
+    }
+    if (s.step == 10 || s.step == 27)
+    {
+        // As PartyMenu_CreateYesNoPrompt places it (25, 10); the cursor at +0x75. Once
+        // answered, it is freed: the message alone then.
+        const uint32_t yn = ram.R32(pm + 0xC88);
+        s.yesNo = (int)ram.R8(yn + 0x75);
+        if (!ram.Ptr(yn) || ram.R8(yn + 0x70) != 25 || ram.R8(yn + 0x71) != 10 || s.yesNo > 1) s.yesNo = -1;
+    }
     const uint32_t flags = ram.R8(pm + 0xC63);
     s.from = s.step == 28 && (flags & 0x40) ? (int)(flags & 0x3F) : -1;
     if (s.from >= s.count) return false;
@@ -172,7 +205,7 @@ inline bool ReadSummaryScreen(const Ram& ram, uint32_t& cache, uint32_t init, ui
     s.national = ram.R32(args + 0x1C) != 0;
     if (s.slot >= s.count || (int)ram.R8(args + 0x13) != s.count || s.page < 0 || s.page > 2) return false;
     s.mon = mons[s.slot];
-    return !s.mon.egg;
+    return true;
 }
 
 // Drawing helpers --------------------------------------------------------------------------
@@ -338,7 +371,10 @@ inline void TextArrow(Canvas& c, const Ui& ui, const RomFont& f, float x, float 
 
 // The screens ----------------------------------------------------------------------------
 
-inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const PartyScreen& s, const HudOnline::IconFn& icon,
+// A Pokemon's party icon: its form's, or an egg's.
+using MonIconFn = std::function<const Image*(const PartyMon&)>;
+
+inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const PartyScreen& s, const MonIconFn& icon,
     const std::vector<HudHint>& hints)
 {
     using namespace HudColour;
@@ -351,7 +387,7 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
     // What the game asks, top right.
     const bool menuOpen = !s.items.empty();
     std::string prompt = s.step == 28 ? "Move to where?" : menuOpen && s.step == 15 ? "Do what with an item?"
-        : menuOpen ? "Do what with " + s.mons[s.cursor].name + "?" : "Choose a Pok\xC3\xA9mon.";
+        : menuOpen ? "Do what with " + s.mons[s.cursor].name + "?" : !s.prompt.empty() ? s.prompt : "Choose a Pok\xC3\xA9mon.";
     const float pw = HudTextWidth(ui, f, 32, prompt) + 80;
     HudPanel(c, ui, sp, "panels/button_lavender", wd - 60 - pw, 52, pw, 70);
     HudText(c, ui, f, wd - 60 - pw / 2, 71, 32, prompt, Ink, 1);
@@ -372,7 +408,7 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
         HudPanel(c, ui, sp, sel ? "panels/party_card_selected" : "panels/card", x, y, cw, ch);
         if (i == s.from) FillRound(c, ui, x + 4, y + 4, cw - 8, ch - 8, 28, 0x403E8EF0); // the one being moved
         HudSprite(c, ui, sp, sel ? "people/chip_ring_orange" : "people/chip_ring_green", x + 26, y + 35, 150, 150);
-        if (!m.egg) HudPixelArt(c, ui, icon(m.species), x + 37, y + 46, 128, 128);
+        HudPixelArt(c, ui, icon(m), x + 37, y + 46, 128, 128);
         float nx = x + 196;
         if (i == 0)
         {
@@ -395,7 +431,18 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
         }
         if (m.item)
         {
-            const std::string it = Party_Text(222, m.item);
+            // Shortened to end before the status.
+            std::string it = Party_Text(222, m.item);
+            const float room = right - 12 - (x + 344);
+            if (HudTextWidth(ui, f, 32, it) > room)
+            {
+                while (!it.empty() && HudTextWidth(ui, f, 32, it + "\xE2\x80\xA6") > room)
+                {
+                    while ((it.back() & 0xC0) == 0x80 && it.size() > 1) it.pop_back(); // a whole character
+                    it.pop_back();
+                }
+                it += "\xE2\x80\xA6";
+            }
             HudSprite(c, ui, sp, "icons/icon_bag", x + 300, y + 104, 36, 36);
             HudText(c, ui, f, x + 344, y + 108, 32, it, Muted);
         }
@@ -423,18 +470,37 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
             HudText(c, ui, f, mx + 84, ry + 9, 32, s.items[k], Ink);
         }
     }
-    // Cancel, under the menu's place.
+    // The game's message, in the menu's place, with its yes/no.
+    else if (!s.message.empty())
+    {
+        std::vector<std::string> lines = HudWrap(ui, f, 32, s.message, mw - 44 - 60);
+        lines.resize(std::min(lines.size(), (size_t)6));
+        const float th = 40 + 50.0f * lines.size(), mh = 44 + th + (s.yesNo >= 0 ? 2 * 62 + 10 : 0);
+        HudPanel(c, ui, sp, "panels/card", mx, 170, mw, mh);
+        HudPanel(c, ui, sp, "panels/dialogue_box", mx + 22, 192, mw - 44, th);
+        for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, mx + 52, 214 + 50.0f * i, 32, lines[i], Ink);
+        for (int k = 0; s.yesNo >= 0 && k < 2; k++)
+        {
+            const float ry = 192 + th + 16 + 62 * k;
+            const bool on = k == s.yesNo;
+            HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", mx + 22, ry, mw - 44, 50);
+            if (on) HudSprite(c, ui, sp, "cursor/cursor", mx + 34, ry + 5, 36, 40);
+            HudText(c, ui, f, mx + 84, ry + 9, 32, k ? "No" : "Yes", Ink);
+        }
+    }
+    // Cancel, under the cards at the right, where the game has it.
     if (!menuOpen)
     {
         const bool on = s.cursor >= 6;
-        HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", mx + 22, 820, mw - 44, 50);
-        if (on) HudSprite(c, ui, sp, "cursor/cursor", mx + 34, 825, 36, 40);
-        HudText(c, ui, f, mx + mw / 2, 829, 32, "Cancel", Ink, 1);
+        const float bw = 300, bx = 60 + 2 * cw + 20 - bw, by = 170 + 3 * (ch + 20) + 4;
+        HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", bx, by, bw, 56);
+        if (on) HudSprite(c, ui, sp, "cursor/cursor", bx + 14, by + 8, 36, 40);
+        HudText(c, ui, f, bx + bw / 2, by + 12, 32, "Cancel", Ink, 1);
     }
     DrawHintBar(c, ui, sp, f, hints);
 }
 
-inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const SummaryScreen& s, const HudOnline::IconFn& icon,
+inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const SummaryScreen& s, const MonIconFn& icon,
     const std::vector<HudHint>& hints)
 {
     using namespace HudColour;
@@ -443,9 +509,34 @@ inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
 
     // Left: the Pokemon.
     const float lx = 60, lw = 560;
-    HudPanel(c, ui, sp, "panels/card", lx, 40, lw, 750);
+    HudPanel(c, ui, sp, "panels/card", lx, 40, lw, m.egg ? 400 : 750);
     HudSprite(c, ui, sp, "people/chip_ring_green", lx + lw / 2 - 115, 66, 230, 230);
-    HudPixelArt(c, ui, icon(m.species), lx + lw / 2 - 96, 85, 192, 192);
+    if (m.egg)
+    {
+        // An egg has only its memo: what "The Egg Watch" says (text bank 302) by the cycles
+        // of steps left, as the game's FormatEggWatch picks it.
+        HudPixelArt(c, ui, icon(m), lx + lw / 2 - 96, 85, 192, 192);
+        HudText(c, ui, f, lx + lw / 2, 316, 48, "Egg", Ink, 1, true);
+        std::string watch = Party_Text(302, m.friendship <= 5 ? 105 : m.friendship <= 10 ? 106 : m.friendship <= 40 ? 107 : 108);
+        std::string head = "The Egg Watch";
+        const size_t end = watch.size() > 1 && watch[0] == '"' ? watch.find('"', 1) : std::string::npos;
+        if (end != std::string::npos)
+        {
+            head = watch.substr(1, end - 1);
+            watch = watch.substr(end + 1);
+        }
+        const float rx = 660, rw = (ui.W / ui.s) - 60 - rx;
+        HudPanel(c, ui, sp, "panels/card", rx, 40, rw, 400);
+        FillRound(c, ui, rx + 22, 62, rw - 44, 48, 16, 0xFF2EC4C6);
+        HudText(c, ui, f, rx + 42, 70, 32, head, White);
+        const std::vector<std::string> lines = HudWrap(ui, f, 48, watch, rw - 92);
+        for (size_t i = 0; i < lines.size() && i < 4; i++) HudText(c, ui, f, rx + 46, 140 + 60 * i, 48, lines[i], Ink);
+        if (s.count > 1)
+            HudText(c, ui, f, rx + rw, 460, 32, std::to_string(s.slot + 1) + " / " + std::to_string(s.count), Muted, 2);
+        DrawHintBar(c, ui, sp, f, hints);
+        return;
+    }
+    HudPixelArt(c, ui, icon(m), lx + lw / 2 - 96, 85, 192, 192);
     const float nw = HudTextWidth(ui, f, 48, m.name, true);
     HudText(c, ui, f, lx + lw / 2 - 16, 316, 48, m.name, Ink, 1, true);
     Gender(c, ui, lx + lw / 2 - 16 + nw / 2 + 14, 326, m.gender);

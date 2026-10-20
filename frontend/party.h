@@ -138,6 +138,7 @@ struct PartyMon
     int types[2] = { -1, -1 };         // -1: not known (forms with types of their own)
     int metPlace = 0, metLevel = 0;    // metPlace: a place of text bank 279
     int ribbons = 0;
+    int friendship = 0;                // for an egg, the cycles of steps left before it hatches
 };
 // The Pokemon (236 bytes, the party's format) at `addr` in main RAM; false unless its
 // checksum and numbers check out.
