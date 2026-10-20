@@ -15,6 +15,7 @@ struct Toast
     std::string chip;             // a player's initials in a chip ring of `chipRing` ("people/chip_ring_green")
     std::string chipRing;
     std::string lead, trail;      // sprites before the text (instead of a chip) and after it
+    Image trailArt;               // or a picture from the ROM after it (a Pokemon's icon)
     bool dashed = false;          // reconnecting: a grey pill
     bool waits = false;           // held back while the player is busy (see ToastStack::Update)
     uint32_t frames = 150;        // how long it stays
@@ -78,7 +79,7 @@ private:
         const bool hasLead = !t.chip.empty() || !t.lead.empty();
         if (hasLead) w += 52 + 12;
         w += HudTextWidth(ui, f, 32, t.name + t.text);
-        if (!t.trail.empty()) w += 12 + 48;
+        if (!t.trail.empty() || !t.trailArt.px.empty()) w += 12 + 48;
         HudPanel(c, ui, sp, "panels/toast", x, y, w, h, t.dashed ? Tint(0xFFE6E9EE, tint) : tint);
         float cx = x + 8;
         if (!t.chip.empty())
@@ -102,7 +103,10 @@ private:
         }
         HudText(c, ui, f, cx, ty, 32, t.text, Fade(HudColour::Ink, tint));
         cx += HudTextWidth(ui, f, 32, t.text);
-        if (!t.trail.empty()) HudSprite(c, ui, sp, t.trail, cx + 12, y + 8, 48, 48, tint);
+        if (!t.trailArt.px.empty())
+            Blit(c, t.trailArt, 0, 0, (float)t.trailArt.w, (float)t.trailArt.h, ui(cx + 8), ui(y), ui(64), ui(64), false, tint);
+        else if (!t.trail.empty())
+            HudSprite(c, ui, sp, t.trail, cx + 12, y + 8, 48, 48, tint);
     }
 };
 

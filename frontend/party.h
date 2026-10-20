@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace melonDS { class NDS; }
 
@@ -19,6 +20,7 @@ struct PartyPeer
     bool present = false;
     std::string name;
     int colour = 0;        // 0 blue, 1 green, 2 orange, 3 red
+    int partner = 0;       // the Pokemon shown with them (species, 0 none)
     bool host = false;
     int state = PS_FIELD;
     int map = -1;
@@ -66,6 +68,9 @@ bool Party_PopEvent(PartyEvent& e);
 int Party_MyBadges();
 int Party_CaughtThisSession();
 uint32_t Party_SessionSeconds();
+int Party_DexCount();                // Pokemon caught in the Pokedex (-1 not known yet)
+std::vector<int> Party_MySpecies();  // the species in this player's party
+void Party_SetPartner(int species);  // the Pokemon shown with this player
 // The name of a species (from the ROM's text), e.g. "Hoothoot".
 std::string Party_SpeciesName(int species);
 // The rom, for names (set once).

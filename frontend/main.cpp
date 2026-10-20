@@ -1029,6 +1029,7 @@ struct Settings
     std::string onlineName; // empty: the trainer's name
     int onlineColour = -1;  // -1: by player number
     int hostMax = 4;        // players a hosted session allows
+    int onlinePartner = 0;  // the Pokemon shown with this player (species, 0 none)
     bool showPing = true;
     bool onlineToasts = true;
     bool startScreen = true; // the frontend's own start screen before the game
@@ -1054,6 +1055,7 @@ struct Settings
             else if (k == "online_name") onlineName = v.substr(0, 10);
             else if (k == "online_colour") onlineColour = std::clamp(atoi(v.c_str()), -1, 3);
             else if (k == "host_max") hostMax = std::clamp(atoi(v.c_str()), 2, 4);
+            else if (k == "online_partner") onlinePartner = std::clamp(atoi(v.c_str()), 0, 493);
             else if (k == "show_ping") showPing = v == "1";
             else if (k == "online_toasts") onlineToasts = v == "1";
             else if (k == "start_screen") startScreen = v == "1";
@@ -1096,6 +1098,7 @@ struct Settings
         f << "online_name=" << onlineName << "\n";
         f << "online_colour=" << onlineColour << "\n";
         f << "host_max=" << hostMax << "\n";
+        f << "online_partner=" << onlinePartner << "\n";
         f << "show_ping=" << (showPing ? 1 : 0) << "\n";
         f << "online_toasts=" << (onlineToasts ? 1 : 0) << "\n";
         f << "start_screen=" << (startScreen ? 1 : 0) << "\n";
@@ -1276,6 +1279,9 @@ int main(int argc, char** argv)
     if (!nds) return 1;
     Party_Attach(*nds);
     Party_SetRom(rom.data(), rom.size());
+    RomArt romArt;
+    romArt.SetRom(rom.data(), rom.size());
+    const HudOnline::IconFn monIcon = [&](int species) { return romArt.PokemonIcon(species); };
     Party_SetSave(sav.data(), sav.size());
     nds->ARM9.RecompEnable = opt.recomp;
 
@@ -1351,6 +1357,7 @@ int main(int argc, char** argv)
         return std::string("Trainer");
     };
     Party_SetProfile(onlineName(), cfg.onlineColour);
+    Party_SetPartner(cfg.onlinePartner);
     if (!opt.party.empty())
     {
         if (!opt.headless || configGiven) cfg.onlineServer = opt.party;
@@ -2490,7 +2497,7 @@ int main(int argc, char** argv)
         M_RESUME, M_LAYOUT, M_LARGE, M_FPS60, M_FULLSCREEN, M_SMOOTH, M_ASPECT, M_WINDOWSIZE, M_WIDE, M_ZOOM, M_FARMAP, M_VOIDFILL, M_NIGHTFX, M_BLUR, M_WIDELINES, M_SHOWFPS, M_BUTTONS, M_PADTOUCH, M_FAST, M_SAVESTATE, M_LOADSTATE, M_RESET, M_QUIT,
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
-        M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN,
+        M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
     };
     // The pause menu's tabs.
     enum { T_RESUME, T_GAME, T_DISPLAY, T_CONTROLS, T_ONLINE, T_PROFILE, T_STATES };
@@ -2607,6 +2614,8 @@ int main(int argc, char** argv)
         add(T_ONLINE, M_TOASTS, "Activity toasts", onOff(cfg.onlineToasts),
             "Messages when someone joins, leaves, catches a Pok\xC3\xA9mon or earns a badge. They wait until you are not busy.");
         add(T_PROFILE, M_NICK, "Nickname", onlineName(), "The name the other players see. Up to 10 letters; your trainer's name unless you change it.");
+        add(T_PROFILE, M_PARTNER, "Partner", cfg.onlinePartner ? Party_SpeciesName(cfg.onlinePartner) : "None",
+            "The Pok\xC3\xA9mon shown with you on your card and to the others: one from your party.");
         add(T_PROFILE, M_COLOUR, "Colour", cfg.onlineColour < 0 ? "Automatic" : HudOnline::ColourName(cfg.onlineColour),
             "Your colour: your chip, and your name in messages. Automatic gives each player in a session a different one.");
 
@@ -2659,6 +2668,8 @@ int main(int argc, char** argv)
     int shownFps = 0;
     uint32_t presented = 0, fpsSince = 0;
     ToastStack toasts;
+    HudOnline::SessionStats sessionStats;
+    PartyLink shownLink = PartyLink::Off;
     // A message of the frontend's own, shown at once (with the plain menu: the last one).
     auto say = [&](const std::string& msg, const std::string& icon = "", uint32_t frames = 150) {
         toast = msg;
@@ -3390,6 +3401,18 @@ int main(int argc, char** argv)
                 cfg.onlineColour = (cfg.onlineColour + 1 + (dir < 0 ? 4 : 1)) % 5 - 1; // Automatic, then the four colours
                 Party_SetProfile(onlineName(), cfg.onlineColour);
                 break;
+            case M_PARTNER:
+            {
+                // None, then the party's species in order.
+                std::vector<int> choices = Party_MySpecies();
+                choices.insert(choices.begin(), 0);
+                auto it = std::find(choices.begin(), choices.end(), cfg.onlinePartner);
+                int i = it == choices.end() ? 0 : (int)(it - choices.begin());
+                i = (i + (dir < 0 ? (int)choices.size() - 1 : 1)) % (int)choices.size();
+                cfg.onlinePartner = choices[i];
+                Party_SetPartner(cfg.onlinePartner);
+                break;
+            }
             case M_STARTSCREEN:
                 cfg.startScreen = !cfg.startScreen;
                 break;
@@ -3711,6 +3734,24 @@ int main(int argc, char** argv)
             const int pstate = paused ? PS_MENU : sectionActive("OVY_12") && !fieldActive() ? PS_BATTLE
                 : pmap == 2 || pmap == 4 || pmap == 5 ? PS_LINK : PS_FIELD;
             Party_Process(pstate, pmap);
+            if (frame % 60 == 0) romArt.SetRam(nds->MainRAM, nds->MainRAMMask + 1);
+            // A new session: its numbers start again. Battles started in the Colosseum or the
+            // Union Room and trades while online are this session's link battles and trades.
+            if (Party_Link() == PartyLink::Online && shownLink != PartyLink::Online && shownLink != PartyLink::Lost)
+                sessionStats = HudOnline::SessionStats();
+            shownLink = Party_Link();
+            {
+                static bool wasBattle = false, wasTrade = false;
+                const bool battle = appRunning("Battle"), trade = appRunning("TradeSequence");
+                if (Party_Link() == PartyLink::Online)
+                {
+                    if (battle && !wasBattle && (pmap == 2 || pmap == 4 || pmap == 5)) sessionStats.linkBattles++;
+                    if (trade && !wasTrade) sessionStats.trades++;
+                }
+                wasBattle = battle;
+                wasTrade = trade;
+                if (Party_Me() >= 0) sessionStats.caught[Party_Me()] = Party_CaughtThisSession();
+            }
             PartyEvent pe;
             while (Party_PopEvent(pe))
             {
@@ -3740,7 +3781,10 @@ int main(int argc, char** argv)
                     break;
                 case PartyEvent::Caught:
                     t.text = " caught " + std::string(strchr("AEIOU", Party_SpeciesName(pe.arg)[0]) ? "an " : "a ") + Party_SpeciesName(pe.arg);
-                    t.trail = "emotes/emote_sparkle";
+                    if (const Image* ic = romArt.PokemonIcon(pe.arg)) t.trailArt = *ic;
+                    else t.trail = "emotes/emote_sparkle";
+                    sessionStats.caught[pe.player & 3]++;
+                    sessionStats.lastCaught[pe.player & 3] = pe.arg;
                     break;
                 case PartyEvent::Badge:
                     t.chip.clear();
@@ -4132,7 +4176,18 @@ int main(int argc, char** argv)
             else if (sel && !sel->disabled)
                 hints.push_back({ { accept }, "Select" });
             if (remapping < 0) hints.push_back({ { back }, "Back" });
-            DrawPauseMenu(canvas, ui, sprites, font, menu, hints);
+            if (menu.tab == T_PROFILE)
+            {
+                HudRect side;
+                DrawPauseMenu(canvas, ui, sprites, font, menu, hints, 560, &side);
+                PartyPeer me;
+                me.name = onlineName();
+                me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                me.partner = cfg.onlinePartner;
+                HudOnline::TrainerCardPreview(canvas, ui, sprites, font, side, me, Party_DexCount(), Party_MyBadges(), sessionStats, monIcon);
+            }
+            else
+                DrawPauseMenu(canvas, ui, sprites, font, menu, hints);
             overlayUsed = true;
         }
         else if (menu.open)
@@ -4147,10 +4202,10 @@ int main(int argc, char** argv)
             {
                 buildSession();
                 HudOnline::SessionScreen(canvas, ui, sprites, font, sessionMenu,
-                    { { { "buttons/button_dpad" }, "Change" }, { { accept }, "Select" }, { { back }, "Back" } });
+                    { { { "buttons/button_dpad" }, "Change" }, { { accept }, "Select" }, { { back }, "Back" } }, monIcon);
             }
             else if (screen == SCR_SUMMARY)
-                HudOnline::Summary(canvas, ui, sprites, font, { { { accept }, "Leave" }, { { back }, "Stay" } });
+                HudOnline::Summary(canvas, ui, sprites, font, { { { accept }, "Leave" }, { { back }, "Stay" } }, sessionStats, monIcon);
             else if (screen == SCR_EDIT)
             {
                 const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Letters" }, { { PadGlyph(cfg.byLabel ? PAD_X : PAD_Y) }, "Delete" },

@@ -120,6 +120,7 @@ PartyPeer Peers[4];
 bool PendingJoin[4] = {};
 std::deque<PartyEvent> Events;
 std::string MyName = "Trainer";
+int MyPartner = 0; // species shown with this player (0 none)
 int MyColour = 0, MyState = 0, MyMap = -1, SentState = -1, SentMap = -2;
 const uint8_t* RomData = nullptr;
 size_t RomSize = 0;
@@ -322,7 +323,7 @@ void Connect(int parent)
 void SendHello()
 {
     // No colour chosen: one by player number, so that everyone differs.
-    std::vector<u8> b = { (u8)(MyColour >= 0 ? MyColour : Me & 3), 0, 0 };
+    std::vector<u8> b = { (u8)(MyColour >= 0 ? MyColour : Me & 3), (u8)MyPartner, (u8)(MyPartner >> 8) };
     b.insert(b.end(), MyName.begin(), MyName.end());
     Send('N', b);
 }
@@ -340,7 +341,11 @@ void Message(char kind, const u8* p, size_t n)
             Peers[Me].present = true;
             Peers[Me].sinceMs = Ms();
             if (Link == PartyLink::Lost) Events.push_back({ PartyEvent::Reconnected, Me });
-            else SessionStart = Ms();
+            else
+            {
+                SessionStart = Ms();
+                CaughtSession = 0;
+            }
             Link = PartyLink::Online;
             LastHeard = LastPing = Ms();
             Rtt = -1;
@@ -391,6 +396,7 @@ void Message(char kind, const u8* p, size_t n)
             q.present = true;
             q.host = p[1] & 1;
             q.colour = p[2] & 3;
+            q.partner = p[3] | p[4] << 8;
             q.name.assign((const char*)p + 5, std::min<size_t>(n - 5, 20));
             if (PendingJoin[p[0]])
             {
@@ -1044,6 +1050,12 @@ void Party_Process(int state, int map)
     Receive();
     // (After reading: what was heard is never later than `now`.)
     const u32 now = Ms();
+    // This player's save, also offline (for the profile's numbers).
+    if (now - LastScan >= 1000)
+    {
+        ScanSave();
+        LastScan = now;
+    }
     if (Link == PartyLink::Online && Sock != NoSocket)
     {
         TryHook();
@@ -1055,11 +1067,6 @@ void Party_Process(int state, int map)
             {
                 Send('Q', { (u8)now, (u8)(now >> 8), (u8)(now >> 16), (u8)(now >> 24) });
                 LastPing = now;
-            }
-            if (now - LastScan >= 1000)
-            {
-                ScanSave();
-                LastScan = now;
             }
             if (Sock != NoSocket && (now - LastStatus >= 2000 || state != SentState || map != SentMap))
             {
@@ -1110,6 +1117,51 @@ void Party_Leave()
 void Party_SetMax(int maxPlayers)
 {
     if (Link == PartyLink::Online) Send('M', { (u8)std::max(2, std::min(4, maxPlayers)) });
+}
+
+void Party_SetPartner(int species)
+{
+    MyPartner = species;
+    if (Link == PartyLink::Online) SendHello();
+}
+
+int Party_DexCount()
+{
+    if (!DexKnown) return -1;
+    int n = 0;
+    for (int i = 0; i < 64; i++) n += __builtin_popcount(DexCaught[i]);
+    return n;
+}
+
+std::vector<int> Party_MySpecies()
+{
+    // The party in the save data: at 0x90 of the general block (PlayerProfile is at 0x64):
+    // the most, the count, then 236 bytes each, whose first 136 are a BoxPokemon: its
+    // personality value, a checksum and four 32-byte blocks, shuffled by the personality
+    // and encrypted with the checksum as the seed. The species is the first word of block A.
+    std::vector<int> out;
+    if (!Nds || !ProfileAt) return out;
+    const uint8_t* ram = Nds->MainRAM;
+    const u32 size = Nds->MainRAMMask + 1, party = ProfileAt - 0x64 + 0x90;
+    if (party + 8 + 6 * 236 > size) return out;
+    const u32 count = std::min<u32>(RomGet32(ram + party + 4), 6);
+    static const char* orders[24] = { "ABCD", "ABDC", "ACBD", "ACDB", "ADBC", "ADCB", "BACD", "BADC", "BCAD", "BCDA", "BDAC", "BDCA",
+        "CABD", "CADB", "CBAD", "CBDA", "CDAB", "CDBA", "DABC", "DACB", "DBAC", "DBCA", "DCAB", "DCBA" };
+    for (u32 i = 0; i < count; i++)
+    {
+        const uint8_t* m = ram + party + 8 + i * 236;
+        const u32 pid = RomGet32(m), check = RomGet16(m + 6);
+        const int posA = (int)(strchr(orders[((pid >> 13) & 31) % 24], 'A') - orders[((pid >> 13) & 31) % 24]);
+        u32 seed = check;
+        int species = 0;
+        for (int w = 0; w <= posA * 16; w++)
+        {
+            seed = seed * 0x41C64E6D + 0x6073;
+            if (w == posA * 16) species = (RomGet16(m + 8 + 2 * w) ^ (seed >> 16)) & 0xFFFF;
+        }
+        if (species > 0 && species <= 493) out.push_back(species);
+    }
+    return out;
 }
 
 PartyLink Party_Link() { return Link; }

@@ -115,7 +115,15 @@ inline void DrawBackdrop(Canvas& c, Sprites& sp, const std::string& name, uint32
 }
 
 // The pause menu (Menu in ui.h) as the online-HUD design draws it.
-inline void DrawPauseMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Menu& m, const std::vector<HudHint>& hints)
+// A panel beside the rows (`sideW` design pixels wide, e.g. the Profile tab's trainer
+// card); DrawPauseMenu says where it goes.
+struct HudRect
+{
+    float x = 0, y = 0, w = 0, h = 0;
+};
+
+inline void DrawPauseMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Menu& m, const std::vector<HudHint>& hints,
+    float sideW = 0, HudRect* side = nullptr)
 {
     using namespace HudColour;
     const float wd = ui.W / ui.s; // design width: 1920 at 16:9, more on wider screens
@@ -158,12 +166,14 @@ inline void DrawPauseMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
     // The rows, scrolling to keep the selected one in view.
     const std::vector<int> rows = m.Rows();
     const float cardY = colY + boxH + 60, cardBottom = 1000;
-    const float rowX = boxX + 23, rowW = boxW - 46, rowH = 50, rowPitch = 60;
+    const float cardW = sideW > 0 ? boxW - sideW - 30 : boxW;
+    if (side) *side = { boxX + cardW + 30, cardY, sideW, cardBottom - cardY };
+    const float rowX = boxX + 23, rowW = cardW - 46, rowH = 50, rowPitch = 60;
     const int fit = std::max(1, (int)((cardBottom - cardY - 46) / rowPitch));
     const int n = (int)rows.size();
     const int first = std::clamp(m.selected - fit / 2, 0, std::max(0, n - fit));
     const int shown = std::min(fit, n);
-    HudPanel(c, ui, sp, "panels/card_glass", boxX, cardY, boxW, 40 + shown * rowPitch - 10 + 6);
+    HudPanel(c, ui, sp, "panels/card_glass", boxX, cardY, cardW, 40 + shown * rowPitch - 10 + 6);
     const float valueRight = rowX + rowW - 49, valueW = 240, valueX = valueRight - valueW;
     for (int k = 0; k < shown; k++)
     {
@@ -199,7 +209,7 @@ inline void DrawPauseMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
     // More rows than fit: a scroll bar on the card's right edge.
     if (n > shown)
     {
-        const float tx = boxX + boxW - 14, ty = cardY + 23, th = shown * rowPitch - 10;
+        const float tx = boxX + cardW - 14, ty = cardY + 23, th = shown * rowPitch - 10;
         HudSprite(c, ui, sp, "cursor/scrollbar_track", tx, ty, 8, th);
         const float thumbH = std::max(30.0f, th * shown / n);
         HudSprite(c, ui, sp, "cursor/scrollbar_thumb", tx, ty + (th - thumbH) * first / std::max(1, n - shown), 8, thumbH);

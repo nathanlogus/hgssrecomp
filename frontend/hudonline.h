@@ -3,11 +3,15 @@
 // 16-menu-session): the session badge with the signal bars, the player chips, the card
 // shown while a lost connection is retried, the session screen (players and the code),
 // code entry, the start screen and the summary shown on leaving. Data from party.h.
+#include <functional>
 #include "hudtoast.h"
 #include "party.h"
+#include "romart.h"
 
 namespace HudOnline
 {
+// A species' icon (from the ROM), or null.
+using IconFn = std::function<const Image*(int species)>;
 inline const char* RingOf(int colour)
 {
     static const char* rings[] = { "people/chip_ring_blue", "people/chip_ring_green", "people/chip_ring_orange", "people/chip_ring_red" };
@@ -132,7 +136,8 @@ inline void TitledCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, f
 
 // The session screen (06-lobby): the party's code and settings on the left, the players on
 // the right.
-inline void SessionScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Menu& m, const std::vector<HudHint>& hints)
+inline void SessionScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Menu& m, const std::vector<HudHint>& hints,
+    const IconFn& icon)
 {
     DrawBackdrop(c, sp, "backgrounds/bg_aqua", 0xFFFFFFFF);
     const float wd = ui.W / ui.s;
@@ -183,6 +188,7 @@ inline void SessionScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
         HudText(c, ui, f, rx + 135, py + 44, 32, info, HudColour::Muted);
         if (p.host) HudSprite(c, ui, sp, "people/crown_gold", rx + rw - 23 - 80, py + 18, 56, 52);
         else if (p.state == PS_BATTLE) HudSprite(c, ui, sp, "emotes/emote_battle", rx + rw - 23 - 80, py + 8, 64, 64);
+        if (p.partner && icon) HudPixelArt(c, ui, icon(p.partner), rx + rw - 23 - 170, py + 3, 80, 80);
         py += 98;
         shown++;
     }
@@ -280,8 +286,47 @@ inline void StartScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     if (!footer.empty()) HudText(c, ui, f, 32, 1080 - 56 + 12, 32, footer, HudColour::Muted);
 }
 
+struct SessionStats
+{
+    int linkBattles = 0, trades = 0;
+    int caught[4] = {};      // catches each player made this session
+    int lastCaught[4] = {};  // and the species of their last one
+};
+
+// The Profile tab's preview of what the others see (15-menu-profile's trainer card).
+inline void TrainerCardPreview(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const HudRect& r, const PartyPeer& me, int dex,
+    int badges, const SessionStats& st, const IconFn& icon)
+{
+    const float x = r.x, y = r.y, w = r.w;
+    const float h = 66 + 16 + 260 + 4 * 56 + 60;
+    HudPanel(c, ui, sp, "panels/card_header_teal", x, y, w, h, 0xFFFFFFFF);
+    HudText(c, ui, f, x + w / 2, y + 13, 32, "TRAINER CARD \xC2\xB7 PREVIEW", HudColour::White, 1);
+    const float d = 170, cx = x + w / 2;
+    HudSprite(c, ui, sp, RingOf(me.colour), cx - d / 2, y + 90, d, d);
+    HudText(c, ui, f, cx, y + 90 + d / 2 - 32, 64, Initials(me.name), HudColour::Ink, 1, true);
+    if (me.partner && icon) HudPixelArt(c, ui, icon(me.partner), cx + d / 2 - 30, y + 90 + d - 80, 96, 96);
+    const float pw = HudTextWidth(ui, f, 32, me.name) + 48;
+    DrawSprite(c, sp.Get(std::string("people/name_pill_") + (me.colour == 1 ? "green" : me.colour == 2 ? "orange" : me.colour == 3 ? "red" : "blue")),
+        ui(cx - pw / 2), ui(y + 90 + d + 6), ui(pw), ui(48), ui.s);
+    HudText(c, ui, f, cx, y + 90 + d + 14, 32, me.name, HudColour::White, 1);
+    const std::pair<std::string, std::string> rows[] = { { "Badges", std::to_string(badges) },
+        { "Pok\xC3\xA9" "dex", dex < 0 ? "-" : std::to_string(dex) }, { "Link battles", std::to_string(st.linkBattles) },
+        { "Trades", std::to_string(st.trades) } };
+    float ry = y + 90 + d + 76;
+    for (const auto& row : rows)
+    {
+        HudPanel(c, ui, sp, "panels/row", x + 23, ry, w - 46, 46);
+        HudText(c, ui, f, x + 45, ry + 7, 32, row.first, HudColour::Muted);
+        HudText(c, ui, f, x + w - 45, ry + 7, 32, row.second, HudColour::Ink, 2);
+        ry += 56;
+    }
+    HudSprite(c, ui, sp, "icons/icon_eye", cx - 120, ry + 8, 36, 36);
+    HudText(c, ui, f, cx - 76, ry + 10, 32, "What the others see", HudColour::Muted);
+}
+
 // The summary shown before leaving a session (16-menu-session).
-inline void Summary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const std::vector<HudHint>& hints)
+inline void Summary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const std::vector<HudHint>& hints, const SessionStats& st,
+    const IconFn& icon)
 {
     DrawBackdrop(c, sp, "backgrounds/bg_sunny", 0xFFFFFFFF);
     const float wd = ui.W / ui.s;
@@ -295,12 +340,13 @@ inline void Summary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, cons
     char time[16];
     snprintf(time, sizeof time, "%u:%02u", secs / 3600, secs / 60 % 60);
     const float lx = 100, lw = 640, ly = 150;
-    TitledCard(c, ui, sp, f, lx, ly, lw, 66 + 16 + 3 * 60 + 16, "THIS SESSION");
+    TitledCard(c, ui, sp, f, lx, ly, lw, 66 + 16 + 5 * 60 + 16, "THIS SESSION");
     const std::pair<std::string, std::string> stats[] = { { "Play time", time },
-        { "Caught", std::to_string(Party_CaughtThisSession()) }, { "Badges", std::to_string(Party_MyBadges()) } };
-    const char* icons[] = { "icons/icon_clock", "icons/icon_star", "people/crown_gold" };
+        { "Caught", std::to_string(Party_CaughtThisSession()) }, { "Badges", std::to_string(Party_MyBadges()) },
+        { "Link battles", std::to_string(st.linkBattles) }, { "Trades", std::to_string(st.trades) } };
+    const char* icons[] = { "icons/icon_clock", "icons/icon_star", "people/crown_gold", "icons/icon_fight", "icons/icon_trade" };
     float ry = ly + 66 + 16;
-    for (int k = 0; k < 3; k++)
+    for (int k = 0; k < 5; k++)
     {
         HudPanel(c, ui, sp, "panels/row", lx + 23, ry, lw - 46, 50);
         HudSprite(c, ui, sp, icons[k], lx + 40, ry + 7, 36, 36);
@@ -324,6 +370,12 @@ inline void Summary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, cons
             std::string(p.host ? "Host \xC2\xB7 " : "") + std::to_string(p.badges) + (p.badges == 1 ? " badge" : " badges") +
                 (i == Party_Me() ? " \xC2\xB7 you" : " \xC2\xB7 still here"),
             HudColour::Muted);
+        if (st.caught[i])
+        {
+            const std::string n = std::to_string(st.caught[i]) + " caught";
+            HudText(c, ui, f, rx + rw - 23 - 24, py + 27, 32, n, HudColour::Ink, 2);
+            if (icon) HudPixelArt(c, ui, icon(st.lastCaught[i]), rx + rw - 23 - 24 - HudTextWidth(ui, f, 32, n) - 84, py + 3, 80, 80);
+        }
         py += 98;
     }
     DrawHintBar(c, ui, sp, f, hints);

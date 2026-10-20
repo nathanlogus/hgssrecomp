@@ -51,6 +51,10 @@
   when someone joins or leaves, catches a Pokemon or earns a badge (they wait until
   you are not in a battle or reading). A lost connection is retried for 30 seconds
   while you keep playing. Your nickname and colour are in the new **Profile** tab.
+- The **Profile** tab shows your trainer card as the others see it, with a partner
+  Pokémon from your party next to your name. Catch messages show the Pokémon caught,
+  and the summary before leaving a session counts its link battles, trades and each
+  player's catches. The pictures come from your own ROM.
 - A **start screen** before the game: Play, Online, Settings, Quit (Play is already
   chosen, so one press starts the game). It can be turned off in the Game tab.
 - Fewer flashes when the view changes: the world no longer starts at normal size and
