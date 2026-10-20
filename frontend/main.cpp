@@ -54,6 +54,7 @@
 #include "hudscreens.h"
 #include "hudbattle.h"
 #include "hudbag.h"
+#include "hudparty.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
 #include "merged.h"
@@ -5052,6 +5053,38 @@ int main(int argc, char** argv)
                     break;
                 }
         bagShown = bagNow;
+        // The party menu and the summary redrawn (hudparty.h), mirroring the game's own
+        // applications, which keep the input; on any step they do not draw, the game shows.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen)
+        {
+            static uint32_t partyAt = 0, summaryAt = 0;
+            const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+            auto app = [](const char* name) -> const RcApp* {
+                for (unsigned i = 0; i < rc_num_apps; i++)
+                    if (!strcmp(rc_apps[i].name, name)) return &rc_apps[i];
+                return nullptr;
+            };
+            const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+            static HudParty::PartyScreen partyView;
+            static HudParty::SummaryScreen summaryView;
+            const RcApp *pa = app("PartyMenu"), *sa = app("PokemonSummary");
+            if (pa && appRunning("PartyMenu") && (partyView = HudParty::PartyScreen(),
+                    HudParty::ReadPartyScreen(ram, partyAt, pa->initAddr, pa->execAddr, pa->exitAddr, partyView)))
+            {
+                HudParty::DrawParty(canvas, ui, sprites, font, partyView, monIcon,
+                    { { { "buttons/button_dpad" }, "Choose" }, { { accept }, partyView.items.empty() ? "Options" : "Select" }, { { back }, "Back" } });
+                overlayUsed = true;
+            }
+            else if (sa && appRunning("PokemonSummary") &&
+                HudParty::ReadSummaryScreen(ram, summaryAt, sa->initAddr, sa->execAddr, sa->exitAddr, summaryView))
+            {
+                std::vector<HudHint> hints = { { { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" } };
+                if (summaryView.count > 1) hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Next Pok\xC3\xA9mon" });
+                hints.push_back({ { back }, "Back" });
+                HudParty::DrawSummary(canvas, ui, sprites, font, summaryView, monIcon, hints);
+                overlayUsed = true;
+            }
+        }
         if (spritesOk && bootMode != BOOT_NONE && !menu.open && screen == SCR_NONE)
         {
             HudOnline::LoadingScreen(canvas, ui, sprites, font, logo.px.empty() ? nullptr : &logo, "POK\xC3\xA9MON",

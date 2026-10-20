@@ -110,6 +110,30 @@ uint32_t Party_Now();                // the clock of PartyWalker::at (ms)
 std::string Party_PlaceName(int map);
 // The name of a species (from the ROM's text), e.g. "Hoothoot".
 std::string Party_SpeciesName(int species);
+// A Pokemon of the party as the game holds it in memory, decoded, with what the ROM says
+// about its species and moves (for the redrawn party and summary screens).
+struct PartyMon
+{
+    int species = 0, form = 0, item = 0, ability = 0, nature = 0;
+    int johto = 0;                     // the number in the Johto Pokedex (0: not in it)
+    int gender = 0;                    // 0 male, 1 female, 2 neither
+    bool egg = false;
+    std::string name, otName;          // the nickname (or the species' name), the original trainer
+    uint32_t otId = 0, exp = 0, expLevel = 0, expNext = 0; // experience, and what this level and the next start at (0 at level 100)
+    int level = 0, hp = 0;
+    int stats[6] = {};                 // HP (most), Attack, Defense, Speed, Sp. Atk, Sp. Def
+    uint32_t status = 0;               // sleep turns (bits 0-2), poison, burn, freeze, paralysis, bad poison
+    int moves[4] = {}, pp[4] = {}, ppMax[4] = {}, moveType[4] = {};
+    int types[2] = { -1, -1 };         // -1: not known (forms with types of their own)
+    int metPlace = 0, metLevel = 0;    // metPlace: a place of text bank 279
+    int ribbons = 0;
+};
+// The Pokemon (236 bytes, the party's format) at `addr` in main RAM; false unless its
+// checksum and numbers check out.
+bool Party_ReadMon(uint32_t addr, PartyMon& mon);
+// Line `index` of the ROM's text bank `bank` (moves 750, abilities 720, items 222,
+// natures 34, types 735, places 279).
+std::string Party_Text(int bank, int index);
 // The rom, for names (set once).
 void Party_SetRom(const uint8_t* rom, size_t size);
 // This player's save file (as loaded at start): finds their save data in memory.

@@ -7,6 +7,12 @@
   your Pokémon's moves, their types and PP, and the chosen move's power, accuracy and
   kind. Left and right choose a command, up and down a move, A confirms and B goes back.
   Double, link, Safari Zone and Bug-Catching Contest battles keep the usual buttons.
+- A **new party screen and Pokémon summary** (NEW SCREENS): your Pokémon on cards with
+  their level, HP bar, status and held item, and the game's menu for the one you pick
+  beside them; the summary shows the Pokémon's details, its stats as a hexagon (the
+  nature's raised and lowered stats in red and blue), its moves coloured by type with
+  their PP, and its ribbons. The game's own buttons work as always. Using an item on a
+  Pokémon, a move's details and the like still show the game's own screens.
 - **Your own font and button pictures** for the menus and the HUD: a font file (.otf or
   .ttf) in `assets/fonts` and button pictures in `assets/buttons` (named like the Switch's
   `icon_key_a_00.png`) are used when they are there. TEXT in the Display tab chooses
