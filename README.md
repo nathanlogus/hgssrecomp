@@ -230,13 +230,20 @@ Pokemon Center's wireless club counters (the two ladies at the back) as you
 would with consoles side by side. From the command line, `--party <server>
 --party-code <code>` joins straight away.
 On the overworld you see the others' trainers walking around with their names
-over them (with the widescreen world on), and an arrow at the edge of the screen
+over them (also with the widescreen world off), and an arrow at the edge of the screen
 points to anyone out of view. Hold **R** and press the D-pad for an emote over your
 trainer: up Hi!, left a question mark, right a heart, down thanks.
-**Friends** in the Online tab lists who is in your session: choose Battle or Trade
-with left and right and press A to ask them. They get a card to say yes or not
-now (it goes away by itself after 20 seconds); then meet at a Pokemon Center's
-wireless counters. Its second tab lists everyone you have played with before.
+**Friends** in the Online tab lists who is in your session: choose Battle, Trade
+or Add friend with left and right and press A to ask them. They get a card to say
+yes or not now (it goes away by itself after 20 seconds); then meet at a Pokemon
+Center's wireless counters. While someone is in a battle you can choose Watch
+instead: a small card then shows their Pokemon, its HP and the turn until the
+battle ends. In a link battle, a timer under the VS banner shows how long the
+current move is taking (it only shows: no one is hurried).
+The second tab lists your friends and which of them are online right now, alone or
+in a session: **Invite** asks them into your session (they join with one press)
+and **Join** takes you into theirs. Friend requests wait in the third tab. A
+friend shows as online only to people they have added too.
 
 `run.sh` also writes what the game prints to `game.log` next to it; a bug report
 about a controller should include it (it lists every controller SDL sees).

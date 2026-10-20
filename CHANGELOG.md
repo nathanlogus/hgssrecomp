@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Friends: add the players you meet with **Add friend** (they accept in a new Requests
+  tab). The Friends tab shows which friends are online and whether they are alone or in a
+  session; **Invite** brings them into yours with one press and **Join** takes you into
+  theirs. Friends added by earlier versions (by name) need adding again for this.
+- Watch a battle: while a player in your session is battling, **Watch** in Friends shows
+  a small card with both Pokémon, their HP and the turn. Link battles show a move timer
+  under the VS banner (only shown: nothing is forced).
+- The other players' trainers now also show with the widescreen world off.
 - Autosave no longer stops the game: it keeps your place in the background (for Continue).
   The game's own save by itself in Pokémon Centers and after a badge is now ALSO SAVE THE
   GAME in the Game tab (off by default), and its writing is much quicker.

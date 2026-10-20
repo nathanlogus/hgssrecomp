@@ -10,6 +10,7 @@
 #include <map>
 #include "hudmenu.h"
 #include "ndsrom.h"
+#include "party.h"
 #include "romart.h"
 
 namespace HudBattle
@@ -93,6 +94,45 @@ inline bool Read(const uint8_t* ram, uint32_t mask, State& s)
         count += s.move[i] != 0;
     }
     return r8(d + 16) == r8(bi + 0x68A) && count > 0;
+}
+
+// Any single battle, link battles too, as the others in a session are told about it
+// (PartyBattle): each side's Pokémon and HP, the turn (BattleContext totalTurns, +0x150) and
+// whether a command is being chosen. Which battler is this player's comes from the battler
+// type of its OpponentData (BattleSystem +0x34, the type at +0x195; even types are the
+// player's side), as in a link battle both games number the battlers alike.
+inline bool ReadLive(const uint8_t* ram, uint32_t mask, PartyBattle& b)
+{
+    auto in = [](uint32_t a) { return a >= 0x02000000 && a < 0x02400000; };
+    auto r32 = [&](uint32_t a) -> uint32_t { return in(a) ? *(const uint32_t*)&ram[a & mask & ~3u] : 0; };
+    auto r16 = [&](uint32_t a) -> uint32_t { return in(a) ? *(const uint16_t*)&ram[a & mask & ~1u] : 0; };
+    auto r8 = [&](uint32_t a) -> uint32_t { return in(a) ? ram[a & mask] : 0; };
+    const uint32_t fs = r32(0x021D4158), pm = r32(fs), app = r32(pm + 4);
+    if (!in(fs) || !in(pm) || !in(app) || r32(app + 0xC) != 12) return false;
+    const uint32_t bs = r32(app + 0x1C), ctx = r32(bs + 0x30), bi = r32(bs + 0x19C);
+    if (!in(bs) || !in(ctx) || !in(bi) || r32(bi) != bs || r32(bs + 0x44) != 2) return false;
+    int mine = -1;
+    for (int k = 0; k < 2; k++)
+    {
+        const uint32_t od = r32(bs + 0x34 + 4 * k);
+        if (!in(od)) return false;
+        if (!(r8(od + 0x195) & 1)) mine = k;
+    }
+    if (mine < 0) return false;
+    auto mon = [&](int k, int& species, int& hp) {
+        const uint32_t m = ctx + 0x2D40 + 0xC0 * k;
+        species = (int)r16(m);
+        const int cur = (int)r32(m + 0x4C), most = (int)r32(m + 0x50);
+        if (species < 1 || species > 493 || most <= 0 || most > 999 || cur < 0 || cur > most) return false;
+        hp = (cur * 100 + most - 1) / most; // 1% while any is left
+        return true;
+    };
+    if (!mon(mine, b.species, b.hp) || !mon(1 - mine, b.foeSpecies, b.foeHp)) return false;
+    const int menu = (int8_t)r8(bi + 0x68B);
+    b.choosing = (menu >= 1 && menu <= 4) || menu == 11;
+    b.link = r32(bs + 0x2C) & 4;
+    b.turn = (int)std::min<uint32_t>(r32(ctx + 0x150), 254) + 1;
+    return true;
 }
 
 // Move data from the ROM: names (text bank 750) and the move table (a/0/1/1: category,

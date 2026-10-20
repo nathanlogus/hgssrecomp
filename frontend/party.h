@@ -5,6 +5,7 @@
 // See party.cpp.
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,19 @@ struct PartyWalker
     uint32_t emoteAt = 0;
 };
 
+// A battle as its player sees it, sent to the others each turn (for spectators and the
+// link battle's turn timer).
+struct PartyBattle
+{
+    bool link = false;     // a link battle (else against the game)
+    bool choosing = false; // the player is choosing a command
+    int turn = 0;
+    int species = 0, hp = 0;       // the player's Pokemon in battle, HP in percent
+    int foeSpecies = 0, foeHp = 0; // the other side's
+    uint32_t at = 0;               // when it was heard (Ms clock), 0 never
+    uint32_t choosingAt = 0;       // since when they have been choosing
+};
+
 struct PartyPeer
 {
     bool present = false;
@@ -41,16 +55,19 @@ struct PartyPeer
     int badges = 0;
     int rtt = -1;          // their round trip to the server, ms
     uint32_t sinceMs = 0;  // when they joined (Ms clock)
+    std::string uid;       // their player id (empty: not sent, an older game)
     PartyWalker walk;
+    PartyBattle battle;
 };
 
 // What happened in the party, for the HUD's toasts.
 struct PartyEvent
 {
-    enum Kind { Joined, Left, Caught, Badge, Reconnecting, Reconnected, Failed, Invite } kind;
+    enum Kind { Joined, Left, Caught, Badge, Reconnecting, Reconnected, Failed, Invite, Friend, SessionInvite } kind;
     int player = -1;
-    int arg = 0;           // Caught: species; Badge: badges now; Invite: PartyInvite
-    std::string text;      // Failed: why
+    int arg = 0;           // Caught: species; Badge: badges now; Invite: PartyInvite; Friend: PartyFriend
+    std::string text;      // Failed: why; SessionInvite: the session's code
+    std::string from, name; // SessionInvite: the friend's player id and name
 };
 
 // This player's trainer card, from their save in memory.
@@ -68,7 +85,27 @@ PartyCard Party_MyCard();
 PartyCard Party_SaveCard();  // the same from the save file (known is false without a save)
 
 // Invites from one player to another, and their answers.
-enum PartyInvite { PI_BATTLE = 1, PI_TRADE = 2, PI_YES = 0x10, PI_NO = 0x20, PI_BUSY = 0x40 }; // answers: PI_YES | PI_BATTLE...
+enum PartyInvite { PI_BATTLE = 1, PI_TRADE = 2, PI_SESSION = 8 /* (a friend's, by the server: never sent as V) */, PI_YES = 0x10, PI_NO = 0x20, PI_BUSY = 0x40 }; // answers: PI_YES | PI_BATTLE...
+
+// Friend requests to a player of the session, and their answers.
+enum PartyFriend { PF_ASK = 1, PF_YES = 2, PF_NO = 3 };
+void Party_SendFriend(int player, int kind);
+
+// This player's stable id (16 letters, kept in the settings): friends know each other by it.
+void Party_SetId(const std::string& id);
+// This player's friends (ids): the server tells which of them are online, while they have
+// this player as a friend too.
+void Party_SetFriends(const std::vector<std::string>& ids);
+struct PartyFriendOnline
+{
+    int count = 0, max = 0; // players in their session and how many it allows
+    std::string code;       // its code, to join
+};
+const std::map<std::string, PartyFriendOnline>& Party_FriendsOnline();
+// Invites a friend (online, by id) into this player's session.
+void Party_InviteFriend(const std::string& id);
+// This player's battle, every frame while in one (sent when it changes, and every 2 s).
+void Party_SetBattle(const PartyBattle& b);
 
 // Who this player is to the others: a name (up to 10 characters) and a colour (0-3, or
 // -1 for one by player number).
