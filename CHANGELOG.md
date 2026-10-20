@@ -83,6 +83,8 @@
 - **No more intro**: after Continue the opening, the title screen and the game's own
   Continue menu are passed for you, behind a loading picture, and you start in the
   world a few seconds later. New game goes straight to the professor's first words.
+- The start screen plays the game's own opening and title music: the game starts behind
+  it (without your buttons), so Continue is also quicker.
 - Fewer flashes when the view changes: the world no longer starts at normal size and
   then jumps to your WORLD ZOOM after Continue, no longer jumps to 100% zoom for a few
   frames now and then after a battle, and opening the save screen (or another screen
