@@ -11,6 +11,8 @@
   plays a tune that has a song, the song plays instead, looping, at the game's loudness.
   Sound effects, cries and jingles stay. MUSIC in the Game tab switches back to the
   original tunes.
+- Your songs no longer play over a little of the game's music (one of its channels was
+  still heard).
 - Files and folders with letters such as "é" in their names (a ROM in "Pokémon") can be
   read on Windows.
 - **FRAME RATE: UNLIMITED** in the Game tab: on screens faster than 60 Hz the world is
