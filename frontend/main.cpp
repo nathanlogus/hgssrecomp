@@ -1424,9 +1424,24 @@ int main(int argc, char** argv)
     // The overworld's main function is not entered for stretches of about ten frames while
     // some scripts run (a nurse bowing, for one), so it gets a longer memory than the rest:
     // otherwise the widescreen picture and the menu layout drop out for those frames.
+    // It also counts as running while the game itself says so: its map is set up and nothing
+    // has taken its place (FieldSystem.runningFieldMap, a field process, no application over
+    // it). That covers the longer stretches without FieldMap_Main, such as the fade-in after
+    // Continue or a battle, which otherwise showed the plain DS picture and then jumped to the
+    // zoomed wide one. The field overlay must be running as well, so a FieldSystem left behind
+    // after a return to the title screen does not count.
+    auto fieldRunning = [&]() {
+        auto rd = [&](u32 a) -> u32 { return (a >> 24) == 0x02 ? *(u32*)&nds->MainRAM[a & nds->MainRAMMask & ~3u] : 0; };
+        const u32 fs = rd(0x021D4158), pm = rd(fs);
+        if (!pm || !rd(pm) || rd(pm + 4) || !rd(fs + 0x6C)) return false;
+        for (u32 i = 0; i < rc_num_sections; i++)
+            if (!strcmp(rc_sections[i].name, "field"))
+                return rc_section_last_frame[i] && rc_section_last_frame[i] + 3 >= rc_current_frame();
+        return false;
+    };
     auto fieldActive = [&]() {
         unsigned last = rc_probe_last_frame(probeFieldMap);
-        return (last && last + 16 >= rc_current_frame()) || fieldHeldBySave;
+        return (last && last + 16 >= rc_current_frame()) || fieldHeldBySave || fieldRunning();
     };
     // Coming back from the Bag, the Pokegear and so on, the game fades the overworld in with
     // the X menu already drawn, a little before the menu's task runs again. The strip it
@@ -2193,7 +2208,10 @@ int main(int argc, char** argv)
         else
         {
             only("top", 0);
-            if (sectionActive("OVY_12"))
+            // (Not while the overworld runs: after a battle some of the battle overlay's code
+            // still runs now and then, and each time the view jumped to the battle layout,
+            // and the world zoom to 100%, for a few frames.)
+            if (sectionActive("OVY_12") && !fieldActive())
             {
                 // A battle outside its menus: messages and animations.
                 sc.name = "battle";
@@ -3388,7 +3406,21 @@ int main(int argc, char** argv)
                 return std::any_of(std::begin(names), std::end(names), [&](const char* m) { return !strcmp(n, m); });
             };
             static std::string shownName, pendingName;
-            static int pending = 0;
+            static int pending = 0, heldForBlank = 0;
+            // Whether every screen a layout shows is a single colour (the widescreen world
+            // counts as something to show).
+            auto sceneBlank = [&](const Scene& s) {
+                if (s.wide) return false;
+                bool any = false;
+                for (const Element& it : s.items)
+                {
+                    if (it.screen < 0) continue;
+                    if (!AutoFocus::Blank(it.screen == 0 ? top : bot)) return false;
+                    any = true;
+                }
+                return any;
+            };
+            if (shownName == picked.name) heldForBlank = 0;
             if (writing && !shownName.empty())
                 // The layout on screen stays until the save is written (see probeSaveWrite).
                 pending = 0;
@@ -3402,6 +3434,15 @@ int main(int argc, char** argv)
             {
                 scene = picked;
                 shownName = picked.name;
+                pending = 0;
+            }
+            else if (sceneBlank(picked) && !sceneBlank(scene) && heldForBlank < 90)
+            {
+                // The new layout would show only screens that are still one plain colour (an
+                // application fading in on the bottom screen while the world is still on top,
+                // the overworld fading in after a battle): the switch would blink the view to
+                // black and back, so the old layout stays until there is something to show.
+                heldForBlank++;
                 pending = 0;
             }
             else

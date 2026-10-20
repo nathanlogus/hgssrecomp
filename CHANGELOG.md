@@ -45,6 +45,11 @@
   and start the game with `--party <server>`. Up to four games in the same party
   share the Pokemon Center's wireless clubs as if their consoles were side by side,
   each with its own save; it copes with a slow connection.
+- Fewer flashes when the view changes: the world no longer starts at normal size and
+  then jumps to your WORLD ZOOM after Continue, no longer jumps to 100% zoom for a few
+  frames now and then after a battle, and opening the save screen (or another screen
+  that fades in on the touch screen) keeps the world on show instead of blinking to
+  black first.
 
 ## v0.4.2 — Faster widescreen
 
