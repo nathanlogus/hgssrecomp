@@ -4396,7 +4396,13 @@ int main(int argc, char** argv)
         // movie are passed with A, silently, so that its title music (or the song in its
         // place) starts at once. Never on the title screen itself, where A would go on.
         bool silentBoot = false;
-        if (startOpen && bootMode == BOOT_NONE && !appRunning("TitleScreen") && !appRunning("MainMenu") && !fieldActive())
+        // Only on the way to the title (or back through the opening, which the title screen
+        // plays again after a while): the title screen's own frames sometimes do not count as
+        // it running, and passing those quickly made the speed flicker and the songs drag.
+        static bool reachedTitle = false;
+        if (appRunning("TitleScreen") || appRunning("MainMenu") || fieldActive()) reachedTitle = true;
+        if (startOpen && bootMode == BOOT_NONE && (!reachedTitle || appRunning("IntroMovie")) && !appRunning("TitleScreen") &&
+            !appRunning("MainMenu") && !fieldActive())
         {
             static uint32_t pulse = 0;
             if (++pulse % 12 < 3) keys |= 1u << KEY_A;
@@ -4841,18 +4847,18 @@ int main(int argc, char** argv)
             // the first emulated frame's sound is kept, which is far shorter than the time that
             // goes by; songs go on at their own pace, so the sound sent is as long as that time
             // (the game's part padded with silence). Otherwise they stuttered and slowed down.
-            static uint64_t fastAt = 0;
-            if (speed > 1 && got > 0 && !opt.headless)
+            // (The time since the last frame shown, whatever its speed: a first fast frame after
+            // normal ones takes as long as the others.)
+            static uint64_t soundAt = 0;
+            const uint64_t at = SDL_GetPerformanceCounter();
+            if (speed > 1 && got > 0 && !opt.headless && soundAt)
             {
-                const uint64_t at = SDL_GetPerformanceCounter(), freq = SDL_GetPerformanceFrequency();
-                const int room = std::min<int>(4800, (int)audioBuf.size() / 2);
-                const int n = fastAt ? std::clamp((int)((at - fastAt) * 48000 / freq), got, room) : got;
+                const int room = std::min<int>(24000, (int)audioBuf.size() / 2);
+                const int n = std::clamp((int)((at - soundAt) * 48000 / SDL_GetPerformanceFrequency()), got, room);
                 std::fill(audioBuf.begin() + got * 2, audioBuf.begin() + n * 2, (int16_t)0);
                 got = n;
-                fastAt = at;
             }
-            else
-                fastAt = 0;
+            soundAt = at;
             if (got > 0) songs.Mix(audioBuf.data(), got);
         }
         if (audio && got > 0)
