@@ -458,9 +458,12 @@ while the frontend waits for the game's next frame, it draws the widescreen worl
 again at later moments between the two pictures (the same pairing, any fraction
 instead of halfway) and shows each one, as many as there is time for. The game
 still runs 60 frames a second; a picture is only started when it can be finished a
-millisecond before the next frame is due. Text boxes, menus and name tags still
-change 60 times a second, and the glow of night effects is that of the game's own
-frame. `SSR_FPS_LOG=1` prints the pictures shown each second, and
+millisecond before the next frame is due. The names, emotes and pointers over the
+other players are drawn again for each of those pictures, so they stay on the
+world; text boxes and menus still change 60 times a second, and the glow of night
+effects is that of the game's own frame. **VSync** (Display tab) shows each picture
+at the display's refresh, so with Unlimited there are as many pictures as the
+display shows and none of them tears. `SSR_FPS_LOG=1` prints the pictures shown each second, and
 `SSR_BETWEEN_SHOTS=n` saves n pictures between the frames of each screenshot.
 
 ## Performance

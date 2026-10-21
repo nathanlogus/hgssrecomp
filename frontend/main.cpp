@@ -56,6 +56,7 @@
 #include "hudbattle.h"
 #include "hudbag.h"
 #include "hudparty.h"
+#include "hudtrade.h"
 #include "huddex.h"
 #include "hudgear.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -1032,6 +1033,7 @@ struct Settings
     int padMap[8] = { -1, -1, -1, -1, -1, -1, -1, -1 }; // controller button per DS button (RemapKeys); -1 by label/position
     bool fps60 = true;
     bool fpsUnlimited = false; // more pictures than the game makes: as many as there is time for
+    bool vsync = false;        // each picture shown at the display's refresh (no tearing)
     // Right stick as a touch cursor, right trigger as the press, and the stick clicks that
     // switch screens. Off unless asked for: brushing the stick put the bottom screen up.
     bool padTouch = false;
@@ -1105,6 +1107,7 @@ struct Settings
             }
             else if (k == "fps60") fps60 = v == "1";
             else if (k == "fps_unlimited") fpsUnlimited = v == "1";
+            else if (k == "vsync") vsync = v == "1";
             else if (k == "pad_touch") padTouch = v == "1";
             else if (k == "show_fps") showFps = v == "1";
             else if (k == "void_fill") voidFill = v == "1";
@@ -1151,6 +1154,7 @@ struct Settings
         for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
         f << "fps_unlimited=" << (fpsUnlimited ? 1 : 0) << "\n";
+        f << "vsync=" << (vsync ? 1 : 0) << "\n";
         f << "pad_touch=" << (padTouch ? 1 : 0) << "\n";
         f << "show_fps=" << (showFps ? 1 : 0) << "\n";
         f << "aspect=" << (aspect ? AspectRatios[aspect].name : "fill") << "\n";
@@ -1439,7 +1443,7 @@ int main(int argc, char** argv)
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* tex[2] = { nullptr, nullptr };
     SDL_Texture* overlayTex = nullptr;
-    int overlayTexW = 0, overlayTexH = 0;
+    SDL_Texture* tagTex = nullptr; // tagCanvas
     SDL_AudioDeviceID audio = 0;
     Pads pads;
     Layout layout = LayoutFromName(cfg.layout);
@@ -1452,6 +1456,15 @@ int main(int argc, char** argv)
     auto applySmooth = [&]() {
         for (int i = 0; i < 2; i++)
             if (tex[i]) SDL_SetTextureScaleMode(tex[i], cfg.smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+    };
+    // VSync: presenting a picture waits for the display's refresh. With Frame rate Unlimited
+    // that paces the pictures between the game's frames to the display; the game's own frames
+    // keep their clock (a present waits at most one refresh).
+    auto applyVSync = [&]() {
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        if (renderer && SDL_RenderSetVSync(renderer, cfg.vsync ? 1 : 0) != 0)
+            fprintf(stderr, "VSync %s: %s\n", cfg.vsync ? "on" : "off", SDL_GetError());
+#endif
     };
 
     if (!opt.headless)
@@ -1521,6 +1534,7 @@ int main(int argc, char** argv)
         for (int i = 0; i < 2; i++)
             tex[i] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 192);
         applySmooth();
+        applyVSync();
         SDL_ShowCursor(cfg.fullscreen ? SDL_DISABLE : SDL_ENABLE);
 
         SDL_AudioSpec want;
@@ -2795,6 +2809,10 @@ int main(int argc, char** argv)
     uint32_t scriptClock = frame; // equals frame unless --battle-mash holds it during battles
 
     Canvas canvas;
+    // In a window, the names and pointers over the world (drawWorldTags) on a layer of their
+    // own under the rest of the HUD, so the pictures drawn between the game's frames can
+    // draw them again where the world then is.
+    Canvas tagCanvas;
     Ui ui;
     Menu menu;
     enum
@@ -2803,7 +2821,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE, M_MENUSOUNDS,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -3022,6 +3040,8 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_LARGE, "Large screen", large[focus.mode], "Which DS screen is shown large: chosen for you, or always the top or the bottom one.");
         add(T_DISPLAY, M_FULLSCREEN, "Fullscreen", onOff(cfg.fullscreen), "Fills the whole screen. F11 does the same.");
         add(T_DISPLAY, M_SMOOTH, "Smooth scaling", onOff(cfg.smooth), "Smooths the pixels when the picture is enlarged.");
+        add(T_DISPLAY, M_VSYNC, "VSync", onOff(cfg.vsync),
+            "Shows each picture when the screen refreshes, so it never tears. With Frame rate Unlimited, as many pictures as the screen shows.");
         add(T_DISPLAY, M_ASPECT, "Aspect ratio", aspect, "The shape of the picture; on a wider screen there are bars beside it.");
         add(T_DISPLAY, M_WINDOWSIZE, "Window size", cfg.windowH ? std::to_string(cfg.windowH) + "p" : "Default", "The height of the window.");
         add(T_DISPLAY, M_WIDE, "Widescreen world", onOff(cfg.wide), "Shows more of the overworld to the left and right instead of bars.");
@@ -3037,7 +3057,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear and the battle commands.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the battle commands and the trade screen.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -3982,6 +4002,10 @@ int main(int argc, char** argv)
             case M_SMOOTH:
                 cfg.smooth = !cfg.smooth;
                 applySmooth();
+                break;
+            case M_VSYNC:
+                cfg.vsync = !cfg.vsync;
+                applyVSync();
                 break;
             case M_ASPECT:
                 cfg.aspect = (cfg.aspect + (dir < 0 ? AspectCount - 1 : 1)) % AspectCount;
@@ -5261,10 +5285,10 @@ int main(int argc, char** argv)
                 Blit(canvas, img, 0, 0, (float)img.w, (float)img.h, lx, ly - size, size, size, false);
                 overlayUsed = true;
             }
-        if (online && (trayShown || dsWorld) && (melonDS::Wide.Owner || dsWorld))
-        {
-            // Names over the trainers, emotes, the emote wheel, and pointers to the others
-            // when they are off the screen.
+        // Names over the trainers, emotes, the emote wheel, and pointers to the others when
+        // they are off the screen; drawn into `cv` by the view of the picture shown.
+        auto drawWorldTags = [&](Canvas& cv) {
+            if (!online || !(trayShown || dsWorld) || !(melonDS::Wide.Owner || dsWorld)) return;
             const float W = ui.W / ui.s, H = ui.H / ui.s;
             const PartyPeer* peers = Party_Peers();
             const uint32_t now = Party_Now();
@@ -5299,7 +5323,7 @@ int main(int argc, char** argv)
                 const PartyPeer& p = peers[i];
                 const bool seen = headAt(at[0], at[1], at[2], u, v);
                 if (seen && u > 0.03f && u < 0.97f && v > 0.08f && v < 0.97f)
-                    HudOnline::NamePill(canvas, ui, sprites, font, u * W, v * H, p, emoteOf(p));
+                    HudOnline::NamePill(cv, ui, sprites, font, u * W, v * H, p, emoteOf(p));
                 else if (me >= 0)
                 {
                     // On the edge of the screen, the way they are from this player (the camera
@@ -5307,16 +5331,19 @@ int main(int argc, char** argv)
                     const float ang = (float)std::atan2(at[2] - mine[2], at[0] - mine[0]);
                     const float ca = std::cos(ang), sa = std::sin(ang);
                     const float k = std::min((W / 2 - 80) / std::max(std::fabs(ca), 1e-3f), (H / 2 - 150) / std::max(std::fabs(sa), 1e-3f));
-                    HudOnline::OffscreenPointer(canvas, ui, sprites, font, W / 2 + ca * k, H / 2 + sa * k, ang, p,
+                    HudOnline::OffscreenPointer(cv, ui, sprites, font, W / 2 + ca * k, H / 2 + sa * k, ang, p,
                         p.walk.map != peers[me].walk.map ? Party_PlaceName(p.walk.map) : "", W);
                 }
             }
             if (me >= 0 && peers[me].walk.shown && headAt(mine[0], mine[1], mine[2], u, v))
             {
-                if (emoteWheel) HudOnline::EmoteWheel(canvas, ui, sprites, u * W, v * H - 40);
-                else HudOnline::NamePill(canvas, ui, sprites, font, u * W, v * H, peers[me], emoteOf(peers[me]));
+                if (emoteWheel) HudOnline::EmoteWheel(cv, ui, sprites, u * W, v * H - 40);
+                else HudOnline::NamePill(cv, ui, sprites, font, u * W, v * H, peers[me], emoteOf(peers[me]));
             }
-        }
+        };
+        tagCanvas.Resize(outW, outH);
+        tagCanvas.Clear();
+        drawWorldTags(opt.headless ? canvas : tagCanvas);
         if (online && Party_Me() >= 0 && appRunning("Battle") && (partyMap == 2 || partyMap == 4 || partyMap == 5))
         {
             // A link battle: who against whom (the others in the same room, in a battle too).
@@ -5655,6 +5682,33 @@ int main(int argc, char** argv)
             }
         }
         gearShown = gearNow;
+        // The Union Room's trade screen redrawn (hudtrade.h), mirroring the game's own; for
+        // up to three frames that do not check out the last picture stays, as with the bag.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("WirelessTradeSelectMon"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "WirelessTradeSelectMon"))
+                {
+                    static uint32_t tradeAt = 0, tradeGood = 0;
+                    static HudTrade::View tradeView;
+                    HudTrade::View tv;
+                    if (HudTrade::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, tradeAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, tv))
+                        tradeView = tv, tradeGood = frame;
+                    if (frame - tradeGood > 3) break;
+                    const HudTrade::View& v = tradeView;
+                    const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                    std::vector<HudHint> hints;
+                    if (v.step == HudTrade::View::Browse) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Cancel" } };
+                    else if (v.step == HudTrade::View::Menu || v.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
+                    else if (v.step == HudTrade::View::Notice) hints = { { { a }, "OK" } };
+                    // The other trainer's colour, when they are one of the party's players.
+                    int theirs = 1;
+                    for (int p = 0; p < 4; p++)
+                        if (p != Party_Me() && Party_Peers()[p].present && Party_Peers()[p].name == v.partner) theirs = Party_Peers()[p].colour;
+                    HudTrade::Draw(canvas, ui, sprites, font, v, cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me()), theirs,
+                        [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                    overlayUsed = true;
+                    break;
+                }
         // The party menu and the summary redrawn (hudparty.h), mirroring the game's own
         // applications, which keep the input; on any step they do not draw, the game shows.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen)
@@ -5973,23 +6027,23 @@ int main(int argc, char** argv)
                         if (rects[i].w > 0) SDL_RenderCopy(renderer, tex[i], nullptr, &rects[i]);
                     }
                 }
-                if (overlayUsed)
-                {
-                    if (!overlayTex || overlayTexW != outW || overlayTexH != outH)
+                // A canvas over the picture: only the part drawn into is sent and shown.
+                auto showCanvas = [&](const Canvas& cv, SDL_Texture*& t) {
+                    if (!cv.Dirty()) return;
+                    int tw = 0, th = 0;
+                    if (t) SDL_QueryTexture(t, nullptr, nullptr, &tw, &th);
+                    if (!t || tw != outW || th != outH)
                     {
-                        if (overlayTex) SDL_DestroyTexture(overlayTex);
-                        overlayTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
-                        SDL_SetTextureBlendMode(overlayTex, SDL_BLENDMODE_BLEND);
-                        overlayTexW = outW;
-                        overlayTexH = outH;
+                        if (t) SDL_DestroyTexture(t);
+                        t = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
+                        SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
                     }
-                    if (canvas.Dirty())
-                    {
-                        const SDL_Rect dr = { canvas.x0d, canvas.y0d, canvas.x1d - canvas.x0d, canvas.y1d - canvas.y0d };
-                        SDL_UpdateTexture(overlayTex, &dr, canvas.px.data() + (size_t)dr.y * outW + dr.x, outW * 4);
-                        SDL_RenderCopy(renderer, overlayTex, &dr, &dr);
-                    }
-                }
+                    const SDL_Rect dr = { cv.x0d, cv.y0d, cv.x1d - cv.x0d, cv.y1d - cv.y0d };
+                    SDL_UpdateTexture(t, &dr, cv.px.data() + (size_t)dr.y * outW + dr.x, outW * 4);
+                    SDL_RenderCopy(renderer, t, &dr, &dr);
+                };
+                showCanvas(tagCanvas, tagTex);
+                if (overlayUsed) showCanvas(canvas, overlayTex);
                 // In a window, screenshots are read back from the renderer: exactly what is shown.
                 // (The pictures between the game's frames as _01, _02 and so on.)
                 static int between = 0;
@@ -6061,6 +6115,8 @@ int main(int argc, char** argv)
                         at = (float)((double)(t0 + cost - from) / span); // where it is when it is on the screen
                     if (!melonDS::WideDrawBetween(nds->GPU, at)) break;
                     updateShownView();
+                    tagCanvas.Clear();
+                    drawWorldTags(tagCanvas);
                     composingBetween = true;
                     drawFrame(true);
                     composingBetween = false;
