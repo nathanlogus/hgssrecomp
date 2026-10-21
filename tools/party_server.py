@@ -48,6 +48,7 @@ Messages, both ways: u16 length (little-endian), then a kind letter and its cont
 """
 import argparse
 import asyncio
+import collections
 import secrets
 import struct
 
@@ -79,15 +80,30 @@ class Party:
 class Relay:
     def __init__(self, lag):
         self.lag = lag / 1000.0
+        self.held = collections.deque()  # (when, to, message) held back by --lag
         self.parties = {}
         self.online = {}      # player id -> Player
 
     def send(self, to, kind, body=b''):
         msg = struct.pack('<H', 1 + len(body)) + kind.encode() + body
         if self.lag:
-            asyncio.get_running_loop().call_later(self.lag, self.write, to, msg)
+            # One queue in sending order, not a timer each: timers due at the same moment (two
+            # sends within one tick of the clock) can run in any order, and the games' link
+            # needs its messages in order.
+            loop = asyncio.get_running_loop()
+            self.held.append((loop.time() + self.lag, to, msg))
+            if len(self.held) == 1:
+                loop.call_later(self.lag, self.release)
         else:
             self.write(to, msg)
+
+    def release(self):
+        loop = asyncio.get_running_loop()
+        while self.held and self.held[0][0] <= loop.time() + 0.001:
+            _, to, msg = self.held.popleft()
+            self.write(to, msg)
+        if self.held:
+            loop.call_at(self.held[0][0], self.release)
 
     @staticmethod
     def write(to, msg):

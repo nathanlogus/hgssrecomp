@@ -78,23 +78,30 @@ inline bool Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint3
     case 0x0221E8EC: v.step = View::Waiting; v.message = "Waiting for your friend to finish..."; break;
     case 0x0221EB9C: case 0x0221EBF8: v.step = View::Waiting; break;   // waiting for the other to choose
     case 0x0221EC34: case 0x0221EE18: v.step = View::Offered; break;   // the two Pokemon brought together
-    case 0x0221F028: case 0x0221F120:                                   // "Trade X in return for Y?"
-    case 0x0221F258: case 0x0221F2A8: v.step = View::Confirm; break;   // "The Ball Capsule will become detached"
-    case 0x0221F354: v.step = View::Offered; break;                     // waiting for the other's answer
-    case 0x0221E270: case 0x0221E2C0:                                   // a notice ("The trade has been canceled.")
+    case 0x0221F028: case 0x0221F120: v.step = View::Confirm; break;   // "Trade X in return for Y?"
+    case 0x0221F258: case 0x0221F2A8:                                   // Yes with a Ball Capsule on it
+        v.step = View::Confirm;
+        v.message = Party_Text(183, 0x24); // "The Ball Capsule will become detached. Is that OK?"
+        break;
+    // Waiting for the other's answer. (With a Bad Egg in either party the game says here that a
+    // Pokemon cannot be traded, 0x25 or 0x26; such a party does not read, so the game's own
+    // picture shows.)
+    case 0x0221F354: v.step = View::Offered; break;
+    case 0x0221E270: case 0x0221E2C0:                                   // a notice
     {
-        // Those of its messages without anything put into them.
+        // "The trade has been canceled.", "Your friend apparently wants to trade..." and "If
+        // you trade that Pokemon, you'll get stuck..." (all this player's others are Eggs).
         const int id = (int)ram.R32(w + 0x74);
-        if (id != 0x18 && id != 0x1D && id != 0x22 && id != 0x25 && id != 0x26) return false;
+        if (id != 0x18 && id != 0x1D && id != 0x22) return false;
         v.step = View::Notice;
         v.message = Party_Text(183, id);
-        for (char& ch : v.message)
-            if (ch == '\n') ch = ' ';
         if (v.message.empty()) return false;
         break;
     }
     default: return false; // registering a friend, the trade itself
     }
+    for (char& ch : v.message)
+        if (ch == '\n') ch = ' ';
     // The cursor stays on the other's Pokemon only to look at it; a trade is one of this
     // player's for one of theirs.
     if ((v.step == View::Offered || v.step == View::Confirm) && (v.cursor >= 6 || v.theirs == 12)) return false;
