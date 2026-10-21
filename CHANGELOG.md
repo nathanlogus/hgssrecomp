@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- NEW SCREENS: the Union Room's trade screen: both parties side by side, the Pokémon you
+  and the other player are on in cards in the middle (ability and held item), the menu,
+  "Cancel trading?" and the trade question along the bottom, and when the other player
+  is ready. The trade itself (the Poké Balls) is still the game's.
+- Frame rate Unlimited: the names, emotes and pointers over the other players now follow
+  the world in every extra picture instead of lagging up to a frame behind. New **VSync**
+  setting (Display tab): pictures wait for the screen's refresh, so they never tear.
 - Friends: add the players you meet with **Add friend** (they accept in a new Requests
   tab). The Friends tab shows which friends are online and whether they are alone or in a
   session; **Invite** brings them into yours with one press and **Join** takes you into
