@@ -77,6 +77,7 @@
 #include "hudevents.h"
 #include "hudfrontier.h"
 #include "hudminigames.h"
+#include "hudoverworld.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -1066,6 +1067,7 @@ struct Settings
     bool voidFill = true; // haze instead of black where the world reaches past the loaded map
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
     bool redrawn = true;
+    bool overworldHud = true; // the party, map and quick buttons over the overworld (hudoverworld.h)
     bool newSongs = true;
     bool menuSounds = true; // the game's own cursor and button sounds in the frontend's menus (gamesfx.h)
     std::string textFont = "new"; // Text: a font family of the player's (assets/fonts) by name, "new" (the first), or "game"
@@ -1139,6 +1141,7 @@ struct Settings
             else if (k == "void_fill") voidFill = v == "1";
             else if (k == "night_fx") nightFx = v == "1";
             else if (k == "redrawn_screens") redrawn = v == "1";
+            else if (k == "overworld_hud") overworldHud = v == "1";
             else if (k == "music") newSongs = v != "original";
             else if (k == "menu_sounds") menuSounds = v == "1";
             else if (k == "text_font") textFont = v;
@@ -1189,6 +1192,7 @@ struct Settings
         f << "void_fill=" << (voidFill ? 1 : 0) << "\n";
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
+        f << "overworld_hud=" << (overworldHud ? 1 : 0) << "\n";
         f << "music=" << (newSongs ? "new" : "original") << "\n";
         f << "menu_sounds=" << (menuSounds ? 1 : 0) << "\n";
         f << "text_font=" << textFont << "\n";
@@ -2497,6 +2501,8 @@ int main(int argc, char** argv)
     std::vector<NightFly> fireflies;
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
+    HudOverworld::Hud owHud;
+    owHud.SetRom(rom.data(), rom.size());
     // Looks (online): frames and faces of the ROM's overworld people, made once each.
     if (cfg.onlineLook >= 0 && !worldBlocks.IsLook(cfg.onlineLook)) cfg.onlineLook = -1; // (chosen with another ROM)
     std::map<int, Image> lookArt, lookFaces;
@@ -2975,7 +2981,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC, M_LOOK,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC, M_LOOK,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -3236,6 +3242,8 @@ int main(int argc, char** argv)
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
         add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex with its pages and its search, the Unown Report, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, the Battle Castle's screen, the Factory's swaps, choosing who enters a Frontier challenge, the Battle Arcade's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, evolving, hatching and trading, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_OWHUD, "Overworld HUD", onOff(cfg.overworldHud),
+            "While you walk about: your party, a map of the area with the time, and buttons for the Bag, your Pok\xC3\xA9mon, the menu and your friends.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -3914,6 +3922,39 @@ int main(int argc, char** argv)
         if (pressed(PAD_START) && !ps.btn[PAD_BACK] && !startOpen && remapping < 0 && screen == SCR_NONE && (menu.open || fieldIdle()))
             toggleMenu = true;
         prevComboMenu = comboMenu;
+        // The overworld HUD's quick buttons (hudoverworld.h): the stick clicks, the right
+        // trigger and the right stick (the map's zoom) while it is up, unless those move the
+        // touch cursor; or a click or touch on one.
+        {
+            static bool rtHeld = false, mouseHeld = false;
+            static int stickHeld = 0;
+            int quick = -1;
+            const int stick = ps.ry < -0.6f ? -1 : ps.ry > 0.6f ? 1 : 0;
+            if (owHud.Shown() && !menu.open && screen == SCR_NONE && !startOpen && !cfg.padTouch)
+            {
+                if (pressed(PAD_LS)) quick = HudOverworld::Q_PARTY;
+                else if (pressed(PAD_RS)) quick = HudOverworld::Q_BAG;
+                else if (ps.rt > 0.5f && !rtHeld) quick = HudOverworld::Q_FRIENDS;
+                else if (stick && stick != stickHeld) owHud.ZoomStep(-stick);
+            }
+            if (mouseDown && !mouseHeld && !opt.headless) quick = owHud.HitTest(mouseX, mouseY);
+            rtHeld = ps.rt > 0.5f;
+            stickHeld = stick;
+            mouseHeld = mouseDown;
+            if (quick == HudOverworld::Q_MAP) owHud.ZoomCycle();
+            else if (quick == HudOverworld::Q_MENU) toggleMenu = true;
+            else if (quick == HudOverworld::Q_FRIENDS)
+            {
+                // As the Online tab's Friends.
+                friendsMenu.tab = !requests.empty() ? 2 : Party_Link() == PartyLink::Off && !friends.empty() ? 1 : 0;
+                friendsMenu.selected = 0;
+                if (Party_Link() == PartyLink::Off && !cfg.onlineServer.empty()) Party_Host(cfg.onlineServer, cfg.hostMax);
+                screen = SCR_FRIENDS;
+                uiSound(GameSfx::Confirm);
+            }
+            else if (quick == HudOverworld::Q_BAG || quick == HudOverworld::Q_PARTY)
+                owHud.Open(quick, frame);
+        }
 
         MenuInput heldNow;
         heldNow.up = ps.btn[PAD_UP] || ps.ly < -0.5f;
@@ -4289,6 +4330,9 @@ int main(int argc, char** argv)
             case M_REDRAWN:
                 cfg.redrawn = !cfg.redrawn;
                 break;
+            case M_OWHUD:
+                cfg.overworldHud = !cfg.overworldHud;
+                break;
             case M_VOIDFILL:
                 cfg.voidFill = !cfg.voidFill;
                 break;
@@ -4466,6 +4510,10 @@ int main(int argc, char** argv)
             }
             wheelPrev = emoteWheel ? dpad : 0;
         }
+        // A quick button of the overworld HUD opening the Bag or the Pokemon: the game's menu's
+        // buttons pressed for the player.
+        if (!uiOpen) owHud.Keys({ nds->MainRAM, nds->MainRAMMask + 1 }, keys, frame, fieldIdle());
+        else if (owHud.Opening()) owHud.Open(-1, frame);
         // The Union Room hand-off (an accepted battle or trade invite): first a save, as at a
         // Pokemon Center's counter (Autosave::GameSave, below), then the counter's own warp
         // (Party_GoToUnionRoom) once nothing runs on the overworld. There the one who invited
@@ -4922,7 +4970,7 @@ int main(int argc, char** argv)
         };
         if (!uiOpen)
         {
-            if (!opt.headless && mouseDown)
+            if (!opt.headless && mouseDown && owHud.HitTest(mouseX, mouseY) < 0)
             {
                 if (merged)
                 {
@@ -5782,6 +5830,50 @@ int main(int argc, char** argv)
         const bool hudFree = !menu.open && screen == SCR_NONE && !startOpen;
         const bool online = spritesOk && Party_Link() != PartyLink::Off && hudFree;
         const bool trayShown = online && view.width >= 300 && fieldActive();
+        // The overworld HUD (hudoverworld.h): only while the player walks about freely, the
+        // overworld's picture shown whole and nothing fading in or out.
+        {
+            const auto& u = (nds->PowerControl9 & (1 << 15)) ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+            const int bm = (u.MasterBrightness >> 14) & 3;
+            const bool fading = ((bm == 1 || bm == 2) && (u.MasterBrightness & 0x1F)) || ((u.BlendCnt & 1) && ((u.BlendCnt >> 6) & 3) >= 2 && u.EVY);
+            ui.Set(canvas.w, canvas.h);
+            HudOverworld::Input oin;
+            oin.show = cfg.overworldHud && spritesOk && merged && hudFree && !strcmp(scene.name, "top") && !scene.items.empty() &&
+                scene.items[0].screen == 0 && fieldIdle() && !fading && !gameSave.Covering(frame) && !emoteWheel && !appRunning("Battle");
+            oin.top = 32 + cornerY / ui.s;
+            oin.partyTop = oin.top + (online ? 76 : 0);
+            oin.bottomLift = touchPadUsed && touchPad.visible ? 0.3f * ui.H / ui.s : 0;
+            int year, month, day, second;
+            nds->RTC.GetDateTime(year, month, day, oin.hour, oin.minute, second);
+            oin.place = Party_PlaceName(partyMap);
+            if (online && Party_Me() >= 0)
+            {
+                const PartyPeer* peers = Party_Peers();
+                const PartyPeer& me = peers[Party_Me()];
+                for (int i = 0; i < 4; i++)
+                {
+                    if (i == Party_Me() || !peers[i].present) continue;
+                    oin.faces.push_back(&peers[i]);
+                    if (remotes[i].on && peers[i].walk.map == me.walk.map) oin.others.push_back({ &peers[i], remotes[i].x, remotes[i].z });
+                }
+            }
+            // The controller's buttons for them, when there is a controller (with the touch
+            // cursor on, the sticks and the trigger are its).
+            if (!pads.Empty())
+            {
+                oin.glyphs[HudOverworld::Q_MENU] = PadGlyph(PAD_START);
+                if (!cfg.padTouch)
+                {
+                    oin.glyphs[HudOverworld::Q_BAG] = PadGlyph(PAD_RS);
+                    oin.glyphs[HudOverworld::Q_PARTY] = PadGlyph(PAD_LS);
+                    oin.glyphs[HudOverworld::Q_FRIENDS] = "buttons/button_rt";
+                    oin.glyphs[HudOverworld::Q_MAP] = "buttons/stick_r";
+                }
+            }
+            owHud.Update({ nds->MainRAM, nds->MainRAMMask + 1 }, oin, frame, outW, outH, ui, sprites, font, romArt);
+            if (opt.headless) owHud.Composite(canvas);
+            overlayUsed |= opt.headless && owHud.Visible();
+        }
         // Without the widescreen world (turned off, or a narrow view) the others' trainers are
         // drawn over the game's own picture of the overworld, when it is shown whole and
         // unscaled in the middle of the view: their place by the game's camera, their frame
@@ -5895,7 +5987,7 @@ int main(int argc, char** argv)
         if (online)
         {
             HudOnline::SessionBadge(canvas, ui, sprites, font, 32, 32 + cornerY / ui.s, cfg.showPing);
-            if (trayShown) HudOnline::ChipTray(canvas, ui, sprites, font, ui.W / ui.s - 32, 32 + cornerY / ui.s);
+            if (trayShown && !owHud.Visible()) HudOnline::ChipTray(canvas, ui, sprites, font, ui.W / ui.s - 32, 32 + cornerY / ui.s);
             // Watching another player's battle (Friends, Session: Watch): until it has ended.
             if (watching >= 0)
             {
@@ -5924,10 +6016,11 @@ int main(int argc, char** argv)
             }
             overlayUsed = true;
         }
-        float pillY = 32 + cornerY / ui.s + (trayShown ? 116 : 0);
+        float pillY = 32 + cornerY / ui.s + (trayShown && !owHud.Visible() ? 116 : 0);
+        const float pillRight = ui.W / ui.s - 32 - owHud.RightReserve(); // left of the overworld HUD's map
         if (cfg.showFps && !opt.headless && spritesOk)
         {
-            pillY = DrawCornerPill(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, std::to_string(shownFps) + " fps");
+            pillY = DrawCornerPill(canvas, ui, sprites, font, pillRight, pillY, std::to_string(shownFps) + " fps");
             overlayUsed = true;
         }
         else if (cfg.showFps && !opt.headless)
@@ -5943,12 +6036,12 @@ int main(int argc, char** argv)
         if (spritesOk && (gameSave.Busy() || frame < resumeShownUntil))
         {
             // Saving the game; a resume point made (the animation alone).
-            pillY = saveIndicator.Draw(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, gameSave.Busy() ? "Saving..." : "", frame * 1000 / 60);
+            pillY = saveIndicator.Draw(canvas, ui, sprites, font, pillRight, pillY, gameSave.Busy() ? "Saving..." : "", frame * 1000 / 60);
             overlayUsed = true;
         }
         if (speed > 1 && spritesOk)
         {
-            DrawCornerPill(canvas, ui, sprites, font, ui.W / ui.s - 32, pillY, ">> Fast forward");
+            DrawCornerPill(canvas, ui, sprites, font, pillRight, pillY, ">> Fast forward");
             overlayUsed = true;
         }
         else if (speed > 1)
@@ -5979,7 +6072,7 @@ int main(int argc, char** argv)
                 // Below the on-screen controls' top row when they are shown; two at most on a
                 // narrow view.
                 const bool controls = touchPadUsed && touchPad.visible;
-                const float ty = (controls ? outH * 13 / 100 / ui.s : 32) + (online ? 76 : 0);
+                const float ty = std::max((controls ? outH * 13 / 100 / ui.s : 32) + (online ? 76 : 0), owHud.PartyBottom());
                 toasts.Draw(canvas, ui, sprites, font, frame, 32, ty, view.width >= 300 ? 4 : 2);
                 overlayUsed = true;
             }
@@ -7408,6 +7501,7 @@ int main(int argc, char** argv)
                     SDL_RenderCopy(renderer, t, &dr, &dr);
                 };
                 showCanvas(tagCanvas, tagTex);
+                owHud.Present(renderer, outW, outH);
                 if (overlayUsed) showCanvas(canvas, overlayTex);
                 // In a window, screenshots are read back from the renderer: exactly what is shown.
                 // (The pictures between the game's frames as _01, _02 and so on.)

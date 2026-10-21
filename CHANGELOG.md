@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Overworld HUD (Display, on by default): while you walk about, your party along the top
+  left (HP bars, status, fainted Pokémon greyed, eggs), a round map of the area around you
+  at the top right with the place and the time under it, Repel steps left and a held
+  EXP. Share beside it, the other players' faces down the right edge when online (also as
+  faces on the map), and buttons along the bottom for the Bag, your Pokémon, the menu and
+  your friends: click the left stick, click the right stick, + and the right trigger (or
+  click them). The right stick zooms the map. It fades away for messages, menus, battles
+  and scenes.
 - Online: choose your look (Profile, Look) from any of the game's people who walk all
   four ways, browsing them with the d-pad and seeing them walk before you confirm (left
   and right on Look change it straight away). The others see you walking around with that
