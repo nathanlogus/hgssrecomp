@@ -210,4 +210,135 @@ inline void DrawFactory(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     }
     DrawHintBar(c, ui, sp, f, hints);
 }
+
+// The Battle Hall's type board (overlay 82, Platinum's BattleHallApp): the twenty places
+// of its 4 x 5 grid, the types in the game's order, the Pokemon (17 and 18, its summary)
+// and "???" (19).
+constexpr uint32_t kHallInit = 0x0223DD60, kHallExec = 0x0223DE20, kHallExit = 0x0223DF74;
+constexpr int kHallTypes[17] = { 0, 10, 11, 13, 12, 15, 1, 3, 4, 2, 14, 6, 5, 7, 16, 17, 8 };
+
+struct Hall
+{
+    int cursor = 0;          // 0-16 a type, 17 and 18 the Pokemon, 19 "???"
+    int ranks[17] = {};      // each type's rank, 0-9 (10: all its battles won)
+    int count = 0, mon = 0;  // the Pokemon entered (and which is shown)
+    PartyMon mons[6];
+    int yesNo = -1;          // the cursor of "battle this type?", -1 when it is not up
+};
+
+// BattleHallApp: challenge type +0x09, the cursor +0x0D, the yes/no up +0x0F, the yes/no
+// +0x8C (a YesNoPrompt, its cursor at +0x75), the Pokemon shown +0x20C, the Pokemon (a
+// Party) +0x214, the ranks (a nybble each, by the board's order) +0x218. Shown while the
+// application waits for a choice (its state 2), not in the link challenges.
+inline bool ReadHall(const Ram& ram, uint32_t& cache, Hall& s)
+{
+    const uint32_t mgr = HudParty::FindApp(ram, cache, kHallInit, kHallExec, kHallExit, [&](uint32_t m) {
+        return ram.Ok(ram.R32(m + 0x1C), 0x2A0);
+    });
+    if (!mgr || ram.R32(mgr + 0x10) != 2 || ram.R32(mgr + 0x14) != 2) return false;
+    const uint32_t d = ram.R32(mgr + 0x1C);
+    if (ram.R8(d + 0x09) > 1) return false;
+    s.cursor = (int)ram.R8(d + 0x0D);
+    if (s.cursor > 19) return false;
+    const uint32_t ranks = ram.R32(d + 0x218);
+    if (!ram.Ok(ranks, 9)) return false;
+    for (int i = 0; i < 17; i++) s.ranks[i] = (int)(ram.R8(ranks + i / 2) >> (4 * (i % 2)) & 0xF);
+    if (!HudParty::ReadParty(ram, ram.R32(d + 0x214), s.count, s.mons)) return false;
+    s.mon = (int)ram.R32(d + 0x20C);
+    if (s.mon < 0 || s.mon >= s.count) return false;
+    s.yesNo = -1;
+    if (ram.R8(d + 0x0F))
+    {
+        const uint32_t yn = ram.R32(d + 0x8C);
+        if (!ram.Ptr(yn) || ram.R8(yn + 0x75) > 1 || s.cursor > 16) return false;
+        s.yesNo = (int)ram.R8(yn + 0x75);
+    }
+    return true;
+}
+
+inline void DrawHall(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Hall& s, const HudParty::MonIconFn& icon,
+    const std::vector<HudHint>& hints)
+{
+    using namespace HudColour;
+    using HudParty::FillRound;
+    DrawBackdrop(c, sp, "backgrounds/bg_lavender", 0xFFFFFFFF);
+    const float wd = ui.W / ui.s, x0 = wd / 2 - 960;
+    HudText(c, ui, f, x0 + 60, 56, 48, "BATTLE HALL", Ink, 0, true);
+    const std::string choose = "Please select what type of Pok\xC3\xA9mon you\xE2\x80\x99" "d like to battle.";
+
+    // The board: four columns of types, their ranks as ten pips; the types already beaten
+    // ten times are greyed. The last row: Steel, the Pokemon, "???".
+    const float bx = x0 + 60, by = 140, cw = 270, chh = 150, gap = 14;
+    for (int i = 0; i < 20; i++)
+    {
+        if (i == 18) continue; // the Pokemon spans 17 and 18
+        const float x = bx + (i % 4) * (cw + gap), y = by + (i / 4) * (chh + gap);
+        const bool here = s.cursor == i || (i == 17 && s.cursor == 18);
+        if (i == 17 || i == 19)
+        {
+            const float w = i == 17 ? 2 * cw + gap : cw;
+            HudPanel(c, ui, sp, here ? "panels/row_selected" : "panels/row", x, y, w, chh);
+            if (here) HudSprite(c, ui, sp, "cursor/cursor_small", x + 8, y + chh / 2 - 16, 30, 32);
+            if (i == 19)
+            {
+                HudText(c, ui, f, x + cw / 2, y + chh / 2 - 24, 48, "???", Muted, 1, true);
+                continue;
+            }
+            const PartyMon& m = s.mons[s.mon];
+            HudPixelArt(c, ui, icon(m), x + 44, y + 11, 128, 128);
+            HudText(c, ui, f, x + 190, y + 36, 32, m.name, Ink);
+            HudText(c, ui, f, x + 190, y + 84, 32, "Summary", Muted);
+            continue;
+        }
+        const int type = kHallTypes[i], rank = std::min(s.ranks[i], 10);
+        const bool done = rank >= 10;
+        if (here) FillRound(c, ui, x - 8, y - 8, cw + 16, chh + 16, 30, 0xFFF5B82E);
+        FillRound(c, ui, x, y, cw, chh, 24, done ? 0xFFB8BEC8 : HudParty::TypeColour(type));
+        HudText(c, ui, f, x + 24, y + 22, 32, HudParty::TypeName(type), White, 0, true);
+        HudText(c, ui, f, x + cw - 24, y + 22, 32, done ? "Clear" : "Rank " + std::to_string(rank + 1), White, 2);
+        for (int k = 0; k < 10; k++)
+            FillRound(c, ui, x + 24 + k * 22, y + 100, 16, 16, 8, k < rank ? 0xFFFFFFFF : 0x50FFFFFF);
+    }
+
+    // The card: the Pokemon and the type under the cursor, the question with its answers.
+    const float cx = x0 + 1210, cwd = 650, cy = 140, ch = 850;
+    HudPanel(c, ui, sp, "panels/card", cx, cy, cwd, ch);
+    const PartyMon& m = s.mons[s.mon];
+    HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cwd / 2 - 90, cy + 26, 180, 180);
+    HudPixelArt(c, ui, icon(m), cx + cwd / 2 - 64, cy + 52, 128, 128);
+    const float nw = HudTextWidth(ui, f, 48, m.name, true);
+    HudText(c, ui, f, cx + cwd / 2 - 16, cy + 220, 48, m.name, Ink, 1, true);
+    HudParty::Gender(c, ui, cx + cwd / 2 - 16 + nw / 2 + 14, cy + 230, m.gender);
+    HudText(c, ui, f, cx + cwd / 2, cy + 290, 32, "Lv " + std::to_string(m.level), Muted, 1);
+    std::string msg = choose;
+    if (s.cursor <= 16)
+    {
+        const int type = kHallTypes[s.cursor], rank = std::min(s.ranks[s.cursor], 10);
+        const float ty = cy + 370;
+        FillRound(c, ui, cx + 36, ty, cwd - 72, 140, 24, rank >= 10 ? 0xFFB8BEC8 : HudParty::TypeColour(type));
+        HudText(c, ui, f, cx + cwd / 2, ty + 24, 48, HudParty::TypeName(type), White, 1, true);
+        HudText(c, ui, f, cx + cwd / 2, ty + 86, 32, rank >= 10 ? "All ranks cleared" : "Rank " + std::to_string(rank + 1) + " of 10", White, 1);
+        if (s.yesNo >= 0) msg = "Battle " + HudParty::TypeName(type) + "-type Pok\xC3\xA9mon?";
+    }
+    else if (s.cursor != 19)
+        msg = "See " + m.name + "\xE2\x80\x99s summary.";
+    const float by0 = cy + ch - 36 - 60;
+    std::vector<std::string> lines = HudWrap(ui, f, 32, msg, cwd - 72 - 60);
+    lines.resize(std::min(lines.size(), (size_t)3));
+    const float mh = 40 + 50.0f * lines.size(), my = (s.yesNo >= 0 ? by0 - 16 : by0 + 60) - mh;
+    HudPanel(c, ui, sp, "panels/dialogue_box", cx + 36, my, cwd - 72, mh);
+    for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 66, my + 22 + 50.0f * i, 32, lines[i], Ink);
+    if (s.yesNo >= 0)
+    {
+        const float bw = (cwd - 72 - 16) / 2;
+        for (int k = 0; k < 2; k++)
+        {
+            const float x = cx + 36 + k * (bw + 16);
+            HudPanel(c, ui, sp, s.yesNo == k ? "panels/button_yellow" : "panels/button_white", x, by0, bw, 60);
+            if (s.yesNo == k) HudSprite(c, ui, sp, "cursor/cursor_small", x + 12, by0 + 14, 30, 32);
+            HudText(c, ui, f, x + bw / 2, by0 + 14, 32, k ? "No" : "Yes", Ink, 1);
+        }
+    }
+    DrawHintBar(c, ui, sp, f, hints);
+}
 }

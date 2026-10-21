@@ -5,7 +5,9 @@
 - New screens: choosing your rental Pokémon at the Battle Frontier's Battle Factory. All
   six Pokémon on offer are shown at once, with everything about the one you are on (types,
   ability, nature, held item and moves), the team you have picked so far, the Summary,
-  Rent and Cancel buttons and the "Are these Pokémon OK?" question.
+  Rent and Cancel buttons and the "Are these Pokémon OK?" question. The Battle Hall's
+  board of types is drawn anew too (before, the single screen hid it): each type with its
+  rank, your Pokémon and the question before a battle.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
