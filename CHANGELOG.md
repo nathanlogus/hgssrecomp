@@ -6,6 +6,12 @@
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
   with the same box.
+- New screens: phone calls in the Pokégear are drawn anew (who is calling, the ringing,
+  what they say line by line and the hang-up), as are the phone's Call, Sort and Quit
+  menu and the questions asked during a call. Choosing where to fly is drawn anew too:
+  the region's map with the towns you can fly to ringed, and the "Fly" question beside it.
+  The game's Options menu is drawn anew as well.
+
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a
