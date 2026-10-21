@@ -4,7 +4,13 @@
 
 - New screens: a Pokémon's pages in the Pokédex are drawn anew. Area shows the region's
   map with the places it lives at that time of day marked, beside the list of them; Size
-  puts it next to you, height and weight; Forms lists the forms you have seen.
+  puts it next to you, height and weight; Forms lists the forms you have seen, and two of
+  them can be compared side by side.
+- New screens: the Pokédex's search is drawn anew, with what you search by and each choice
+  (order, first letter, types, height, weight, area, body style), and so is the list of
+  what it finds.
+- New screens: the Unown Report (its cover, the Unown you have found with their words, and
+  the researchers' notes) and the certificates from Game Freak's office are drawn anew.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in

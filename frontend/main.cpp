@@ -61,6 +61,8 @@
 #include "hudtrade.h"
 #include "huddex.h"
 #include "huddexinfo.h"
+#include "huddexsearch.h"
+#include "hudreports.h"
 #include "hudgear.h"
 #include "hudoptions.h"
 #include "hudpcbox.h"
@@ -3171,7 +3173,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, what people say, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex with its pages and its search, the Unown Report, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, what people say, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -6283,8 +6285,8 @@ int main(int argc, char** argv)
             }
         }
         // The Pokedex redrawn (huddex.h): its front page and its list, mirrored from the game's
-        // application; its details and search are the game's own picture.
-        static int dexShown = 0; // what was drawn the frame before: 0 nothing, 1 the front page, 2 the list, 3 the details
+        // application, with its details (huddexinfo.h) and search (huddexsearch.h).
+        static int dexShown = 0; // drawn the frame before: 0 nothing, 1 the front page, 2 the list, 3 the details, 4 a search's results, 5 the search
         int dexNow = 0;
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Pokedex"))
             for (unsigned i = 0; i < rc_num_apps; i++)
@@ -6298,7 +6300,8 @@ int main(int argc, char** argv)
                     HudDexInfo::View iv;
                     const int info = HudDexInfo::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr,
                         rc_apps[i].exitAddr, HudDex::JohtoNumbers(rom.data(), rom.size()), iv);
-                    if (info == 1 || (info < 0 && dexShown == 3))
+                    const bool infoNow = info == 1 || (info < 0 && dexShown == 3);
+                    if (infoNow)
                     {
                         if (info == 1) infoLast = iv;
                         const HudDexInfo::View& v = infoLast;
@@ -6312,14 +6315,59 @@ int main(int argc, char** argv)
                             hints.push_back({ { a }, "Compare" });
                         }
                         if (v.page == HudDexInfo::Back) hints.push_back({ { a }, "Back to the list" });
+                        if (v.page == HudDexInfo::Compare)
+                        {
+                            hints.clear();
+                            if (v.forms.size() >= 3)
+                            {
+                                hints.push_back({ { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Side" });
+                                hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Form" });
+                            }
+                        }
                         hints.push_back({ { b }, "Back" });
                         HudDexInfo::Draw(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), v, trainerArt.px.empty() ? nullptr : &trainerArt,
                             Party_MyCard().gender, hints);
                         dexNow = 3;
                         overlayUsed = true;
                     }
-                    else if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
-                            HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown == 3 ? 0 : dexShown, dv))
+                    // The search (huddexsearch.h), drawn as 5, likewise; the body styles'
+                    // pictures come from the game's touch screen, so the page and the menu
+                    // with one chosen wait for them.
+                    static HudDexSearch::View searchLast;
+                    // Leaving a search's results rebuilds the list at once while the game slides
+                    // away: the results read last stay for those frames (up to half a second).
+                    static HudDex::View resultsLast;
+                    static uint32_t resultsAt = 0;
+                    static HudDexSearch::Shapes shapes;
+                    HudDexSearch::View sv;
+                    const int search = infoNow ? 0 : HudDexSearch::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr,
+                        rc_apps[i].execAddr, rc_apps[i].exitAddr, sv);
+                    if (search == 1) shapes.Take(sv, nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get());
+                    const auto shapesOk = [&](const HudDexSearch::View& v) {
+                        for (int s = 0; s < 14; s++)
+                            if (!shapes.Get(s) && (v.page == HudDexSearch::Body || (int)v.crit[9] == s)) return false;
+                        return true;
+                    };
+                    if ((search == 1 && shapesOk(sv)) || (search < 0 && dexShown == 5))
+                    {
+                        if (search == 1) searchLast = sv;
+                        const HudDexSearch::View& v = searchLast;
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Cancel" } };
+                        if (v.message >= 0) hints.clear();
+                        HudDexSearch::Draw(canvas, ui, sprites, font, v, shapes, hints);
+                        dexNow = 5;
+                        overlayUsed = true;
+                    }
+                    else if (!infoNow && [&] {
+                                 if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                                         HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown == 3 || dexShown == 5 ? 0 : dexShown, dv))
+                                 {
+                                     if (dv.results) resultsLast = dv, resultsAt = frame;
+                                     return true;
+                                 }
+                                 return dexShown == 4 && frame - resultsAt < 30 && (dv = resultsLast, true);
+                             }())
                     {
                         const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y), y = PadGlyph(cfg.byLabel ? PAD_Y : PAD_X);
@@ -6327,9 +6375,10 @@ int main(int argc, char** argv)
                         {
                             std::vector<HudHint> hints = { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Page" }, { { "buttons/button_dpad" }, "Choose" } };
                             if (dv.places[dv.pos].species) hints.push_back({ { a }, "Details" });
+                            if (dv.results && dv.page == 0 && dv.pos == 0) hints.push_back({ { a }, "Search" });
                             hints.push_back({ { x }, "Cry" });
-                            hints.push_back({ { y }, "Search" });
-                            hints.push_back({ { b }, "Close" });
+                            if (!dv.results) hints.push_back({ { y }, "Search" });
+                            hints.push_back({ { b }, dv.results ? "Back" : "Close" });
                             HudDex::DrawList(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), dv, hints);
                         }
                         else
@@ -6341,12 +6390,40 @@ int main(int argc, char** argv)
                             hints.push_back({ { b }, "Close" });
                             HudDex::DrawFront(canvas, ui, sprites, font, romArt, dv, hints);
                         }
-                        dexNow = dv.list ? 2 : 1;
+                        dexNow = dv.results ? 4 : dv.list ? 2 : 1;
                         overlayUsed = true;
                     }
                     break;
                 }
         dexShown = dexNow;
+        // The Unown Report and the certificates redrawn (hudreports.h), whole while they run.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && (appRunning("UnownReport") || appRunning("Certificates")))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+            {
+                const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                if (!strcmp(rc_apps[i].name, "UnownReport") && appRunning("UnownReport"))
+                {
+                    static uint32_t unownAt = 0;
+                    HudReports::Unown u;
+                    if (HudReports::ReadUnown(ram, unownAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, u))
+                    {
+                        HudReports::DrawUnown(canvas, ui, sprites, font, romArt, u,
+                            { { { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Page" }, { { b }, "Close" } });
+                        overlayUsed = true;
+                    }
+                }
+                if (!strcmp(rc_apps[i].name, "Certificates") && appRunning("Certificates"))
+                {
+                    static uint32_t certAt = 0;
+                    HudReports::Certificate ct;
+                    if (HudReports::ReadCertificate(ram, certAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, ct))
+                    {
+                        HudReports::DrawCertificate(canvas, ui, sprites, font, romArt, ct, trainerName(), { { { a }, "Close" } });
+                        overlayUsed = true;
+                    }
+                }
+            }
         // The PC's Pokemon storage redrawn (hudpcbox.h), mirroring the game's application;
         // its messages, questions and the screens it does not draw are the game's own. Its
         // short animations are drawn when it was drawn just before (some frames skip this).

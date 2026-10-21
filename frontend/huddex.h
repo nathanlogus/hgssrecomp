@@ -14,6 +14,8 @@ namespace HudDex
 struct View
 {
     bool list = false;          // the list, or else the front page
+    bool results = false;       // the list of a search's results (its first place: the search)
+    int found = 0;              // how many it found
     bool national = false;      // the National Pokedex is shown (else Johto's)
     bool canSwitch = false;     // the player has the National Pokedex: the front page switches
     int page = 0, pages = 1;    // the list's page (15 places) and how many there are
@@ -43,11 +45,17 @@ inline const std::vector<uint16_t>& JohtoNumbers(const uint8_t* rom, size_t size
 // The Pokedex's steps (PokedexApp_RunMainSeq): the front page (opening, waiting, the dial,
 // back from the list), the list (sliding in, choosing, turning a page, touching it), and
 // steps that only wait for a fade or a button's flash, which keep what was drawn the frame
-// before (0 none, 1 the front page, 2 the list): returns the same.
+// before (0 none, 1 the front page, 2 the list, 4 a search's results): returns the same.
 inline int ViewOf(int seq, int before)
 {
     switch (seq)
     {
+    case 57: case 58: case 59: case 60: case 61: case 64: case 65:
+        return 4;
+    case 62: // back to the search: the list is rebuilt at once, so the results drawn last stay (main.cpp)
+        return before == 4 ? 4 : 0;
+    case 63: // back to the whole list, rebuilt at once
+        return 2;
     case 5: case 6: case 7: case 8: case 12:
         return 1;
     case 9: case 11: case 13: case 14: case 15: case 16: case 17: case 19:
@@ -73,12 +81,16 @@ inline bool Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint3
         return ram.Ok(d, 0x1910) && ram.R32(d) == args && ram.R32(ram.R32(args)) == 0xBEEFCAFE;
     });
     if (!mgr || ram.R32(mgr + 0x10) != 2 || johto.size() != 494) return false;
-    const int show = ViewOf((int)ram.R32(mgr + 0x14), before);
+    // Coming back from a Pokemon's details to a search's results (65) fades in through step 3.
+    const int seq = (int)ram.R32(mgr + 0x14);
+    const int show = ViewOf(seq == 3 && ram.R32(ram.R32(mgr + 0x1C) + 0x85C) == 65 ? 65 : seq, before);
     if (!show) return false;
     const uint32_t d = ram.R32(mgr + 0x1C), dex = ram.R32(ram.R32(mgr + 0x18));
     const int mode = (int)ram.R8(d + 0x1858), count = (int)ram.R16(d + 0x102C);
     const uint32_t nat = ram.R32(d + 0x1860);
-    v.list = show == 2;
+    v.list = show == 2 || show == 4;
+    v.results = show == 4;
+    v.found = count;
     v.national = mode == 1;
     v.canSwitch = nat == 1;
     v.page = (int)ram.R8(d + 0x1859);
@@ -105,7 +117,8 @@ inline bool Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint3
         if (s < 1 || s > 493 || !number(s) || st < 1 || st > 2 || !flag(0x44, s) || (st == 2) != flag(4, s)) return false;
         last = number(s);
     }
-    v.pages = last ? (last - 1) / 15 + 1 : 1;
+    // A search's results are laid out in order after the search's own place (ov18_021F8884).
+    v.pages = v.results ? count / 15 + 1 : last ? (last - 1) / 15 + 1 : 1;
     if (v.page >= v.pages) return false;
     for (int k = 0; k < 15; k++)
     {
@@ -115,8 +128,19 @@ inline bool Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint3
         p.number = idx + 1;
         if (idx >= 518) return false;
         const int s = (int)ram.R16(d + 0x1030 + 4 * idx), st = (int)ram.R16(d + 0x1032 + 4 * idx);
+        if (v.results)
+        {
+            p.number = 0;
+            if (idx == 0 || idx > count)
+            {
+                if (s || st) return false;
+                continue;
+            }
+            if (s != (int)ram.R16(d + 0x878 + 4 * (idx - 1))) return false;
+            p.number = number(s);
+        }
         if (!s && !st) continue;
-        if (s > 493 || number(s) != idx + 1 || st < 1 || st > 2 || (st == 2) != flag(4, s)) return false;
+        if (s < 1 || s > 493 || number(s) != (v.results ? p.number : idx + 1) || st < 1 || st > 2 || (st == 2) != flag(4, s)) return false;
         p.species = s;
         p.caught = st == 2;
     }
@@ -208,6 +232,16 @@ inline void DrawList(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Rom
         const float tx = lx + 30 + (k % 5) * (tw + gap), ty = ly + 30 + (k / 5) * (th + gap);
         HudPanel(c, ui, sp, here ? "panels/row_selected" : p.species ? "panels/row" : "panels/row_disabled", tx, ty, tw, th);
         if (here) HudSprite(c, ui, sp, "cursor/cursor_small", tx + 6, ty + 92, 30, 32);
+        if (v.results && !p.number)
+        {
+            // The search's own place (back to it), and the places after the last result.
+            if (v.page == 0 && k == 0)
+            {
+                HudSprite(c, ui, sp, "icons/icon_search", tx + tw / 2 - 40, ty + 50, 80, 80);
+                HudText(c, ui, f, tx + tw / 2, ty + th - 50, 32, "Search", Ink, 1);
+            }
+            continue;
+        }
         const float nx = tx + tw / 2 + (p.caught ? 18 : 0);
         if (p.caught) HudPixelArt(c, ui, art.ItemIcon(4), nx - 72, ty + 10, 40, 40);
         HudText(c, ui, f, nx, ty + 16, 32, Number(p.number), p.species ? Ink : Muted, 1);
@@ -227,7 +261,8 @@ inline void DrawList(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Rom
     // The pages, under them.
     const float py = ly + 30 + 3 * (th + gap) + 8;
     HudSprite(c, ui, sp, "buttons/button_l", lx + 30, py + 10, 52, 38);
-    HudText(c, ui, f, lx + lw / 2, py + 12, 32, "Page " + std::to_string(v.page + 1) + " / " + std::to_string(v.pages), Ink, 1);
+    HudText(c, ui, f, lx + lw / 2, py + 12, 32,
+        (v.results ? std::to_string(v.found) + " found \xC2\xB7 Page " : "Page ") + std::to_string(v.page + 1) + " / " + std::to_string(v.pages), Ink, 1);
     HudSprite(c, ui, sp, "buttons/button_r", lx + lw - 82, py + 10, 52, 38);
 
     // The card: the Pokemon under the cursor, as much as the game tells of it (all when
