@@ -578,6 +578,7 @@ private:
 
 public:
     void SetRom(const uint8_t* rom, size_t size) { reader.SetRom(rom, size); }
+    const WindowReader& Words() const { return reader; }
 };
 
 // How dark the screen has gone, from the message box's background (white) as the screen

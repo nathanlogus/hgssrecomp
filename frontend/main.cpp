@@ -55,6 +55,7 @@
 #include "hudscreens.h"
 #include "hudbattle.h"
 #include "hudbattleui.h"
+#include "hudbattlebag.h"
 #include "hudbag.h"
 #include "hudparty.h"
 #include "hudtrade.h"
@@ -5838,6 +5839,28 @@ int main(int argc, char** argv)
             battleUiHud.Draw(canvas, ui, sprites, font, battleUi, view.originX + 128 * view.unit - half, view.originX + 128 * view.unit + half,
                 view.originY, view.unit, (view.originY + 137 * view.unit) / ui.s, band, fade);
             overlayUsed = true;
+        }
+        // The bag of a battle redrawn (hudbattlebag.h), in place of the touch screen's.
+        static HudBattleBag::Reader battleBagReader;
+        static HudBag::Texts battleTexts(rom.data(), rom.size());
+        if (spritesOk && cfg.redrawn && merged && hudFree && !strcmp(scene.name, "battle-submenu"))
+        {
+            const auto& bottom = tu == 0 ? nds->GPU.GPU2D_B : nds->GPU.GPU2D_A;
+            HudBattleUi::Vram& v = battleBagReader.vram;
+            for (int b = 0; b < 4; b++) v.bgCnt[b] = bottom.BGCnt[b];
+            v.charOffset = tu == 1 ? ((bottom.DispCnt >> 24) & 7) * 0x10000 : 0;
+            v.read8 = [&](uint32_t a) { return tu == 1 ? nds->GPU.ReadVRAM_ABG<u8>(a) : nds->GPU.ReadVRAM_BBG<u8>(a); };
+            battleBagReader.words = &battleUiHud.Words();
+            HudBattleBag::State st;
+            if (battleBagReader.Read(nds->MainRAM, nds->MainRAMMask, frame, st))
+            {
+                const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, st.screen == 2 ? "Use" : "Select" },
+                    { { back }, st.screen == 0 ? "Close bag" : "Back" } };
+                HudBattleBag::Draw(canvas, ui, sprites, font, romArt, battleTexts, st, hints);
+                overlayUsed = true;
+            }
+            v.read8 = nullptr;
         }
         if (menu.open && spritesOk)
         {
