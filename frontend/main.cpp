@@ -5877,6 +5877,8 @@ int main(int argc, char** argv)
         // short animations are drawn when it was drawn just before (some frames skip this).
         static uint32_t pcShownAt = 0, pcLiveAt = 0, pcTabsAt = 0;
         static HudPcBox::Screen pc;
+        static float pcSlide = -1; // how far the game's panels have slid (0-1), or -1
+        static uint32_t pcSlideTo = 0;
         const bool pcMay = spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen;
         const bool pcHold = pcMay && pcShownAt && pcShownAt == frame - 1;
         bool pcNow = false;
@@ -5895,8 +5897,30 @@ int main(int argc, char** argv)
                     static bool pcOpening = false;
                     if (read) pcOpening = now.step == 11 || now.step == 15 || (pcOpening && now.step == 2);
                     pcNow = read && (HudPcBox::Shown(now, (pcShownAt && frame - pcShownAt <= 3) || (pcTabsAt && frame - pcTabsAt <= 3)) ||
-                                        (pcOpening && now.step == 2 && !HudPcBox::OnTabs(now)));
-                    if (read && HudPcBox::OnTabs(now)) pcTabsAt = frame;
+                                        (pcOpening && now.step == 2 && !HudPcBox::PastTabs(now)));
+                    if (read && HudPcBox::PastTabs(now)) pcTabsAt = frame;
+                    // A button that changes the screen (hudpcbox.h SlideOf) starts the game's
+                    // slide on the next step 5, still on the old screen's d-pad table; it ends
+                    // when the table changes. Leaving the party moving goes back where it began.
+                    static uint32_t pcSlideGrid = 0, pcMovedFrom = HudPcBox::kGridMove, pcLastGrid = 0;
+                    static int pcSlideLen = 0;
+                    static uint32_t pcSlideAt = 0;
+                    pcSlide = -1;
+                    if (read)
+                    {
+                        uint32_t to;
+                        int len;
+                        if (HudPcBox::SlideOf(now.step, to, len))
+                            pcSlideGrid = now.grid, pcSlideTo = to ? to : pcMovedFrom, pcSlideLen = len, pcSlideAt = 0;
+                        else if (now.step == 5 && pcSlideGrid && now.grid == pcSlideGrid)
+                        {
+                            if (!pcSlideAt) pcSlideAt = frame;
+                            pcSlide = std::min(1.0f, (float)(frame - pcSlideAt) / pcSlideLen);
+                        }
+                        else pcSlideGrid = 0;
+                        if (now.grid == HudPcBox::kGridMoveParty && pcLastGrid != now.grid && pcLastGrid) pcMovedFrom = pcLastGrid;
+                        pcLastGrid = now.grid;
+                    }
                     if (pcNow) pc = now, pcLiveAt = frame;
                     // A Pokemon being put down is copied over a frame: the storage reads
                     // half-written for that frame and the last screen stands in for it.
@@ -5913,7 +5937,8 @@ int main(int argc, char** argv)
         {
             auto ds = [&](int k) { return PadGlyph(PadButtonFor(k, cfg.byLabel, cfg.padMap)); };
             HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, trainerName(), Party_MyCard().id,
-                { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" }, { { ds(1) }, "Back" } });
+                { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" }, { { ds(1) }, "Back" } },
+                pcSlide, pcSlideTo);
             overlayUsed = true;
             pcShownAt = frame;
         }

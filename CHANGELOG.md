@@ -75,8 +75,11 @@
   PC, your party is a column on the left, the box a grid of 30 cells with its name, and
   the Pokémon under the cursor is on a card with its level, types, ability, item, who
   caught it and where, and the game's menu for it. A Pokémon you pick up follows the
-  cursor. Choosing a box to send a Pokémon to, messages and questions still show the
-  game's own screen.
+  cursor, also up to the box tabs, where the box's name changes to the tab you point at.
+  The Party Pokémon panel is drawn too, and the buttons slide along with the game's panels
+  when you open or close it or Move. Choosing a box to send a Pokémon to, the box's own
+  menu (wallpaper, name), Move Items, messages and questions still show the game's own
+  screen.
 - **Autosave** (Game tab, on by default): every few minutes and when you quit, a resume
   point is kept beside your save, and **Continue** carries on from it straight away (the
   save card says where and when). The game also saves by itself when you enter a Pokémon

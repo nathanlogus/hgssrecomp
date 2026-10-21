@@ -4,7 +4,7 @@
 // (or the one being moved) on a card. The game keeps taking the input; every frame the
 // redrawn screen mirrors the storage application (overlay 14, still assembly in the
 // decompilation) as it holds itself in memory. On any screen or step not mirrored here (the
-// box tabs, messages and yes/no questions, the item mode, wallpapers, naming a box) or when
+// tabs' own menu, messages and yes/no questions, the item mode, wallpapers, naming a box) or when
 // anything does not check out, nothing is drawn and the game's own picture shows.
 #include "hudparty.h"
 
@@ -22,13 +22,15 @@ using HudParty::Ram;
 // The d-pad tables of the screens mirrored (the overlay's own data, at fixed addresses),
 // and what the cursor's numbers stand for in each:
 constexpr uint32_t kGridMove = 0x021F90A0;     // cells 0-29, 30 the box's name, 33 party, 34 move, 35 return, 36-40 menu, 41 its exit
-constexpr uint32_t kGridMoveParty = 0x021F91F0; // cells 0-29, 30-35 party, 36 exit, 37-42 the boxes' tabs (not mirrored)
+constexpr uint32_t kGridMoveParty = 0x021F91F0; // cells 0-29, 30-35 party, 36 exit, 37-42 the boxes' tabs, 43 on their menu
+constexpr uint32_t kGridParty = 0x021F8AA0;    // the "Party Pokemon" panel: party 0-5, 6 switch, 7 exit, 8-13 menu
 constexpr uint32_t kGridWithdraw = 0x021F8F68; // cells 0-29, 30 the box's name, 33 return, 34-37 menu, 38 its exit
 constexpr uint32_t kGridDeposit = 0x021F8A40;  // party 0-5, 6 return, 7-10 menu, 11 its exit
 
 struct Screen
 {
     int step = 0, mode = 0;
+    int next = 0;                    // the step that follows an animation (step 5), +0x30
     uint32_t grid = 0;
     int cursor = 0;
     int box = 0;
@@ -36,6 +38,8 @@ struct Screen
     int held = -1;                   // where the Pokemon being moved is from (0-29 a cell, 30-35 the party), or -1
     std::string boxName;
     int count = 0;                   // Pokemon in the box
+    std::string headName;            // the box the header names: the one shown, or the tab pointed at
+    int headCount = 0;
     bool has[30] = {};
     PartyMon mons[30];
     int partyCount = 0;
@@ -62,6 +66,7 @@ inline bool Read(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, 
     const uint32_t grid = ram.R32(work + 0x2C);
     if (!ram.Ok(grid, 0x20)) return false;
     s.step = (int)ram.R32(mgr + 0x14);
+    s.next = (int)ram.R32(d + 0x30);
     s.mode = (int)ram.R32(args + 8);
     s.grid = ram.R32(grid + 4);
     s.cursor = (int)ram.R8(grid + 0xD);
@@ -70,7 +75,8 @@ inline bool Read(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, 
     s.chosen = chosen < 36 ? chosen : -1;
     // Held: picked up (the place chosen last), or being lifted from the menu's Move.
     s.held = ram.R8(work + 0x44B) == 1 ? s.chosen : ram.R8(d + 0x2A) == 1 && ram.R8(d + 0x2B) < 30 ? (int)ram.R8(d + 0x2B) : -1;
-    const bool known = (s.mode == 2 && (s.grid == kGridMove || s.grid == kGridMoveParty)) || (s.mode == 1 && s.grid == kGridWithdraw) ||
+    const bool known = (s.mode == 2 && (s.grid == kGridMove || s.grid == kGridMoveParty || s.grid == kGridParty)) ||
+        (s.mode == 1 && s.grid == kGridWithdraw) ||
         (s.mode == 0 && s.grid == kGridDeposit);
     if (!known || s.box >= 18) return false;
     // The box: its name (20 characters at 0x12008, after the 18 boxes) and its Pokemon.
@@ -83,31 +89,52 @@ inline bool Read(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, 
         if (!ReadSlot(ram, storage + 0x1000 * s.box + 136 * i, s.has[i], s.mons[i])) return false;
         s.count += s.has[i];
     }
+    // With the boxes' tabs out the header names the box whose tab was pointed at last
+    // (+0x25), which need not be the one shown.
+    s.headName = s.boxName, s.headCount = s.count;
+    if (s.grid == kGridMoveParty)
+    {
+        const int b = (int)ram.R8(d + 0x25);
+        if (b >= 18) return false;
+        for (int i = 0; i < 20; i++) name[i] = (uint16_t)ram.R16(storage + 0x12008 + 40 * b + 2 * i);
+        s.headName = HudParty::TitleCase(NdsText(name, 20));
+        s.headCount = 0;
+        for (int i = 0; i < 30; i++)
+        {
+            const uint32_t a = storage + 0x1000 * b + 136 * i;
+            s.headCount += ram.R32(a) != 0 || ram.R16(a + 6) != 0;
+        }
+    }
     if (!HudParty::ReadParty(ram, ram.R32(d + 8), s.partyCount, s.party)) return false;
     if (s.held >= 0 && !(s.held < 30 ? s.has[s.held] : s.held - 30 < s.partyCount)) return false;
     return true;
 }
 
 // Whether the redrawn screen is shown at this step: while the cursor takes the input (12
-// moving Pokemon, 41 the same with the party out, 115 holding one, 81 withdrawing, 91
-// depositing), and through the short animations from there (5 the cursor or a menu moving,
-// 8 and 140-180 a button pressed) when it was shown the frame before. Messages, questions
-// (7) and the fades in and out are the game's own picture.
-inline bool OnTabs(const Screen& s) { return s.grid == kGridMoveParty && s.cursor >= 37; }
+// moving Pokemon, 41 the same with the party out, 115 holding one, 36 the "Party Pokemon"
+// panel, 81 withdrawing, 91 depositing), and through the short animations from there (5 the
+// cursor, a menu or a panel moving, 8 and 140-180 a button pressed) when it was shown the
+// frame before. Messages, questions (7), the tabs' menu (cursor 43 on) and the fades in and
+// out are the game's own picture.
+inline bool OnTabs(const Screen& s) { return s.grid == kGridMoveParty && s.cursor >= 37 && s.cursor <= 42; }
+inline bool PastTabs(const Screen& s) { return s.grid == kGridMoveParty && s.cursor > 42; }
 
 inline bool Shown(const Screen& s, bool before)
 {
-    if (OnTabs(s)) return false; // the boxes' tabs
-    if (s.step == 12 || s.step == 41 || s.step == 115 || s.step == 81 || s.step == 91) return true;
+    // Step 5 going on to 53-56 (the box's menu, A on its name) or 92-97 (Deposit's "Deposit
+    // where?"): the game slides in a screen of its own, shown from its first frame rather
+    // than a still redraw.
+    if (PastTabs(s) || (s.step == 5 && ((s.next >= 53 && s.next <= 56) || (s.next >= 92 && s.next <= 97)))) return false;
+    if (s.step == 12 || s.step == 41 || s.step == 115 || s.step == 36 || s.step == 81 || s.step == 91) return true;
     return before && (s.step == 5 || s.step == 8 || (s.step >= 140 && s.step <= 180));
 }
 
 // The menu of a Pokemon, as each screen has it, and where it starts on the cursor.
 inline std::vector<std::string> MenuOf(const Screen& s, int& first)
 {
-    if (s.grid == kGridMove)
+    if (s.grid == kGridMove || s.grid == kGridParty)
     {
-        first = 36;
+        first = s.grid == kGridMove ? 36 : 8;
         return { "Move", "Summary", "Held items", "Marking", "Release", "Exit" };
     }
     if (s.grid == kGridWithdraw)
@@ -124,13 +151,34 @@ inline std::vector<std::string> MenuOf(const Screen& s, int& first)
     return {};
 }
 
-// The buttons beside the box, as each screen has them: their cursor numbers and names.
-inline std::vector<std::pair<int, std::string>> ButtonsOf(const Screen& s)
+// The buttons beside the box, as each screen (its d-pad table) has them: their cursor
+// numbers and names.
+inline std::vector<std::pair<int, std::string>> ButtonsOf(uint32_t grid)
 {
-    if (s.grid == kGridMove) return { { 33, "Party Pok\xC3\xA9mon" }, { 34, "Move" }, { 35, "Return" } };
-    if (s.grid == kGridMoveParty) return { { 36, "Exit" } };
-    if (s.grid == kGridWithdraw) return { { 33, "Return" } };
+    if (grid == kGridMove) return { { 33, "Party Pok\xC3\xA9mon" }, { 34, "Move" }, { 35, "Return" } };
+    if (grid == kGridMoveParty) return { { 36, "Exit" } };
+    if (grid == kGridParty) return { { 6, "Switch" }, { 7, "Exit" } };
+    if (grid == kGridWithdraw) return { { 33, "Return" } };
     return { { 6, "Return" } };
+}
+
+// The panels the game slides in or out when a button changes the screen: the step it takes
+// for the button (149 "Party Pokemon", 150 "Move", 178 the menu's Move, 157 Move or Switch
+// on the party panel, 159 leaving the party panel, 161 leaving the party moving), the screen
+// it goes to (0: back where the party moving came from) and the slide's frames, as timed.
+// The slide's position is not in main RAM, so the frames since it began stand for it.
+inline bool SlideOf(int step, uint32_t& to, int& frames)
+{
+    switch (step)
+    {
+    case 149: to = kGridParty, frames = 30; return true;
+    case 150: to = kGridMoveParty, frames = 30; return true;
+    case 178: to = kGridMoveParty, frames = 38; return true;
+    case 157: to = kGridMoveParty, frames = 28; return true;
+    case 159: to = kGridMove, frames = 20; return true;
+    case 161: to = 0, frames = 24; return true; // 24 to 31: the shortest, so it never jumps at the end
+    }
+    return false;
 }
 
 // Positions on the design's 1920 x 1080 (x from the left of the centred design).
@@ -141,7 +189,7 @@ inline float SlotX(int i) { return kPartyX + 28 + 128 * (i % 2); }
 inline float SlotY(int i) { return kPartyY + 82 + 128 * (i / 2); }
 
 inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Screen& s, const HudOnline::IconFn& icon,
-    const std::string& myName, uint32_t myId, const std::vector<HudHint>& hints)
+    const std::string& myName, uint32_t myId, const std::vector<HudHint>& hints, float slide = -1, uint32_t slideTo = 0)
 {
     using namespace HudColour;
     using HudParty::FillRound;
@@ -150,15 +198,19 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
     constexpr uint32_t Teal = 0xFF2EC4C6, Gold = 0xFFF5C518;
     int menuFirst = 0;
     const std::vector<std::string> menu = MenuOf(s, menuFirst);
-    const bool menuOpen = !menu.empty() && s.cursor >= menuFirst && s.cursor < menuFirst + (int)menu.size() && s.chosen >= 0;
+    // The menu closes as soon as Withdraw is chosen (step 5 going on to 83-86: the game's
+    // menu sliding away while the Pokemon goes to the party), though the cursor stays on it.
+    const bool menuOpen = !menu.empty() && s.cursor >= menuFirst && s.cursor < menuFirst + (int)menu.size() && s.chosen >= 0 &&
+        !(s.step == 5 && s.next >= 83 && s.next <= 86);
     // Where the cursor is, as a cell (0-29) or a party slot (30-35), or -1.
-    const bool partyGrid = s.grid == kGridDeposit;
+    const bool partyGrid = s.grid == kGridDeposit || s.grid == kGridParty;
     int at = -1;
     if (partyGrid ? s.cursor < 6 : s.cursor < 30) at = partyGrid ? 30 + s.cursor : s.cursor;
     else if (s.grid == kGridMoveParty && s.cursor < 36) at = s.cursor;
-    // The Pokemon being held follows the cursor; while it is lifted from the menu it is
-    // still over its own cell.
-    const int heldAt = s.held < 0 ? -1 : at >= 0 ? at : s.held;
+    // The Pokemon being held follows the cursor (over the header on the tabs); while it is
+    // lifted from the menu it is still over its own cell.
+    const bool tabs = OnTabs(s);
+    const int heldAt = s.held < 0 || tabs ? -1 : at >= 0 ? at : s.held;
     auto monAt = [&](int place) -> const PartyMon* {
         if (place >= 0 && place < 30) return s.has[place] ? &s.mons[place] : nullptr;
         if (place >= 30 && place - 30 < s.partyCount) return &s.party[place - 30];
@@ -193,17 +245,28 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
         static const char* modes[3] = { "Deposit", "Withdraw", "Move Pok\xC3\xA9mon" };
         HudText(c, ui, f, x + w / 2, y + h - 54, 32, modes[s.mode], Muted, 1);
     }
-    // The buttons under it.
-    {
-        const auto buttons = ButtonsOf(s);
+    // The buttons under it. While the game slides its panels the buttons of this screen
+    // drop away and those of the next rise in their place, in step with it.
+    auto ease = [](float t) { t = std::clamp(t, 0.0f, 1.0f); return t * t * (3 - 2 * t); };
+    const bool sliding = slide >= 0;
+    auto buttonsAt = [&](uint32_t grid, float drop, bool live) {
+        if (drop >= 1) return;
+        const auto buttons = ButtonsOf(grid);
+        const uint32_t a = (uint32_t)(255 * (1 - drop)) << 24;
         for (size_t k = 0; k < buttons.size(); k++)
         {
-            const float bx = x0 + kPartyX, by = kPartyY + 600 + 76 * k, bw = 300;
-            const bool on = s.cursor == buttons[k].first;
-            HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", bx, by, bw, 56);
-            if (on) HudSprite(c, ui, sp, "cursor/cursor_small", bx + 12, by + 12, 30, 32);
-            HudText(c, ui, f, bx + bw / 2 + (on ? 14 : 0), by + 12, 32, buttons[k].second, Ink, 1);
+            const float bx = x0 + kPartyX, by = kPartyY + 600 + 76 * k + 160 * drop, bw = 300;
+            const bool on = live && s.cursor == buttons[k].first;
+            HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", bx, by, bw, 56, a | 0xFFFFFF);
+            if (on) HudSprite(c, ui, sp, "cursor/cursor_small", bx + 12, by + 12, 30, 32, a | 0xFFFFFF);
+            HudText(c, ui, f, bx + bw / 2 + (on ? 14 : 0), by + 12, 32, buttons[k].second, a | (Ink & 0xFFFFFF), 1);
         }
+    };
+    if (!sliding) buttonsAt(s.grid, 0, true);
+    else
+    {
+        buttonsAt(s.grid, ease(slide / 0.45f), true);
+        buttonsAt(slideTo, 1 - ease((slide - 0.55f) / 0.45f), false);
     }
 
     // The box: its name between arrows (left and right on the name change the box), its
@@ -211,11 +274,11 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
     {
         const float x = x0 + kBoxX, y = kBoxY, w = 860, h = 820;
         HudPanel(c, ui, sp, "panels/frame_aqua", x, y, w, h);
-        const bool on = s.cursor == 30 && s.grid != kGridMoveParty && s.grid != kGridDeposit;
+        const bool on = (s.cursor == 30 && (s.grid == kGridMove || s.grid == kGridWithdraw)) || tabs;
         FillRound(c, ui, x + 26, y + 26, w - 52, 60, 18, on ? Gold : Teal);
         HudSprite(c, ui, sp, "cursor/value_arrow_left", x + 120, y + 36, 32, 40, on ? 0xFFFFFFFF : 0x80FFFFFF);
         HudSprite(c, ui, sp, "cursor/value_arrow_right", x + w - 152, y + 36, 32, 40, on ? 0xFFFFFFFF : 0x80FFFFFF);
-        HudText(c, ui, f, x + w / 2, y + 32, 48, s.boxName, on ? Ink : White, 1);
+        HudText(c, ui, f, x + w / 2, y + 32, 48, s.headName, on ? Ink : White, 1);
         for (int i = 0; i < 30; i++)
         {
             const float cx = x0 + CellX(i), cy = CellY(i);
@@ -225,6 +288,11 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
             if (s.has[i] && s.held != i) iconIn(s.mons[i], cx + 11, cy + 11, 96);
         }
         HudText(c, ui, f, x + w / 2, y + h - 58, 32, std::to_string(s.count) + " / 30", 0xFF2A9DB0, 1);
+        // The box steps back (the game greys it) while the party panel is out, fading with
+        // the slide.
+        float dim = s.grid == kGridParty ? 1.0f : 0.0f;
+        if (sliding) dim += ((slideTo == kGridParty ? 1.0f : 0.0f) - dim) * ease(slide);
+        if (dim > 0) FillRound(c, ui, x, y, w, h, 36, (uint32_t)(150 * dim) << 24 | 0xE8F6F8);
     }
 
     // The card: the Pokemon held, the one the menu is for or the one under the cursor.
@@ -236,7 +304,8 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
         if (!shown)
         {
             HudSprite(c, ui, sp, "people/chip_empty", rx, y + 26, 180, 180, 0x80FFFFFF);
-            HudText(c, ui, f, x + w / 2, y + 240, 32, s.cursor == 30 ? s.boxName + " \xC2\xB7 " + std::to_string(s.count) + " Pok\xC3\xA9mon" : "",
+            const bool onName = (s.cursor == 30 && (s.grid == kGridMove || s.grid == kGridWithdraw)) || tabs;
+            HudText(c, ui, f, x + w / 2, y + 240, 32, onName ? s.headName + " \xC2\xB7 " + std::to_string(s.headCount) + " Pok\xC3\xA9mon" : "",
                 Muted, 1);
         }
         else
@@ -297,6 +366,13 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
         {
             const float hx = heldAt < 30 ? x0 + CellX(heldAt) + 11 : x0 + SlotX(heldAt - 30) + 10;
             const float hy = (heldAt < 30 ? CellY(heldAt) + 11 : SlotY(heldAt - 30) + 10) - 44;
+            iconIn(*m, hx, hy, 96);
+            HudSprite(c, ui, sp, "cursor/cursor", hx + 58, hy + 58, 36, 40);
+        }
+    if (s.held >= 0 && tabs)
+        if (const PartyMon* m = monAt(s.held))
+        {
+            const float hx = x0 + kBoxX + 430 + HudTextWidth(ui, f, 48, s.headName) / 2 + 16, hy = kBoxY - 6;
             iconIn(*m, hx, hy, 96);
             HudSprite(c, ui, sp, "cursor/cursor", hx + 58, hy + 58, 36, 40);
         }
