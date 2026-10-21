@@ -204,6 +204,7 @@ struct Call
     u32 fn;
     u32 args[4];
     std::function<void()> prepare; // fills a buffer the call reads, just before it
+    std::function<bool(u32* args)> ready; // just before it: false skips it (else it may set the arguments)
 };
 std::deque<Call> Calls;
 bool InChain = false, SkipUpdate = false;
@@ -351,9 +352,12 @@ std::vector<u8> BssDescOf(int player, const Beacon& b)
     return d;
 }
 
-void Queue(u32 fn, u32 a0 = 0, u32 a1 = 0, u32 a2 = 0, u32 a3 = 0, std::function<void()> prepare = nullptr)
+Call& Queue(u32 fn, u32 a0 = 0, u32 a1 = 0, u32 a2 = 0, u32 a3 = 0, std::function<void()> prepare = nullptr)
 {
-    if (fn) Calls.push_back({ fn, { a0, a1, a2, a3 }, std::move(prepare) });
+    static Call none;
+    if (!fn) return none = Call();
+    Calls.push_back({ fn, { a0, a1, a2, a3 }, std::move(prepare) });
+    return Calls.back();
 }
 
 void Connect(int parent)
@@ -753,6 +757,11 @@ void NextCall(ARMv5* cpu)
     }
     Call c = std::move(Calls.front());
     Calls.pop_front();
+    if (c.ready && !c.ready(c.args))
+    {
+        NextCall(cpu);
+        return;
+    }
     if (Log && c.fn != Field(RecvFunc, 4))
         fprintf(stderr, "[party] %u: calling %08X(%X, %X)\n", Frame, c.fn, c.args[0], c.args[1]);
     if (c.prepare) c.prepare();
@@ -1489,6 +1498,62 @@ void Party_SetBattle(const PartyBattle& b)
 void Party_SendInvite(int player, int invite)
 {
     if (Link == PartyLink::Online && player >= 0 && player < 4 && player != Me) Send('V', { (u8)player, (u8)invite });
+}
+
+// The Union Room hand-off (party.h). A Pokemon Center's counter runs ScrCmd_286, which calls
+// sub_02054030 (pokeheartgold field_warp_tasks.c): it records where the player stands as the
+// way back, starts the Union Room's wireless and warps there, as a step of the script's
+// field task. With no task running (the player idle), a task that only returns TRUE is made
+// for it to be a step of; FLAG_UNK_966 is set as the counter sets it, so that a save made in
+// the Union Room (a trade saves) continues at the way back.
+namespace
+{
+constexpr u32 CreateTask = 0x020504F0;      // FieldSystem_CreateTask
+constexpr u32 UnionRoomWarp = 0x02054030;   // sub_02054030
+constexpr u32 ReturnTrue = 0x0203E3A8;      // a function that returns TRUE
+constexpr u32 Flag966 = 0x966;
+
+// The byte of a script flag: the save data in memory (FieldSystem +0x0C, its dynamic region
+// from +0x10) holds the general block as the save file does, with the flags at 0x10C4.
+u32 FlagByte(u32 fs, u32 flag) { const u32 save = R32(fs + 0x0C); return save ? save + 0x10 + 0x10C4 + flag / 8 : 0; }
+}
+
+bool Party_GoToUnionRoom()
+{
+    const std::pair<u32, u32> code[] = { { CreateTask, 0x1C05B570 }, { UnionRoomWarp, 0x1C06B5F8 }, { ReturnTrue, 0x47702001 } };
+    for (const auto& [addr, word] : code)
+        if (R32(addr) != word) return false;
+    const u32 fs = Nds ? R32(FieldSystemPtr) : 0;
+    if (!Hooked || !fs || R32(fs + 0x10)) return false;
+    // Both just before they run: no task may have started since (a task already there would be lost).
+    Queue(CreateTask | 1, fs, ReturnTrue | 1, 0, 0).ready = [fs](u32*) {
+        if (R32(FieldSystemPtr) != fs || R32(fs + 0x10)) return false;
+        if (const u32 b = FlagByte(fs, Flag966))
+        {
+            fprintf(stderr, "[party] to the Union Room: flag byte %02X -> %02X\n", R8(b), R8(b) | 1 << (Flag966 % 8));
+            W8(b, R8(b) | 1 << (Flag966 % 8));
+        }
+        W32(fs + 0x1C, 0); // as ScrCmd_815 0 at the counter
+        return true;
+    };
+    Queue(UnionRoomWarp | 1).ready = [fs](u32* args) {
+        const u32 task = R32(fs + 0x10);
+        if (!task || (R32(task + 4) & ~1u) != ReturnTrue) return false;
+        args[0] = task;
+        return true;
+    };
+    return true;
+}
+
+void Party_LeftUnionRoom()
+{
+    // As the counter's welcome back (std_union_room_return) does.
+    const u32 fs = Nds ? R32(FieldSystemPtr) : 0;
+    if (const u32 b = fs ? FlagByte(fs, Flag966) : 0)
+    {
+        fprintf(stderr, "[party] back from the Union Room: flag byte %02X -> %02X\n", R8(b), R8(b) & ~(1u << (Flag966 % 8)));
+        W8(b, R8(b) & ~(1u << (Flag966 % 8)));
+    }
 }
 
 std::string Party_PlaceName(int map)
