@@ -67,6 +67,12 @@ struct State
     // cursor (its map, -1 none).
     std::vector<Place> fly;
     int flyHere = -1;
+    // What the game's map picture shows (ov101_021EAF40): how much of Kanto is open (0-2),
+    // its +0x13D bits (1 Cianwood flown to, 2 the Safari Zone, 4 at the Sinjoh Ruins, 8 on
+    // the S.S. Aqua), the fly points' flags (bit by FlyPoint::flag) and the map's palette
+    // (a/1/4/4 member: the Pokégear's skin's, or flying's own).
+    int unlock = 2, extra = 0, mapPal = 63;
+    uint64_t flown = ~0ull;
     Menu menu;
     Call call;
     Radio radio;
@@ -381,8 +387,28 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
         return st.skin < 6 && st.skinCursor < 6;
     }
     // PokegearMapAppData: the Pokégear's map (not flying or the Town Map).
-    return rd(own + 0x10) == data && rd8(own + 0x0D) == 0 && ReadMap(rd, own, st);
+    st.mapPal = 20 + rd8(data + 8); // the Pokégear's skin
+    return rd(own + 0x10) == data && rd8(own + 0x0D) == 0 && rd8(data + 8) < 6 && ReadMap(rd, own, st);
 }
+
+// The towns one can fly to (gMapFlypointParams): the map named, its fly point (flag 0x9B0
+// on), its cells (without the map's 2 rows on top), and the piece of the map's screen that
+// covers it until it is flown to (RomArt::MapPiece's sx, sy, w, h, and its corner's place
+// from the town's: none when 0 wide). Indigo Plateau and Victory Road (to Route 26) can be
+// flown to from either region; the others from their own.
+struct FlyPoint
+{
+    int map, flag, x, y, w, h, sx, sy, cw, ch, cx, cy;
+};
+constexpr FlyPoint kFlyPoints[27] = { { 49, 0, 32, 11, 1, 1, 0, 20, 3, 3, 1, 1 }, { 50, 1, 31, 7, 2, 2, 5, 20, 4, 4, 1, 1 },
+    { 51, 2, 32, 2, 2, 2, 10, 20, 4, 4, 1, 1 }, { 52, 3, 40, 3, 2, 2, 15, 20, 4, 4, 1, 1 }, { 53, 4, 44, 7, 1, 1, 20, 20, 3, 3, 1, 1 },
+    { 54, 5, 40, 9, 2, 2, 25, 20, 4, 4, 1, 1 }, { 55, 6, 37, 7, 2, 2, 30, 20, 4, 4, 1, 1 }, { 56, 7, 37, 12, 2, 2, 35, 20, 4, 4, 1, 1 },
+    { 57, 8, 32, 15, 1, 1, 0, 24, 3, 3, 1, 1 }, { 58, 9, 28, 6, 1, 1 }, { 59, 10, 40, 6, 2, 2, 5, 24, 4, 4, 1, 1 },
+    { 60, 11, 21, 12, 1, 1, 11, 25, 1, 1, 0, 0 }, { 67, 12, 16, 12, 2, 1, 15, 24, 4, 3, 1, 1 }, { 73, 13, 14, 7, 2, 2, 20, 24, 3, 4, 0, 1 },
+    { 74, 14, 12, 14, 2, 1, 25, 24, 4, 3, 1, 1 }, { 75, 15, 5, 10, 1, 2, 30, 24, 3, 4, 1, 1 }, { 76, 16, 9, 10, 3, 2, 35, 24, 5, 4, 1, 1 },
+    { 77, 17, 8, 7, 2, 2, 0, 28, 4, 4, 1, 1 }, { 78, 18, 11, 4, 2, 2, 5, 28, 4, 4, 1, 1 }, { 87, 19, 16, 5, 1, 1, 10, 28, 3, 3, 1, 1 },
+    { 89, 21, 20, 4, 2, 2, 15, 28, 4, 4, 1, 1 }, { 88, 20, 15, 1, 3, 2 }, { 90, 22, 25, 8, 1, 1 }, { 174, 30, 2, 8, 2, 2 },
+    { 272, 27, 6, 6, 2, 2 }, { 96, 35, 10, 6, 2, 2 }, { 124, 33, 28, 7, 1, 2 } };
 
 // A PokegearMapAppData (the Pokégear's map, or flying or the Town Map), not zoomed in and
 // not marking places, with its places (16 bytes each).
@@ -405,6 +431,14 @@ bool ReadMap(Read rd, uint32_t own, State& st)
     if (rd8(own + 0x0E) > 2 || unlock > 2 || maxX > 45 || !InRam(specs) || count < 1 || count > 200 || st.curX < 0 || st.curX > 45 ||
         st.curY < 0 || st.curY > 20)
         return false;
+    // The fly points' flags are the save's (the Pokégear's +0x2C, after 0x170 variables).
+    const uint32_t gear = rd(own + 0x10), vars = InRam(gear) ? rd(gear + 0x2C) : 0;
+    if (!InRam(vars)) return false;
+    st.unlock = unlock;
+    st.extra = extra;
+    st.flown = 0;
+    for (const FlyPoint& p : kFlyPoints)
+        if (rd(vars + 0x2E0 + (0x9B0 + p.flag) / 8) >> ((0x9B0 + p.flag) % 8) & 1) st.flown |= 1ull << p.flag;
     st.selMap = -1;
     if (sel)
     {
@@ -495,25 +529,29 @@ inline int RegionOf(int x, int y)
     return (x == 28 && y == 6) || (x == 28 && y > 8 && y < 13) ? 1 : 0;
 }
 
-// The towns one can fly to (gMapFlypointParams): the map named, its fly point (flag 0x9B0
-// on), its cells (without the map's 2 rows on top). Indigo Plateau and Victory Road (to
-// Route 26) can be flown to from either region; the others from their own.
-struct FlyPoint
+// The pieces the game copies over its map picture (ov101_021EAF40): Kanto closed off as far
+// as it is not open yet, the towns not flown to yet greyed (Kanto's only once it is all
+// open; never Cianwood, whose island has its own pieces with the Safari Zone), and the
+// Sinjoh Ruins and the S.S. Aqua while there.
+inline std::vector<RomArt::MapPiece> MapPieces(const State& st)
 {
-    int map, flag, x, y, w, h;
-};
-constexpr FlyPoint kFlyPoints[27] = { { 49, 0, 32, 11, 1, 1 }, { 50, 1, 31, 7, 2, 2 }, { 51, 2, 32, 2, 2, 2 }, { 52, 3, 40, 3, 2, 2 },
-    { 53, 4, 44, 7, 1, 1 }, { 54, 5, 40, 9, 2, 2 }, { 55, 6, 37, 7, 2, 2 }, { 56, 7, 37, 12, 2, 2 }, { 57, 8, 32, 15, 1, 1 },
-    { 58, 9, 28, 6, 1, 1 }, { 59, 10, 40, 6, 2, 2 }, { 60, 11, 21, 12, 1, 1 }, { 67, 12, 16, 12, 2, 1 }, { 73, 13, 14, 7, 2, 2 },
-    { 74, 14, 12, 14, 2, 1 }, { 75, 15, 5, 10, 1, 2 }, { 76, 16, 9, 10, 3, 2 }, { 77, 17, 8, 7, 2, 2 }, { 78, 18, 11, 4, 2, 2 },
-    { 87, 19, 16, 5, 1, 1 }, { 89, 21, 20, 4, 2, 2 }, { 88, 20, 15, 1, 3, 2 }, { 90, 22, 25, 8, 1, 1 }, { 174, 30, 2, 8, 2, 2 },
-    { 272, 27, 6, 6, 2, 2 }, { 96, 35, 10, 6, 2, 2 }, { 124, 33, 28, 7, 1, 2 } };
+    std::vector<RomArt::MapPiece> v;
+    if (st.unlock == 0) v.push_back({ 22, 0, 6, 20, 48, 0 });
+    if (st.unlock == 1) v.push_back({ 29, 0, 3, 20, 54, 0 });
+    for (const FlyPoint& p : kFlyPoints)
+        if (p.cw && p.map != 75 && !(st.flown >> p.flag & 1) && !(st.unlock < 2 && RegionOf(p.x, p.y + 2) == 0))
+            v.push_back({ p.x - p.cx, p.y - p.cy + 2, p.cw, p.ch, p.sx, p.sy });
+    const bool cianwood = st.extra & 1, safari = st.extra & 2;
+    if (!cianwood || !safari) v.push_back({ 1, 9, 5, 6, safari ? 48 : 41, !safari && cianwood ? 20 : 27 });
+    if (st.extra & 4) v.push_back({ 19, 1, 3, 4, 55, 20 });
+    if (st.extra & 8) v.push_back({ 24, 15, 3, 3, 55, 24 });
+    return v;
+}
 
 // The map to choose where to fly, or the Town Map (the TownMap application, FlyMap_*): its
 // PokegearMapAppData with a Pokégear of its own (+0x10, whose childAppdata +0x64 is it),
 // its kind (+0x0D: 1 flying, 2 the Town Map) and region (+0x0E), and while asking whether
-// to fly there (step 12) its menu (+0xC4). The fly points' flags are the save's (the
-// Pokégear's +0x2C, after 0x170 variables).
+// to fly there (step 12) its menu (+0xC4).
 template <class Read, class App>
 bool ReadFly(Read rd, App app, uint32_t& cache, State& st, int& step)
 {
@@ -528,13 +566,10 @@ bool ReadFly(Read rd, App app, uint32_t& cache, State& st, int& step)
     st.app = APP_MAP;
     st.mode = rd(own + 0x0C) >> 8 & 0xFF;
     if (!InRam(gear) || rd(gear + 0x64) != own || st.mode < 1 || st.mode > 2 || step < 0 || step > 13 || !ReadMap(rd, own, st)) return false;
-    const uint32_t vars = rd(gear + 0x2C);
-    if (!InRam(vars)) return false;
     const int region = rd(own + 0x0C) >> 16 & 0xFF;
     for (const FlyPoint& p : kFlyPoints)
     {
-        const int flag = 0x9B0 + p.flag;
-        if (!(rd(vars + 0x2E0 + flag / 8) >> (flag % 8) & 1)) continue;
+        if (!(st.flown >> p.flag & 1)) continue;
         if (p.map != 58 && p.map != 124 && region != 1 && RegionOf(p.x, p.y + 2) != region) continue;
         st.fly.push_back({ p.map, p.x, p.y + 2, p.w, p.h });
     }
@@ -623,6 +658,7 @@ struct Env
     PartyPeer me;
     int weekday = 0;
     std::function<uint32_t(uint32_t)> rd;
+    RomArt* art = nullptr; // for the game's map picture
 };
 
 constexpr uint32_t kMapHeaders = 0x020F6BE0; // sMapHeaders (as party.cpp), 24 bytes a map
@@ -782,8 +818,9 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     }
     else
     {
-        // The region map: the places of the region the cursor is in (Kanto with the Indigo
-        // Plateau), routes as roads, towns as discs with their names, other places as dots.
+        // The region map: the game's own picture of the region the cursor is in (Kanto with
+        // the Indigo Plateau), from the ROM, with the place under the cursor lit; without it,
+        // the places drawn: routes as roads, towns as discs with their names.
         const int region = RegionOf(st.curX, st.curY) == 2 ? 2 : 0;
         std::vector<const Place*> shown;
         int x1 = 99, y1 = 99, x2 = 0, y2 = 0;
@@ -801,13 +838,23 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         const float ax = mx + 40, ay = my + 110, aw = mw - 80, ah = mh - 190;
         FillBlend(c, ui(ax), ui(ay), ui(aw), ui(ah), 0xFFE6F5DA);
         if (shown.empty()) x1 = y1 = 0, x2 = y2 = 1;
-        const float cell = std::min((aw - 80) / (x2 - x1), (ah - 80) / (y2 - y1));
-        const float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
+        float cell = std::min((aw - 80) / (x2 - x1), (ah - 80) / (y2 - y1));
+        float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
+        // Johto's picture runs to Mount Silver, Kanto's from Route 27.
+        const Image* art = env.art ? env.art->RegionMap(st.mapPal, MapPieces(st)) : nullptr;
+        if (art) HudRegionMap(c, ui, *art, region == 2 ? 0 : 22, region == 2 ? 26 : 47, ax, ay, aw, ah, cell, ox, oy);
         auto centre = [&](float x, float y, float& cx, float& cy) {
             cx = ox + (x + 0.5f) * cell;
             cy = oy + (y + 0.5f) * cell;
         };
-        // Flying, the towns one can fly to have orange rings (larger under the cursor).
+        // A frame around cells, so the game's picture inside stays seen.
+        auto frame = [&](float x, float y, float w, float h, float t, uint32_t col) {
+            FillBlend(c, ui(ox + x * cell - t), ui(oy + y * cell - t), ui(w * cell + 2 * t), ui(t), col);
+            FillBlend(c, ui(ox + x * cell - t), ui(oy + (y + h) * cell), ui(w * cell + 2 * t), ui(t), col);
+            FillBlend(c, ui(ox + x * cell - t), ui(oy + y * cell), ui(t), ui(h * cell), col);
+            FillBlend(c, ui(ox + (x + w) * cell), ui(oy + y * cell), ui(t), ui(h * cell), col);
+        };
+        // Flying, the towns one can fly to are ringed in orange (more under the cursor).
         auto canFly = [&](int map) {
             for (const Place& p : st.fly)
                 if (p.map == map) return true;
@@ -820,18 +867,22 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
                 const bool fly = st.mode == 1 && canFly(p->map), town = IsTown(name) || fly;
                 float cx, cy;
                 centre(p->x + (p->w - 1) / 2.0f, p->y + (p->h - 1) / 2.0f, cx, cy);
-                if (pass == 0 && !town)
+                if (pass == 0 && art && p->map == st.selMap && !st.inTabs)
+                    FillBlend(c, ui(ox + p->x * cell), ui(oy + p->y * cell), ui(p->w * cell), ui(p->h * cell), 0x70FFF5A0);
+                else if (pass == 0 && !town && !art)
                 {
                     const float t = cell * 0.36f;
                     FillBlend(c, ui(ox + p->x * cell + cell / 2 - t / 2), ui(oy + p->y * cell + cell / 2 - t / 2),
                         ui((p->w - 1) * cell + t), ui((p->h - 1) * cell + t), 0xFFF2DCA0);
                 }
-                else if (pass == 1 && town)
+                else if (pass == 1 && art && fly)
+                    frame(p->x, p->y, p->w, p->h, p->map == st.flyHere ? 8 : 5, 0xFFF08030);
+                else if (pass == 1 && town && !art)
                 {
                     const float d = std::max(28.0f, cell * (p->map == st.flyHere ? 1.3f : 0.9f));
                     HudSprite(c, ui, sp, fly ? "people/chip_ring_orange" : "people/chip_ring_grey", cx - d / 2, cy - d / 2, d, d);
                 }
-                else if (pass == 2 && town)
+                else if (pass == 2 && town && !art)
                     HudText(c, ui, f, cx, cy + std::max(28.0f, cell * 0.9f) / 2 + 2, 32, ShortPlace(name), Ink, 1);
             }
         // The game's cursor, then the players: the others in their colours, this one last.
@@ -839,9 +890,14 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         if (!st.inTabs)
         {
             centre(st.curX, st.curY, cx, cy);
-            const float d = std::max(48.0f, cell * 1.4f);
-            FillBlend(c, ui(cx - cell / 2), ui(cy - cell / 2), ui(cell), ui(cell), 0x90FFD23C);
-            HudSprite(c, ui, sp, "people/chip_ring_orange", cx - d / 2, cy - d / 2, d, d, 0xC0FFFFFF);
+            const float d = art ? cell + 12 : std::max(48.0f, cell * 1.4f);
+            if (art)
+                frame(st.curX, st.curY, 1, 1, 6, 0xFFFFD23C);
+            else
+            {
+                FillBlend(c, ui(cx - cell / 2), ui(cy - cell / 2), ui(cell), ui(cell), 0x90FFD23C);
+                HudSprite(c, ui, sp, "people/chip_ring_orange", cx - d / 2, cy - d / 2, d, d, 0xC0FFFFFF);
+            }
             HudSprite(c, ui, sp, "cursor/cursor_small", cx - d / 2 - 30, cy - 16, 30, 32);
         }
         auto player = [&](const PartyPeer& p, int x, int y, const std::string& label) {

@@ -263,18 +263,26 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         int x1 = 99, y1 = 99, x2 = 0, y2 = 0;
         for (const View::Cell& k : v.cells)
             x1 = std::min(x1, k.x), y1 = std::min(y1, k.y), x2 = std::max(x2, k.x + 1), y2 = std::max(y2, k.y + 1);
-        if (x2 > x1 && y2 > y1)
+        // The region's picture: the Pokégear's map, all of it known, whose cells these are
+        // without its 2 rows on top (as the fly points').
+        const Image* map = art.RegionMap(63, {});
+        if (map || (x2 > x1 && y2 > y1))
         {
-            const float cell = std::min((aw - 60) / (x2 - x1), (ah - 60) / (y2 - y1));
-            const float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
-            for (int pass = 0; pass < 2; pass++)
+            float cell = std::min((aw - 60) / (x2 - x1), (ah - 60) / (y2 - y1));
+            float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
+            if (map)
+            {
+                HudRegionMap(c, ui, *map, v.region ? 22 : 0, v.region ? 47 : 26, ax, ay, aw, ah, cell, ox, oy);
+                oy += 2 * cell;
+            }
+            for (int pass = map ? 1 : 0; pass < 2; pass++)
                 for (const View::Cell& k : v.cells)
                 {
                     const bool on = k.place && (v.cursor == 0 || v.cursor == k.place);
                     if (on != (pass == 1)) continue;
                     const float g = cell * 0.08f;
                     HudParty::FillRound(c, ui, ox + k.x * cell + g, oy + k.y * cell + g, cell - 2 * g, cell - 2 * g, cell * 0.2f,
-                        on ? 0xFFF08030 : 0xFFF2DCA0);
+                        on ? (map ? 0xC8F08030 : 0xFFF08030) : 0xFFF2DCA0);
                 }
         }
         if (v.places.empty())
