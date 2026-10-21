@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- New screens: Voltorb Flip at the Goldenrod Game Corner is drawn anew on the one screen:
+  the board with its cards, your memo marks and the totals along each row and column, the
+  level, your coins and those of the game, the memo panel, Quit and the game's messages and
+  menus. It plays with the d-pad, A, X (memo) and B (quit) as before.
+- The Ruins of Alph's sliding puzzles can be played with a controller: the d-pad moves a
+  cursor over the board, A picks a piece up and puts it down, X turns it and B quits (or
+  puts a carried piece back). With the new screens the puzzle is shown framed with how many
+  pieces are in place; without them a cursor shows over the game's own picture.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in

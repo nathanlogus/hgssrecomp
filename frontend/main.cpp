@@ -63,6 +63,7 @@
 #include "hudpcbox.h"
 #include "hudworld.h"
 #include "hudshop.h"
+#include "hudminigames.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -3161,7 +3162,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, what people say, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -4954,6 +4955,30 @@ int main(int argc, char** argv)
             }
         }
 
+        // The Ruins of Alph's puzzles, played with the buttons (hudminigames.h): they become
+        // the touches the game expects.
+        static HudMinigames::AlphPad alphPad;
+        static HudMinigames::Alph alphState;
+        static bool alphRead = false;
+        alphRead = false;
+        if (!uiOpen && appRunning("AlphPuzzle"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "AlphPuzzle"))
+                {
+                    static uint32_t alphAt = 0;
+                    const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                    const uint32_t man = HudParty::FindApp(ram, alphAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                        [](uint32_t) { return true; });
+                    if (man && HudMinigames::ReadAlph(ram, man, alphState))
+                    {
+                        alphRead = true;
+                        int tx, ty;
+                        if (HudMinigames::AlphInput(alphState, alphPad, keys, tx, ty)) touching = true, touchX = tx, touchY = ty;
+                    }
+                    break;
+                }
+        if (!alphRead) alphPad = HudMinigames::AlphPad();
+
         if (uiOpen && bootMode == BOOT_NONE && !gameSave.Busy())
         {
             // The buttons are the menu's (scripted test input and the keyboard too); an autosave
@@ -6030,6 +6055,67 @@ int main(int argc, char** argv)
                 HudShop::Draw(canvas, ui, sprites, font, romArt, bagTexts, ss, hints);
                 overlayUsed = true;
             }
+        }
+        // Voltorb Flip redrawn (hudminigames.h); the game keeps its own controls.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("VoltorbFlip"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "VoltorbFlip"))
+                {
+                    static uint32_t vfAt = 0;
+                    const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                    HudMinigames::Voltorb v;
+                    const uint32_t man = HudParty::FindApp(ram, vfAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                        [](uint32_t) { return true; });
+                    if (man && HudMinigames::ReadVoltorb(ram, man, v))
+                    {
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y);
+                        std::vector<HudHint> hints;
+                        if (!v.menu.empty() || v.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
+                        else if (v.memoFocused) hints = { { { "buttons/button_dpad" }, "Mark" }, { { a }, "Set / clear" }, { { x }, "Close memo" }, { { b }, "Back to the board" } };
+                        else if (v.workflow == HudMinigames::WF_BOARD || v.workflow == HudMinigames::WF_MEMO_TOUCH)
+                            hints = { { { "buttons/button_dpad" }, "Move" }, { { a }, v.memoOpen ? "Mark" : "Flip" }, { { x }, v.memoOpen ? "Close memo" : "Memo" }, { { b }, "Quit" } };
+                        // (A Voltorb's message passes by itself; a number's waits for a button.)
+                        else if (v.message.more || (v.workflow == HudMinigames::WF_FLIP && v.messageShown && v.task == 4 && v.type[v.focus] != 4))
+                            hints = { { { a }, "Next" } };
+                        HudMinigames::DrawVoltorb(canvas, ui, sprites, font, romArt, v, hints);
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        // The Ruins of Alph's puzzles (hudminigames.h): redrawn around the game's board, or
+        // without the new screens the cursor over the game's own picture of it.
+        if (alphRead && screen == SCR_NONE && !menu.open && !startOpen && alphState.step >= 1 && alphState.step <= 6 && alphState.step != 5)
+        {
+            const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+            const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y);
+            const bool carrying = alphPad.phase == 2 || alphPad.phase == 3;
+            std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" }, { { a }, carrying ? "Put down" : "Pick up" } };
+            if (!carrying) hints.push_back({ { x }, "Turn" });
+            hints.push_back({ { b }, carrying ? "Put back" : "Quit" });
+            if (alphState.step == 6) hints.clear();
+            if (spritesOk && cfg.redrawn)
+            {
+                HudMinigames::DrawAlph(canvas, ui, sprites, font, alphState, alphPad, bot, hints);
+                overlayUsed = true;
+            }
+            else if (merged && alphState.step <= 4)
+                for (const Element& el : scene.items)
+                    if (el.screen == 1)
+                    {
+                        // The place under the cursor, where the merged view shows the touch screen.
+                        const float s = el.scale * view.unit;
+                        const float px = view.originX + (el.dx + (32 + 32 * alphPad.cx - el.sx) * el.scale) * view.unit;
+                        const float py = view.originY + (el.dy + (32 * alphPad.cy - el.sy) * el.scale) * view.unit;
+                        const int t = std::max(2, (int)(2 * s));
+                        const uint32_t col = carrying ? 0xFFFFC23A : 0xFFFFFFFF;
+                        canvas.Fill((int)px, (int)py, (int)(32 * s), t, col);
+                        canvas.Fill((int)px, (int)(py + 32 * s) - t, (int)(32 * s), t, col);
+                        canvas.Fill((int)px, (int)py, t, (int)(32 * s), col);
+                        canvas.Fill((int)(px + 32 * s) - t, (int)py, t, (int)(32 * s), col);
+                        overlayUsed = true;
+                        break;
+                    }
         }
         // The Pokégear redrawn (hudgear.h): its phone and map tabs, read from the game's
         // memory each frame; calls, menus and the other tabs are the game's own picture.
