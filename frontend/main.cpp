@@ -58,6 +58,7 @@
 #include "hudparty.h"
 #include "huddex.h"
 #include "hudgear.h"
+#include "hudpcbox.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -3078,7 +3079,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
             !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
                                 : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear and the battle commands.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes and the battle commands.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -5817,6 +5818,30 @@ int main(int argc, char** argv)
                     break;
                 }
         dexShown = dexNow;
+        // The PC's Pokemon storage redrawn (hudpcbox.h), mirroring the game's application;
+        // its messages, questions and the screens it does not draw are the game's own. Its
+        // short animations are drawn when it was drawn just before (some frames skip this).
+        static uint32_t pcShownAt = 0;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("PCBox"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "PCBox"))
+                {
+                    static uint32_t pcAt = 0;
+                    static HudPcBox::Screen pc;
+                    pc = HudPcBox::Screen();
+                    const bool pcNow = HudPcBox::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, pcAt, rc_apps[i].initAddr,
+                                           rc_apps[i].execAddr, rc_apps[i].exitAddr, pc) &&
+                        HudPcBox::Shown(pc, pcShownAt && frame - pcShownAt <= 3);
+                    if (pcNow)
+                    {
+                        auto ds = [&](int k) { return PadGlyph(PadButtonFor(k, cfg.byLabel, cfg.padMap)); };
+                        HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, trainerName(), Party_MyCard().id,
+                            { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" }, { { ds(1) }, "Back" } });
+                        overlayUsed = true;
+                        pcShownAt = frame;
+                    }
+                    break;
+                }
         if (spritesOk && (bootMode != BOOT_NONE || frame < resumeCoverUntil) && !menu.open && screen == SCR_NONE)
         {
             HudOnline::LoadingScreen(canvas, ui, sprites, font, logo.px.empty() ? nullptr : &logo, "POK\xC3\xA9MON",

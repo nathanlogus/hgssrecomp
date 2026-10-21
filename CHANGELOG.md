@@ -64,6 +64,12 @@
   the region with you on it (and, in an online session, your friends) and the game's words
   about the place under the cursor. The game's own buttons work as always; phone calls,
   the phone's menu, the zoomed map, the radio and the settings show the game's own screens.
+- A **new PC box screen** (NEW SCREENS): when you deposit, withdraw or move Pokémon at a
+  PC, your party is a column on the left, the box a grid of 30 cells with its name, and
+  the Pokémon under the cursor is on a card with its level, types, ability, item, who
+  caught it and where, and the game's menu for it. A Pokémon you pick up follows the
+  cursor. Choosing a box to send a Pokémon to, messages and questions still show the
+  game's own screen.
 - **Autosave** (Game tab, on by default): every few minutes and when you quit, a resume
   point is kept beside your save, and **Continue** carries on from it straight away (the
   save card says where and when). The game also saves by itself when you enter a Pokémon
