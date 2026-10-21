@@ -76,6 +76,7 @@ struct PartyScreen
     int context = 0;                 // PartyMenuContext: 0 the field, 5 using an item, 9 and 10 giving one
     std::vector<std::string> items;  // the context menu, when open
     int sel = 0;                     // its cursor
+    bool columns = false;            // laid out in two columns (the first menu, with field moves)
     int from = -1;                   // the Pokemon being moved (Switch)
     std::string prompt;              // what the game asks at the top, when it is not the usual
     std::string message;             // the game's message, while one is shown
@@ -155,12 +156,16 @@ inline bool ReadPartyScreen(const Ram& ram, uint32_t& cache, uint32_t init, uint
     if (s.from >= s.count) return false;
     if (s.step == 2 || s.step == 15)
     {
-        // PartyMenuContextMenuCursor: selection +1, the count +2, then the menu, whose list
-        // (+4) holds a String and a value for each item.
+        // PartyMenuContextMenuCursor: selection +1, the count +2, its kind +3, then the menu,
+        // whose list (+4) holds a String and a value for each item. The first menu (kind 0)
+        // with field moves puts them in a column of their own on the left (sButtonWindowIDs:
+        // items 0-2 on the right, 3 Quit below them, 4 on the field moves), reached with
+        // LEFT and RIGHT.
         const uint32_t cur = ram.R32(pm + 0x824);
         if (!ram.Ptr(cur) || s.cursor >= s.count) return false;
         const int n = (int)ram.R8(cur + 2);
         s.sel = (int)ram.R8(cur + 1);
+        s.columns = ram.R8(cur + 3) == 0 && n > 4;
         const uint32_t list = ram.R32(cur + 4);
         if (n < 1 || n > 12 || s.sel >= n || !ram.Ptr(list)) return false;
         for (int i = 0; i < n; i++)
@@ -457,17 +462,27 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
     const float mx = wd - 60 - 510, mw = 510;
     if (menuOpen)
     {
-        const float mh = 90 + 62 * s.items.size();
+        // In two columns, as the game lays them out: the field moves on the left, the rest
+        // on the right with Quit at the bottom.
+        const float mh = 90 + 62 * (s.columns ? 4 : s.items.size());
         HudPanel(c, ui, sp, "panels/card", mx, 170, mw, mh);
         FillRound(c, ui, mx + 22, 190, mw - 44, 48, 16, 0xFF2EC4C6);
         HudText(c, ui, f, mx + 42, 198, 32, s.mons[s.cursor].name, White);
+        const float colW = (mw - 44 - 12) / 2;
         for (size_t k = 0; k < s.items.size(); k++)
         {
-            const float ry = 254 + 62 * k;
+            float bx = mx + 22, bw = mw - 44, ry = 254 + 62 * k;
+            if (s.columns)
+            {
+                const bool left = k >= 4;
+                bw = colW;
+                bx = left ? mx + 22 : mx + 22 + colW + 12;
+                ry = 254 + 62 * (left ? k - 4 : k);
+            }
             const bool on = (int)k == s.sel;
-            HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", mx + 22, ry, mw - 44, 50);
-            if (on) HudSprite(c, ui, sp, "cursor/cursor", mx + 34, ry + 5, 36, 40);
-            HudText(c, ui, f, mx + 84, ry + 9, 32, s.items[k], Ink);
+            HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", bx, ry, bw, 50);
+            if (on) HudSprite(c, ui, sp, "cursor/cursor", bx + 12, ry + 5, 36, 40);
+            HudText(c, ui, f, bx + 62, ry + 9, 32, s.items[k], Ink);
         }
     }
     // The game's message, in the menu's place, with its yes/no.

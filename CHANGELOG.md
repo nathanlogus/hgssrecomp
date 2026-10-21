@@ -2,14 +2,42 @@
 
 ## Unreleased
 
-- New screens: when a Pokémon evolves or an egg hatches, the messages appear in the new
-  message box while the game's own animation plays: "What? … is evolving!" (with a hint
-  that B stops it), the moves it wants to learn and the questions about them, and the
-  question whether to give the hatched Pokémon a nickname, with its answers beside the box.
+- New screens: when a Pokémon evolves, an egg hatches or a Pokémon is traded, the
+  messages appear in the new message box while the game's own animation plays: "What? …
+  is evolving!" (with a hint that B stops it), the moves it wants to learn and the
+  questions about them, whether to give the hatched Pokémon a nickname (its answers beside
+  the box), and the trade's "… will be sent to …" and "Take good care of …!".
+- New screens: choosing your rental Pokémon at the Battle Frontier's Battle Factory. All
+  six Pokémon on offer are shown at once, with everything about the one you are on (types,
+  ability, nature, held item and moves), the team you have picked so far, the Summary,
+  Rent and Cancel buttons and the "Are these Pokémon OK?" question. The Battle Hall's
+  board of types is drawn anew too (before, the single screen hid it): each type with its
+  rank, your Pokémon and the question before a battle.
+- New screens: Voltorb Flip at the Goldenrod Game Corner is drawn anew on the one screen:
+  the board with its cards, your memo marks and the totals along each row and column, the
+  level, your coins and those of the game, the memo panel, Quit and the game's messages and
+  menus. It plays with the d-pad, A, X (memo) and B (quit) as before.
+- The Ruins of Alph's sliding puzzles can be played with a controller: the d-pad moves a
+  cursor over the board, A picks a piece up and puts it down, X turns it and B quits (or
+  puts a carried piece back). With the new screens the puzzle is shown framed with how many
+  pieces are in place; without them a cursor shows over the game's own picture.
+- New screens: a Pokémon's pages in the Pokédex are drawn anew. Area shows the region's
+  map with the places it lives at that time of day marked, beside the list of them; Size
+  puts it next to you, height and weight; Forms lists the forms you have seen.
+- New screens: the Pokégear's settings tab (choosing its skin) is drawn anew.
+- New screens: the keyboard for naming (nicknames, boxes, your name) is drawn anew, with
+  the name in its boxes and the keys of each page.
+- New screens: the Pokégear's radio is drawn anew (the tuning dial with its stations, the
+  show on air and its words as they come, static and all), and so is moving a contact by
+  hand in the phone's list.
+- The new party menu shows Fly and a Pokémon's other field moves where the game puts them,
+  in a column on the left that you reach with LEFT; before, they were listed under Quit
+  where the cursor never went.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
-  (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
-  with the same box.
+  (such as the Pokémon Center's nurse) and lists of choices (such as the shop clerk's
+  BUY, SELL, SEE YA!) show their answers beside it, and signs slide in with the same box.
+  The X menu and the place's name shown when you arrive somewhere are drawn anew too.
 - New screens: phone calls in the Pokégear are drawn anew (who is calling, the ringing,
   what they say line by line and the hang-up), as are the phone's Call, Sort and Quit
   menu and the questions asked during a call. Choosing where to fly is drawn anew too:
@@ -19,8 +47,22 @@
   Store the items for sale are shown in pages with their prices, the item you are on with
   its description and how many you have, how many to buy with the total, "Is that OK?"
   and the clerk's answers, and your money. Selling opens the bag in the same style, with
-  what the shop pays, how many to sell and your money. The Pokéathlon Dome's shops and
-  the clerk's questions before and after are still the game's own.
+  what the shop pays, how many to sell and your money. The Pokéathlon Dome's two shops
+  (the day's prizes and the Data Cards) are drawn the same way, with prices and your
+  Athlete Points, and what you have already bought marked. The clerk's questions before
+  and after are still the game's own, as are the seal shops.
+- New screens: more of the PC's Pokémon storage is drawn anew: Move Items (the Pokémon
+  holding an item stand out with it, giving and putting away items), the box's menu
+  (change box, wallpaper, name), choosing a wallpaper, "Deposit where?" with the box you
+  point at shown, and the storage's messages and yes/no questions, such as releasing a
+  Pokémon or a full box.
+- New screens, battles: the HP boxes, the message box and the stats after a level up are
+  drawn in the new style too (widescreen view). The HP and EXP bars run down and fill as
+  the game's do, the boxes slide in and out with the game's, and the messages appear
+  letter by letter in the menus' font. The bag in battles is drawn anew as well: its
+  pockets, their items and the item you pick with its description and Use. So is the
+  party in battles, as the party outside them: choosing who to send out, Shift, and the
+  summary; and the Pokédex page after a catch, as the Pokédex's card for the Pokémon.
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a

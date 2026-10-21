@@ -4,8 +4,9 @@
 // cursor with its description, how many and the total, the money and the shop's messages.
 // The game keeps the input; everything is read each frame from its shop task
 // (src/overlay_03/shop_menu.c, MartData) and anything that does not check out leaves the
-// game's own picture on screen. Only the money shops: the Pokéathlon Dome's (Athlete
-// Points) and the seal shops are left as the game draws them.
+// game's own picture on screen. The Pokéathlon Dome's two shops (the day's prizes and the
+// Data Cards, bought one at a time with Athlete Points) are the same shop task and drawn
+// the same way; the seal shops are left as the game draws them.
 #include "hudbag.h"
 
 namespace HudShop
@@ -21,6 +22,11 @@ struct State
     int inBag = 0;          // how many of the item under the cursor the bag holds
     uint32_t money = 0;
     int yesNo = -1;         // the cursor of "Is that OK?", -1 when it is not up
+    int type = 0;           // martType: 0 money, 3 the Pokéathlon's prizes of the day, 4 its Data Cards
+    std::vector<int> prices; // the Pokéathlon's prices, beside `items`
+    int why = 0;            // why it cannot be bought (unk298 at step 14: 10 points or had, 12 no room)
+    bool done = false;      // the Pokéathlon: the item under the cursor already had (today, or the Data Card)
+    bool Points() const { return type == 3 || type == 4; }
 };
 
 // The pockets in the save's order with their sizes (save's Bag: items, key items, TMs,
@@ -66,8 +72,9 @@ bool Read(Rd rd, State& st, uint32_t& ynCache)
     // 18 x 14 tiles; removed as the shop closes, from step 17), and it is a shop of items
     // bought with money.
     st.step = rd8(d + 0x272);
+    st.type = rd8(d + 0x283);
     const bool closing = st.step == 17 || st.step == 18 || st.step == 27; // (27: TASK_MART_EXIT)
-    if (rd(d) != rd(fs + 0x08) || rd8(d + 0x283) != 0 ||
+    if (rd(d) != rd(fs + 0x08) || (st.type != 0 && st.type != 3 && st.type != 4) ||
         (!closing && (rd(d + 0x0C) != (2u | 13u << 8 | 2u << 16 | 18u << 24) || rd8(d + 0x10) != 14)))
         return false;
     st.next = rd8(d + 0x29F);
@@ -93,10 +100,33 @@ bool Read(Rd rd, State& st, uint32_t& ynCache)
     if (!InRam(profile) || !InRam(bag)) return false;
     st.money = rd(profile + 0x14);
     if (st.money > 999999) return false;
+    // The Pokéathlon's shops: the price of each item (priceOverrides +0x26C: the item and its
+    // price, the items copied from there in order) and the Athlete Points (PokeathlonSave
+    // +0x254: +0xB74, then the Data Cards had +0xB78 and the day's prizes had +0xB7C).
+    st.prices.clear();
+    st.done = false;
+    if (st.Points())
+    {
+        const uint32_t prices = rd(d + 0x26C), ath = rd(d + 0x254);
+        if (!InRam(prices) || !InRam(ath)) return false;
+        for (int k = 0; k < count; k++)
+        {
+            if (rd16(prices + 4 * k) != st.items[k]) return false;
+            st.prices.push_back(rd16(prices + 4 * k + 2));
+        }
+        st.money = rd(ath + 0xB74);
+        if (st.money > 99999) return false;
+        const int idx = st.page + st.cursor;
+        if (st.cursor < 6 && idx < count)
+            st.done = st.type == 3 ? (rd16(ath + 0xB7C) >> idx & 1) != 0
+                                   : st.items[idx] >= 505 && st.items[idx] <= 531 && (rd(ath + 0xB78) >> (st.items[idx] - 505) & 1) != 0;
+    }
+    st.why = (int)rd(d + 0x298);
     // Once an item is chosen (5 onwards), it is the one under the cursor at its price.
     const int under = st.cursor < 6 && st.page + st.cursor < count ? st.items[st.page + st.cursor] : 0;
     const bool chosen = st.step >= 5 && st.step <= 15 && st.step != 6;
     if (chosen && (st.item != under || st.cost <= 0 || st.qty < 0 || st.qty > 99 || st.maxQty > 99)) return false;
+    if (chosen && st.Points() && st.cost != st.prices[st.page + st.cursor]) return false;
     st.inBag = 0;
     for (int k = 0; k < kSlots && under; k++)
         if (rd16(bag + 4 * k) == under) st.inBag += rd16(bag + 4 * k + 2);
@@ -134,9 +164,17 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     const float wd = ui.W / ui.s, x0 = wd / 2 - 960;
     const int count = (int)st.items.size();
     auto price = [&](int id) {
+        if (st.Points())
+        {
+            for (int k = 0; k < count; k++)
+                if (st.items[k] == id) return Thousands((uint32_t)st.prices[k]) + " Points";
+            return std::string();
+        }
         const int p = art.ItemPrice(id);
         return p > 0 ? "$" + Thousands((uint32_t)p) : std::string();
     };
+    // Apricorns go to the Apricorn Box, not the bag: no count of them then.
+    const auto apricorn = [](int id) { return id >= 485 && id <= 491; };
     auto name = [&](int id) {
         const int move = art.TmMove(id);
         return move ? tx.Get(HudBag::kItemName, id) + " " + tx.Get(HudBag::kMoveName, move) : tx.Get(HudBag::kItemName, id);
@@ -144,10 +182,11 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
 
     // The title and the money.
     HudText(c, ui, f, x0 + 60, 66, 48, "BUY", Ink, 0, true);
-    const std::string money = "$" + Thousands(st.money);
-    const float mw = HudTextWidth(ui, f, 32, money, true) + HudTextWidth(ui, f, 32, "Money") + 80;
+    const std::string money = st.Points() ? Thousands(st.money) : "$" + Thousands(st.money);
+    const char* purse = st.Points() ? "Athlete Points" : "Money";
+    const float mw = HudTextWidth(ui, f, 32, money, true) + HudTextWidth(ui, f, 32, purse) + 80;
     HudPanel(c, ui, sp, "panels/button_white", x0 + 1860 - mw, 64, mw, 56);
-    HudText(c, ui, f, x0 + 1860 - mw + 28, 76, 32, "Money", Muted);
+    HudText(c, ui, f, x0 + 1860 - mw + 28, 76, 32, purse, Muted);
     HudText(c, ui, f, x0 + 1860 - 28, 76, 32, money, Ink, 2, true);
 
     // The page: two columns of three, as the game lays them out, then the page arrows and Cancel.
@@ -205,20 +244,33 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cw / 2 - 90, cy + 36, 180, 180);
     HudPixelArt(c, ui, art.ItemIcon(item), cx + cw / 2 - 64, cy + 62, 128, 128);
     HudText(c, ui, f, cx + cw / 2, cy + 240, 48, name(item), Ink, 1, true);
-    HudText(c, ui, f, cx + cw / 2, cy + 306, 32, price(item) + " each \xC2\xB7 In bag \xC3\x97" + std::to_string(st.inBag), Muted, 1);
+    if (st.Points())
+        HudText(c, ui, f, cx + cw / 2, cy + 306, 32,
+            price(item) + (st.done ? (st.type == 3 ? " \xC2\xB7 Bought today" : " \xC2\xB7 Already have") : apricorn(item) ? "" : " \xC2\xB7 In bag \xC3\x97" + std::to_string(st.inBag)), Muted, 1);
+    else
+        HudText(c, ui, f, cx + cw / 2, cy + 306, 32, price(item) + " each \xC2\xB7 In bag \xC3\x97" + std::to_string(st.inBag), Muted, 1);
 
     // The shop's words at each step (its own, from its text bank 435, with the numbers in).
     const std::string what = tx.Get(HudBag::kItemName, item);
     std::string message;
     const bool picking = st.step == 5 || st.step == 7 || (st.step == 21 && (st.next == 8 || st.next == 9));
-    if (picking) message = what + "? Certainly. How many would you like?";
+    if (st.Points())
+    {
+        // One at a time: straight to the question, then the clerk's answer (text bank 435).
+        if (st.step >= 8 && st.step <= 11) message = "Would you like " + what + "?";
+        else if (st.step == 12 || st.step == 13) message = "All right, here you go. Come back anytime!";
+        else if (st.step == 14 && st.why == 12) message = "You don\xE2\x80\x99t have enough room.";
+        else if (st.step == 14 && st.done) message = st.type == 3 ? "You can\xE2\x80\x99t buy any more today!" : "You already have this!";
+        else if (st.step == 14) message = "You don\xE2\x80\x99t have enough points!";
+    }
+    else if (picking) message = what + "? Certainly. How many would you like?";
     else if (st.step == 8 || st.step == 10 || st.step == 11)
         message = "For " + std::to_string(st.qty) + ", that will be $" + Thousands((uint32_t)(st.qty * st.cost)) + ", please.";
     else if ((st.step == 12 || st.step == 13) && st.qty > 0) message = "Here you are! Thank you! You put away the " + what + " in the Bag.";
     else if (st.step == 13) message = "You don\xE2\x80\x99t have enough room.";
     else if (st.step == 14) message = "You don\xE2\x80\x99t have enough money.";
     else if (st.step == 15) message = "You also get a Premier Ball as an added bonus.";
-    const bool quantity = picking || (st.step >= 8 && st.step <= 13 && st.step != 9 && st.qty > 0) || st.step == 15;
+    const bool quantity = !st.Points() && (picking || (st.step >= 8 && st.step <= 13 && st.step != 9 && st.qty > 0) || st.step == 15);
     const bool below = quantity || st.yesNo >= 0;
     const std::string desc = message.empty() ? tx.Get(HudBag::kItemDesc, item) : message;
     std::vector<std::string> lines = HudWrap(ui, f, 32, desc, cw - 72 - 60);
