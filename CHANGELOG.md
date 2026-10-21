@@ -10,6 +10,8 @@
   rank, your Pokémon and the question before a battle. So is the Battle Castle's screen of
   your Pokémon (before, the single screen hid much of it): their HP and items, your Castle
   Points and ranks, the Heal and Rental menus, and the Berries to rent with their prices.
+  The Battle Factory's swap after a win (your team and theirs, everything about each
+  Pokémon) and choosing which Pokémon to enter in a Frontier challenge are drawn anew too.
 - New screens: Voltorb Flip at the Goldenrod Game Corner is drawn anew on the one screen:
   the board with its cards, your memo marks and the totals along each row and column, the
   level, your coins and those of the game, the memo panel, Quit and the game's messages and

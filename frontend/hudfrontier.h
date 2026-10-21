@@ -211,6 +211,180 @@ inline void DrawFactory(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     DrawHintBar(c, ui, sp, f, hints);
 }
 
+// The Factory's swap after a won battle: choosing one of your three to give (state 6),
+// then one of the last opponent's three to take (state 8), with "Will you accept this
+// Pokemon?".
+struct Swap
+{
+    bool receiving = false;           // choosing the one to take
+    int count = 0, theirCount = 0;
+    PartyMon mine[6], theirs[6];
+    int give = -1;                    // yours being given, once chosen
+    int cursor = 0;                   // 0-2 a Pokemon; giving: 3 Cancel, 4-6 the menu; taking: 4 Back, 5 Cancel, 6-7 the menu
+    bool menu = false;
+    int shown = 0;                    // the Pokemon the card shows
+    int yesNo = -1;
+};
+
+// The grids' tables (GridInputHandler +0) while giving and while taking.
+constexpr uint32_t kGiveGrid = 0x02243668, kTakeGrid = 0x022436A8;
+
+// BattleFactoryApp in exchange mode (+0x0B): your Pokemon +0x3C0, the opponent's +0x3C4,
+// how many chosen +0x11 and which (+0x3C8), the cursor's GridInputHandler +0x464 (the menu
+// is up when its places 4 / 6 take input: bits of +0x10), the yes/no +0x46C (a
+// YesNoPrompt placed at 25, 10 while it is up; its cursor at +0x75).
+inline bool ReadSwap(const Ram& ram, uint32_t& cache, Swap& s)
+{
+    const uint32_t mgr = HudParty::FindApp(ram, cache, kFactoryInit, kFactoryExec, kFactoryExit, [&](uint32_t m) {
+        return ram.Ok(ram.R32(m + 0x1C), 0x48C);
+    });
+    if (!mgr || ram.R32(mgr + 0x10) != 2) return false;
+    const uint32_t d = ram.R32(mgr + 0x1C);
+    const int step = (int)ram.R32(mgr + 0x14);
+    if ((step != 6 && step != 8) || ram.R8(d + 0x09) > 1 || ram.R8(d + 0x0B) != 1 || ram.R8(d + 0x12) != 3) return false;
+    s.receiving = step == 8;
+    if (!HudParty::ReadParty(ram, ram.R32(d + 0x3C0), s.count, s.mine) || !HudParty::ReadParty(ram, ram.R32(d + 0x3C4), s.theirCount, s.theirs) ||
+        s.count != 3 || s.theirCount != 3)
+        return false;
+    const uint32_t grid = ram.R32(d + 0x464);
+    if (!ram.Ptr(grid) || ram.R32(grid) != (s.receiving ? kTakeGrid : kGiveGrid)) return false;
+    s.cursor = (int)ram.R8(grid + 0x0D);
+    const uint32_t on = ram.R32(grid + 0x10);
+    s.menu = s.receiving ? (on >> 6 & 1) != 0 : (on >> 4 & 1) != 0;
+    const int most = s.receiving ? 7 : 6;
+    if (s.cursor > most || (s.receiving && s.cursor == 3) || (!s.menu && s.cursor >= (s.receiving ? 6 : 4))) return false;
+    s.give = -1;
+    if (ram.R8(d + 0x11) == 1)
+    {
+        s.give = (int)ram.R16(d + 0x3C8);
+        if (s.give > 2) return false;
+    }
+    if (s.receiving && s.give < 0) return false;
+    static int last = 0;
+    if (s.cursor < 3) last = s.cursor;
+    s.shown = last;
+    s.yesNo = -1;
+    const uint32_t yn = ram.R32(d + 0x46C);
+    if (s.receiving && ram.Ptr(yn) && ram.R8(yn + 0x70) == 25 && ram.R8(yn + 0x71) == 10)
+    {
+        s.yesNo = (int)ram.R8(yn + 0x75);
+        if (s.yesNo > 1) return false;
+    }
+    return true;
+}
+
+// One Pokemon in full: name, level, types, ability, nature, item and moves.
+inline void MonCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const PartyMon& m, const HudParty::MonIconFn& icon,
+    float cx, float cy, float cw)
+{
+    using namespace HudColour;
+    HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cw / 2 - 90, cy + 26, 180, 180);
+    HudPixelArt(c, ui, icon(m), cx + cw / 2 - 64, cy + 52, 128, 128);
+    const float nw = HudTextWidth(ui, f, 48, m.name, true);
+    HudText(c, ui, f, cx + cw / 2 - 16, cy + 220, 48, m.name, Ink, 1, true);
+    HudParty::Gender(c, ui, cx + cw / 2 - 16 + nw / 2 + 14, cy + 230, m.gender);
+    std::vector<std::pair<std::string, uint32_t>> pills = { { "Lv " + std::to_string(m.level), 0xFF2F3542 } };
+    for (int t = 0; t < 2; t++)
+        if (m.types[t] >= 0 && (t == 0 || m.types[1] != m.types[0])) pills.push_back({ HudParty::TypeName(m.types[t]), HudParty::TypeColour(m.types[t]) });
+    float total = 0;
+    for (auto& p : pills) total += HudTextWidth(ui, f, 32, p.first) + 36 + 12;
+    float px = cx + cw / 2 - (total - 12) / 2;
+    for (auto& p : pills) px += HudParty::Pill(c, ui, f, px, cy + 286, 46, p.first, p.second) + 12;
+    const std::pair<std::string, std::string> rows[3] = { { "Ability", Party_Text(720, m.ability) },
+        { "Nature", Party_Text(34, m.nature) }, { "Item", m.item ? Party_Text(222, m.item) : "None" } };
+    for (int i = 0; i < 3; i++)
+    {
+        const float ry = cy + 352 + 52 * i;
+        HudPanel(c, ui, sp, "panels/row", cx + 36, ry, cw - 72, 44);
+        HudText(c, ui, f, cx + 56, ry + 6, 32, rows[i].first, Muted);
+        HudText(c, ui, f, cx + cw - 56, ry + 6, 32, rows[i].second, Ink, 2);
+    }
+    const float mw = (cw - 72 - 16) / 2;
+    for (int k = 0; k < 4; k++)
+    {
+        const float mx = cx + 36 + (k % 2) * (mw + 16), my = cy + 518 + (k / 2) * 74;
+        if (!m.moves[k])
+        {
+            HudParty::FillRound(c, ui, mx, my, mw, 62, 31, 0xFFE9EDF2);
+            continue;
+        }
+        HudParty::FillRound(c, ui, mx, my, mw, 62, 31, HudParty::TypeColour(m.moveType[k]));
+        HudText(c, ui, f, mx + 26, my + 15, 32, Party_Text(750, m.moves[k]), White);
+        HudText(c, ui, f, mx + mw - 24, my + 15, 32, std::to_string(m.ppMax[k]), White, 2);
+    }
+}
+
+inline void DrawSwap(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Swap& s, const HudParty::MonIconFn& icon,
+    const std::vector<HudHint>& hints)
+{
+    using namespace HudColour;
+    DrawBackdrop(c, sp, "backgrounds/bg_aqua", 0xFFFFFFFF);
+    const float wd = ui.W / ui.s, x0 = wd / 2 - 960;
+    HudText(c, ui, f, x0 + 60, 56, 48, "BATTLE FACTORY", Ink, 0, true);
+    const std::string what = "Swap a Pok\xC3\xA9mon";
+    const float lw = HudTextWidth(ui, f, 32, what, true) + 60;
+    HudPanel(c, ui, sp, "panels/button_white", x0 + 1860 - lw, 54, lw, 56);
+    HudText(c, ui, f, x0 + 1860 - lw / 2, 66, 32, what, Ink, 1, true);
+
+    // Your team, then the opponent's: the row being chosen from is the bright one.
+    const float fx = x0 + 60, fy = 140, fw = 960, fh = 850;
+    HudPanel(c, ui, sp, "panels/frame_yellow", fx, fy, fw, fh);
+    for (int row = 0; row < 2; row++)
+    {
+        const bool active = row == (s.receiving ? 1 : 0);
+        const float ry = fy + 40 + row * 330;
+        HudText(c, ui, f, fx + 50, ry, 32, row ? "Their team" : "Your team", Muted);
+        for (int k = 0; k < 3; k++)
+        {
+            const PartyMon& m = row ? s.theirs[k] : s.mine[k];
+            const float tw = (fw - 100 - 40) / 3, tx = fx + 50 + k * (tw + 20), ty = ry + 50;
+            const bool here = active && (s.cursor == k || (s.menu && s.shown == k));
+            const bool given = row == 0 && s.give == k;
+            HudPanel(c, ui, sp, here ? "panels/row_selected" : active || given ? "panels/row" : "panels/row_disabled", tx, ty, tw, 220,
+                active || given ? 0xFFFFFFFF : 0xA0FFFFFF);
+            if (here) HudSprite(c, ui, sp, "cursor/cursor_small", tx + 8, ty + 20, 30, 32);
+            HudPixelArt(c, ui, icon(m), tx + tw / 2 - 64, ty + 10, 128, 128);
+            HudText(c, ui, f, tx + tw / 2, ty + 140, 32, m.name, Ink, 1);
+            HudText(c, ui, f, tx + tw / 2, ty + 180, 32, "Lv " + std::to_string(m.level), Muted, 1);
+            if (given) HudParty::Pill(c, ui, f, tx + 10, ty + 10, 40, "Giving", 0xFFF08A24);
+        }
+    }
+    // The buttons under the rows: Cancel while giving; Back and Cancel while taking.
+    const std::vector<std::pair<std::string, int>> under = s.receiving ? std::vector<std::pair<std::string, int>>{ { "Back", 4 }, { "Cancel", 5 } }
+                                                                       : std::vector<std::pair<std::string, int>>{ { "Cancel", 3 } };
+    for (size_t k = 0; k < under.size(); k++)
+    {
+        const bool on = !s.menu && s.cursor == under[k].second;
+        const float bx = fx + fw - 50 - 260 - (under.size() - 1 - k) * 280, by = fy + fh - 110;
+        HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", bx, by, 260, 60);
+        if (on) HudSprite(c, ui, sp, "cursor/cursor_small", bx + 10, by + 14, 30, 32);
+        HudText(c, ui, f, bx + 130, by + 14, 32, under[k].first, Ink, 1);
+    }
+
+    // The card: the Pokemon under the cursor, the game's words and its buttons.
+    const float cx = x0 + 1080, cw = 780, cy = 140, ch = 850;
+    HudPanel(c, ui, sp, "panels/card", cx, cy, cw, ch);
+    MonCard(c, ui, sp, f, s.receiving ? s.theirs[s.shown] : s.mine[s.shown], icon, cx, cy, cw);
+    std::string msg = s.receiving ? "Choose the Pok\xC3\xA9mon you want to receive." : "Choose the Pok\xC3\xA9mon to be exchanged.";
+    std::vector<std::string> buttons;
+    int sel = -1;
+    if (s.yesNo >= 0) msg = "Will you accept this Pok\xC3\xA9mon?", buttons = { "Yes", "No" }, sel = s.yesNo;
+    else if (s.menu && s.receiving) buttons = { "Receive", "Close" }, sel = s.cursor - 6;
+    else if (s.menu) buttons = { "Summary", "Exchange", "Close" }, sel = s.cursor - 4;
+    const float by = cy + ch - 36 - 60, my0 = buttons.empty() ? by - 4 : by - 16 - 64;
+    HudPanel(c, ui, sp, "panels/dialogue_box", cx + 36, my0, cw - 72, 64);
+    HudText(c, ui, f, cx + 66, my0 + 16, 32, msg, Ink);
+    for (size_t k = 0; k < buttons.size(); k++)
+    {
+        const float bw = (cw - 72 - 16 * (buttons.size() - 1)) / buttons.size(), bx = cx + 36 + k * (bw + 16);
+        const bool on = (int)k == sel;
+        HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", bx, by, bw, 60);
+        if (on) HudSprite(c, ui, sp, "cursor/cursor_small", bx + 12, by + 14, 30, 32);
+        HudText(c, ui, f, bx + bw / 2, by + 14, 32, buttons[k], Ink, 1);
+    }
+    DrawHintBar(c, ui, sp, f, hints);
+}
+
 // The Battle Castle's screen of your own Pokemon (overlay 83, Platinum's
 // BattleCastleSelfApp): your Pokemon with their HP and items, your Castle Points and
 // ranks, the game's message and its menus (Heal / Rental / Cancel and those under them).
@@ -468,6 +642,121 @@ inline void DrawCastle(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
         HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", x, y, 320, 56);
         if (on) HudSprite(c, ui, sp, "cursor/cursor_small", x + 12, y + 12, 30, 32);
         HudText(c, ui, f, x + 160, y + 12, 32, menu[k], Ink, 1);
+    }
+    DrawHintBar(c, ui, sp, f, hints);
+}
+
+// Choosing the Pokemon to enter in a Frontier challenge: the party menu (PartyMenu) in its
+// Frontier context (23), with each Pokemon's place in the order, Confirm and Cancel.
+struct Entry
+{
+    int count = 0;
+    PartyMon mons[6];
+    int order[6] = {};             // each Pokemon's place (1-3), 0 not entered
+    int most = 3, entered = 0;
+    int cursor = 0;                // 0-5 a Pokemon, 6 Confirm, 7 Cancel
+    std::vector<std::string> menu; // Enter / No Entry / Summary, when up
+    int sel = 0;
+};
+
+// PartyMenu (include/party_menu.h): its arguments (+0x654 of its data, as the manager's)
+// hold the party +0, the context +0x24, the order chosen +0x30 (a slot + 1 for each place)
+// and the most to enter +0x36 (high four bits); the cursor +0xC65 and the menu's cursor
+// +0x824 (HudParty::ReadPartyScreen). Drawn while choosing (step 1) and in the menu (2).
+inline bool ReadEntry(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, uint32_t exit, Entry& s)
+{
+    const uint32_t mgr = HudParty::FindApp(ram, cache, init, exec, exit, [&](uint32_t m) {
+        const uint32_t pm = ram.R32(m + 0x1C);
+        return ram.Ok(pm, 0xCA8) && ram.R32(pm + 0x654) == ram.R32(m + 0x18);
+    });
+    if (!mgr || ram.R32(mgr + 0x10) != 2) return false;
+    const int step = (int)ram.R32(mgr + 0x14);
+    const uint32_t pm = ram.R32(mgr + 0x1C), args = ram.R32(mgr + 0x18);
+    if ((step != 1 && step != 2) || ram.R8(args + 0x24) != 23) return false;
+    if (!HudParty::ReadParty(ram, ram.R32(args), s.count, s.mons)) return false;
+    s.most = (int)(ram.R8(args + 0x36) >> 4);
+    if (s.most < 1 || s.most > 6) return false;
+    s.entered = 0;
+    for (int i = 0; i < 6; i++) s.order[i] = 0;
+    for (int k = 0; k < s.most; k++)
+    {
+        const int slot = (int)ram.R8(args + 0x30 + k);
+        if (!slot) break;
+        if (slot > s.count || s.order[slot - 1]) return false;
+        s.order[slot - 1] = k + 1;
+        s.entered++;
+    }
+    s.cursor = (int)ram.R8(pm + 0xC65);
+    if (s.cursor > 7 || (s.cursor < 6 && s.cursor >= s.count)) return false;
+    s.menu.clear();
+    if (step == 2)
+    {
+        const uint32_t cur = ram.R32(pm + 0x824), list = ram.Ptr(cur) ? ram.R32(cur + 4) : 0;
+        const int n = (int)ram.R8(cur + 2);
+        s.sel = (int)ram.R8(cur + 1);
+        if (!ram.Ptr(list) || n < 1 || n > 6 || s.sel >= n || s.cursor >= 6) return false;
+        for (int i = 0; i < n; i++)
+        {
+            std::string t;
+            if (!HudParty::ReadString(ram, ram.R32(list + 8 * i), t)) return false;
+            s.menu.push_back(MenuCase(t));
+        }
+    }
+    return true;
+}
+
+inline void DrawEntry(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Entry& s, const HudParty::MonIconFn& icon,
+    const std::vector<HudHint>& hints)
+{
+    using namespace HudColour;
+    using HudParty::FillRound;
+    DrawBackdrop(c, sp, "backgrounds/bg_aqua", 0xFFFFFFFF);
+    const float wd = ui.W / ui.s, x0 = wd / 2 - 960;
+    HudText(c, ui, f, x0 + 60, 56, 48, "ENTER POK\xC3\xA9MON", Ink, 0, true);
+    static const char* places[6] = { "First", "Second", "Third", "Fourth", "Fifth", "Sixth" };
+
+    // The party, two columns of three, each with its place in the order.
+    const float cw = 560, ch = 220;
+    for (int i = 0; i < 6; i++)
+    {
+        const float x = x0 + 60 + (i % 2) * (cw + 20), y = 140 + (i / 2) * (ch + 20);
+        if (i >= s.count)
+        {
+            HudSprite(c, ui, sp, "panels/slot_grid_empty", x, y, cw, ch);
+            continue;
+        }
+        const PartyMon& m = s.mons[i];
+        const bool here = s.cursor == i;
+        HudPanel(c, ui, sp, here ? "panels/party_card_selected" : "panels/card", x, y, cw, ch);
+        HudSprite(c, ui, sp, here ? "people/chip_ring_orange" : "people/chip_ring_green", x + 26, y + 35, 150, 150);
+        HudPixelArt(c, ui, icon(m), x + 37, y + 46, 128, 128);
+        HudText(c, ui, f, x + 196, y + 36, 48, m.egg ? "Egg" : m.name, Ink);
+        HudText(c, ui, f, x + 196, y + 108, 32, "Lv " + std::to_string(m.level), Muted);
+        if (m.item)
+        {
+            HudSprite(c, ui, sp, "icons/icon_bag", x + 300, y + 104, 36, 36);
+            HudText(c, ui, f, x + 344, y + 108, 32, Party_Text(222, m.item), Muted);
+        }
+        if (s.order[i]) HudParty::Pill(c, ui, f, x + 196, y + 154, 46, places[s.order[i] - 1], 0xFFF08A24);
+        else HudText(c, ui, f, x + 196, y + 160, 32, "Not entered", Muted);
+    }
+
+    // The card on the right: what to do, how many are in, the menu or Confirm and Cancel.
+    const float rx = x0 + 60 + 2 * cw + 60, rw = x0 + 1860 - rx;
+    HudPanel(c, ui, sp, "panels/card", rx, 140, rw, 700);
+    FillRound(c, ui, rx + 22, 162, rw - 44, 48, 16, 0xFF2EC4C6);
+    HudText(c, ui, f, rx + 42, 170, 32, "Entered " + std::to_string(s.entered) + " / " + std::to_string(s.most), White);
+    const std::string say = s.menu.empty() ? "Choose Pok\xC3\xA9mon and confirm." : "Do what with " + s.mons[s.cursor].name + "?";
+    std::vector<std::string> lines = HudWrap(ui, f, 32, say, rw - 100);
+    for (size_t i = 0; i < lines.size() && i < 3; i++) HudText(c, ui, f, rx + 42, 240 + 50.0f * i, 32, lines[i], Ink);
+    const std::vector<std::string> buttons = s.menu.empty() ? std::vector<std::string>{ "Confirm", "Cancel" } : s.menu;
+    for (size_t k = 0; k < buttons.size(); k++)
+    {
+        const bool on = s.menu.empty() ? s.cursor == 6 + (int)k : (int)k == s.sel;
+        const float by = 840 - 30 - 62.0f * (buttons.size() - k);
+        HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", rx + 22, by, rw - 44, 50);
+        if (on) HudSprite(c, ui, sp, "cursor/cursor", rx + 34, by + 5, 36, 40);
+        HudText(c, ui, f, rx + rw / 2, by + 9, 32, buttons[k], Ink, 1);
     }
     DrawHintBar(c, ui, sp, f, hints);
 }
