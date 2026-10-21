@@ -57,6 +57,7 @@
 #include "hudbattleui.h"
 #include "hudbattlebag.h"
 #include "hudbattleparty.h"
+#include "hudbattledex.h"
 #include "hudbag.h"
 #include "hudparty.h"
 #include "hudtrade.h"
@@ -5937,6 +5938,20 @@ int main(int argc, char** argv)
                 battlePartyReader.vram.read8 = nullptr;
             }
             v.read8 = nullptr;
+        }
+        // The Pokédex page after a catch redrawn (hudbattledex.h): the wild Pokémon in battle.
+        if (spritesOk && cfg.redrawn && merged && hudFree && (!strcmp(scene.name, "top") || !strcmp(scene.name, "battle")))
+        {
+            const HudBattleUi::Mem mem{ nds->MainRAM, nds->MainRAMMask };
+            const uint32_t bs = HudBattleUi::Battle(mem);
+            const int species = bs ? (int)mem.r16(mem.r32(bs + 0x30) + 0x2D40 + 0xC0) : 0;
+            float bright = 1;
+            if (species >= 1 && species <= 493 && HudBattleDex::Shown(nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(), bright))
+            {
+                const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B);
+                HudBattleDex::Draw(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), species, bright, { { { accept }, "Next" } });
+                overlayUsed = true;
+            }
         }
         // The overworld's message box redrawn (hudworld.h), with a script's yes/no question,
         // while the single-screen view shows the overworld and nothing but the box is on the
