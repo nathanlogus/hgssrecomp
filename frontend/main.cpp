@@ -5278,6 +5278,8 @@ int main(int argc, char** argv)
                             inviteMenu.items = { yes, no };
                             inviteMenu.selected = 0;
                             screen = SCR_INVITE;
+                            // Test aid: SSR_ACCEPT_INVITE=1 says yes at once (headless online tests).
+                            if (getenv("SSR_ACCEPT_INVITE")) answerInvite(true), screen = SCR_NONE;
                         }
                         continue;
                     }
@@ -5956,7 +5958,10 @@ int main(int argc, char** argv)
             const bool may = spritesOk && cfg.redrawn && merged && hudFree && fieldView;
             // A sign slides in and out: drawn as low as the game's is. It slides away with its
             // last page (the game lets go of it first): that page, while it is on the screen.
-            const int top = may ? HudWorld::BoxTop(screenImages[0].flags) : -1;
+            // A question's answers (a list of the game's beside the box is allowed on BG3 then).
+            HudWorld::Choice choice;
+            const bool asked = may && HudWorld::ReadChoice(ram, choice);
+            const int top = may ? HudWorld::BoxTop(screenImages[0].flags, choice.window) : -1;
             int slide = std::max(0, top - HudWorld::kBoxY - 1);
             HudWorld::Dialogue dlg;
             bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
@@ -5997,8 +6002,7 @@ int main(int argc, char** argv)
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
             if (shown)
             {
-                HudWorld::Choice choice;
-                if (HudWorld::ReadChoice(ram, choice)) scene.items.resize(1);
+                if (asked) scene.items.resize(1);
                 const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
                 HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
                     HudWorld::kBoxH * u - 6, frame, &choice);
