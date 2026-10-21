@@ -6113,21 +6113,6 @@ int main(int argc, char** argv)
                     el.sy + el.sh >= HudWorld::kBoxY + HudWorld::kBoxH)
                     item = i;
             }
-            static const bool eventDebug = getenv("SSR_EVENTS_DEBUG");
-            if (eventDebug && frame % 30 == 0)
-                fprintf(stderr, "[events] %u read %d bg %d top %d item %d/%zu scene %s task %08X codes %zu win %08X lines %zu yesNo %d %s/%s\n", frame,
-                    read, box.bg, top, item, scene.items.size(), scene.name, evoTask, eventMsg.codes.size(), eventMsg.win, box.d.lines.size(),
-                    box.yesNo, box.answers[0].c_str(), box.answers[1].c_str());
-            if (eventDebug && frame % 30 == 0)
-            {
-                const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
-                HudWorld::Dialogue wd;
-                const uint32_t fs = ram.R32(HudWorld::kFieldSystem), env = fs ? HudWorld::ScriptEnv(ram, fs) : 0, s = env ? ram.R32(env + 0x48) : 0;
-                fprintf(stderr, "[events] world %d boxtop %d open %u env %08X:", HudWorld::ReadDialogue(ram, wd), HudWorld::BoxTop(screenImages[0].flags),
-                    fs ? ram.R32(fs + 0xD0) >> 16 & 0x40 : 9, env);
-                for (uint32_t i = 0; s && i < 14; i++) fprintf(stderr, " %04X", ram.R16(s + 8 + 2 * i));
-                fprintf(stderr, "\n");
-            }
             // The view while the box's screen fills it alone, kept for the questions: their
             // buttons are on the other screen, which the view would bring in beside it.
             static Element eventFull;

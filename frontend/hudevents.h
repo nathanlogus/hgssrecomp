@@ -60,7 +60,7 @@ struct Message
     bool Read(const Ram& r, uint32_t window, HudWorld::Dialogue& d, uint32_t str = 0)
     {
         if (!BoxWindow(r, window)) return false;
-        if (window != win) codes.clear(), sum = 0, win = window;
+        if (window != win) codes.clear(), sum = 0, win = window, last = {};
         for (uint32_t num = 0; num < 8; num++)
         {
             const uint32_t task = r.R32(HudWorld::kPrinterTasks + 4 * num), p = task ? r.R32(task + 0x10) : 0;
@@ -94,7 +94,9 @@ struct Message
         return true;
     }
 
-    bool Show(const Ram& r, size_t done, int state, HudWorld::Dialogue& d) const
+    HudWorld::Dialogue last;     // the last page with text
+
+    bool Show(const Ram& r, size_t done, int state, HudWorld::Dialogue& d)
     {
         if (!HudWorld::Page(codes, done, state, d)) return false;
         d.sign = -1;
@@ -105,6 +107,12 @@ struct Message
                 const bool text = l < (int)d.lines.size() && d.lines[l].find_first_not_of(' ') != std::string::npos;
                 if (text != HudWorld::LineInk(r, r.R32(win + 0x0C), 27, l)) return false;
             }
+        // A message that ends waiting for a button clears its window once pressed, but the
+        // screen keeps its last page until the scene moves on (the window is not copied again).
+        bool blank = true;
+        for (const std::string& l : d.lines) blank &= l.find_first_not_of(' ') == std::string::npos;
+        if (!blank) last = d;
+        else if (done + 1 >= codes.size() && !last.lines.empty()) d = last, d.more = false;
         return true;
     }
 };
