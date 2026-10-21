@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New screens: the Berry Pots are drawn anew (the four pots with their Berries, how wet
+  the soil is and the mulch, and the menus), as is the bag when choosing a Berry or mulch
+  for a pot.
+
 - New screens: choosing your rental Pokémon at the Battle Frontier's Battle Factory. All
   six Pokémon on offer are shown at once, with everything about the one you are on (types,
   ability, nature, held item and moves), the team you have picked so far, the Summary,
