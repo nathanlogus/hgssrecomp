@@ -8,7 +8,7 @@
 
 namespace HudDexInfo
 {
-enum { Area = 1, Size = 2, Forms = 3, Back = 4 };
+enum { Area = 1, Size = 2, Forms = 3, Back = 4, Compare = 5 };
 
 struct View
 {
@@ -32,6 +32,8 @@ struct View
     // chosen.
     std::vector<int> forms;
     int form = 0;
+    // Comparing two forms: the right one (the left is `form`), and the side being changed.
+    int other = 0, side = 0;
 };
 
 // The maps of the area page's places (sOverworldMapIDs and sDungeonMapIDs, overlay 18).
@@ -54,6 +56,8 @@ inline int PageOf(int seq, int sub)
     case 77: return Size;
     case 80: case 82: case 83: case 84: case 85: return Forms;
     case 90: return Back;
+    case 87: return Compare;
+    case 86: case 88: return -1;
     case 68: return sub == 1 ? Area : -1;
     case 76: return sub == 1 ? Size : -1;
     case 79: return sub == 1 ? Forms : -1;
@@ -106,7 +110,10 @@ inline int Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint32
         v.forms.push_back(f);
     }
     v.form = (int)ram.R8(d + 0x18C5);
-    if (v.page == Forms && v.form >= nForms) return 0;
+    if ((v.page == Forms || v.page == Compare) && v.form >= nForms) return 0;
+    v.other = (int)ram.R8(d + 0x18C6);
+    v.side = (int)ram.R8(d + 0x18C7) & 0x1F;
+    if (v.page == Compare && (v.other >= nForms || v.side > 1)) return 0;
 
     if (v.page == Area)
     {
@@ -204,13 +211,13 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     HudSprite(c, ui, sp, "people/chip_ring_red", x0 + 60, 40, 96, 96);
     HudSprite(c, ui, sp, "icons/icon_dex", x0 + 84, 64, 48, 48);
     HudText(c, ui, f, x0 + 176, 64, 48, "POK\xC3\xA9" "DEX", Ink, 0, true);
-    Tabs(c, ui, sp, f, x0 + 1860 - 4 * 216 + 16, 62, v.page);
+    Tabs(c, ui, sp, f, x0 + 1860 - 4 * 216 + 16, 62, v.page == Compare ? Forms : v.page);
 
     // The Pokemon: as much as the game tells of it.
     const float lx = x0 + 60, ly = 160, lw = 480, lh = 820;
     HudPanel(c, ui, sp, "panels/card", lx, ly, lw, lh);
     HudSprite(c, ui, sp, "people/chip_ring_green", lx + lw / 2 - 150, ly + 40, 300, 300);
-    const int iconForm = v.page == Forms && (v.forms[v.form] & 0x80) ? v.forms[v.form] & 0x7F : 0;
+    const int iconForm = (v.page == Forms || v.page == Compare) && (v.forms[v.form] & 0x80) ? v.forms[v.form] & 0x7F : 0;
     if (const Image* ic = art.PokemonIcon(v.species, iconForm))
         Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(lx + lw / 2 - 116), ui(ly + 74), ui(232), ui(232), false,
             v.caught ? 0xFFFFFFFF : 0xB0FFFFFF);
@@ -256,18 +263,26 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         int x1 = 99, y1 = 99, x2 = 0, y2 = 0;
         for (const View::Cell& k : v.cells)
             x1 = std::min(x1, k.x), y1 = std::min(y1, k.y), x2 = std::max(x2, k.x + 1), y2 = std::max(y2, k.y + 1);
-        if (x2 > x1 && y2 > y1)
+        // The region's picture: the Pokégear's map, all of it known, whose cells these are
+        // without its 2 rows on top (as the fly points').
+        const Image* map = art.RegionMap(63, {});
+        if (map || (x2 > x1 && y2 > y1))
         {
-            const float cell = std::min((aw - 60) / (x2 - x1), (ah - 60) / (y2 - y1));
-            const float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
-            for (int pass = 0; pass < 2; pass++)
+            float cell = std::min((aw - 60) / (x2 - x1), (ah - 60) / (y2 - y1));
+            float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
+            if (map)
+            {
+                HudRegionMap(c, ui, *map, v.region ? 22 : 0, v.region ? 47 : 26, ax, ay, aw, ah, cell, ox, oy);
+                oy += 2 * cell;
+            }
+            for (int pass = map ? 1 : 0; pass < 2; pass++)
                 for (const View::Cell& k : v.cells)
                 {
                     const bool on = k.place && (v.cursor == 0 || v.cursor == k.place);
                     if (on != (pass == 1)) continue;
                     const float g = cell * 0.08f;
                     HudParty::FillRound(c, ui, ox + k.x * cell + g, oy + k.y * cell + g, cell - 2 * g, cell - 2 * g, cell * 0.2f,
-                        on ? 0xFFF08030 : 0xFFF2DCA0);
+                        on ? (map ? 0xC8F08030 : 0xFFF08030) : 0xFFF2DCA0);
                 }
         }
         if (v.places.empty())
@@ -352,6 +367,22 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         }
         if (first > 0) HudSprite(c, ui, sp, "icons/icon_arrow_up", rx + rw - 64, py + 76, 32, 32);
         if (first + rows < n) HudSprite(c, ui, sp, "icons/icon_arrow_down", rx + rw - 64, py + ph - 44, 32, 32);
+    }
+    else if (v.page == Compare)
+    {
+        // Two forms side by side; with three or more, the side being changed is marked.
+        const float cw = (pw - 30) / 2;
+        for (int k = 0; k < 2; k++)
+        {
+            const int i = k ? v.other : v.form;
+            const float cx = px + k * (cw + 30);
+            HudOnline::TitledCard(c, ui, sp, f, cx, py, cw, ph, k ? "RIGHT" : "LEFT", FormName(v.species, v.forms[i]));
+            if (v.forms.size() >= 3 && k == v.side) HudPanel(c, ui, sp, "panels/frame_yellow", cx + 20, py + 90, cw - 40, ph - 110);
+            HudSprite(c, ui, sp, "people/chip_ring_green", cx + cw / 2 - 220, py + 160, 440, 440);
+            if (const Image* ic = art.PokemonIcon(v.species, v.forms[i] & 0x80 ? v.forms[i] & 0x7F : 0))
+                Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(cx + cw / 2 - 170), ui(py + 210), ui(340), ui(340));
+            HudText(c, ui, f, cx + cw / 2, py + 660, 48, FormName(v.species, v.forms[i]), Ink, 1, true);
+        }
     }
     else
     {

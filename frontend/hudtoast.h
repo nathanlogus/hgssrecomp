@@ -14,7 +14,8 @@ struct Toast
     uint32_t nameColour = 0xFF3B3F4A;
     std::string chip;             // a player's initials in a chip ring of `chipRing` ("people/chip_ring_green")
     std::string chipRing;
-    std::string lead, trail;      // sprites before the text (instead of a chip) and after it
+    Image face;                   // their face (FaceCrop) in the ring instead of the initials, if any
+    std::string lead, trail;     // sprites before the text (instead of a chip) and after it
     Image trailArt;               // or a picture from the ROM after it (a Pokemon's icon)
     bool dashed = false;          // reconnecting: a grey pill
     bool waits = false;           // held back while the player is busy (see ToastStack::Update)
@@ -85,7 +86,8 @@ private:
         if (!t.chip.empty())
         {
             HudSprite(c, ui, sp, t.chipRing, cx, y + 6, 52, 52, tint);
-            HudText(c, ui, f, cx + 26, y + 6 + 10, 32, t.chip, Fade(HudColour::Ink, tint), 1);
+            if (!t.face.px.empty()) DrawRingFace(c, t.face, ui(cx), ui(y + 6), ui(52), tint);
+            else HudText(c, ui, f, cx + 26, y + 6 + 10, 32, t.chip, Fade(HudColour::Ink, tint), 1);
             cx += 52 + 12;
         }
         else if (!t.lead.empty())

@@ -207,6 +207,66 @@ public:
         return img.px.empty() ? nullptr : &img;
     }
 
+    // A piece of the Pokégear map's screen of pieces copied over the map, as the game's
+    // CopyToBgTilemapRect does: where it goes (dx, dy), its size and where it is in the
+    // screen (sx, sy), in tiles.
+    struct MapPiece
+    {
+        int dx, dy, w, h, sx, sy;
+    };
+
+    // The region map of the Pokégear, the Town Map and flying (a/1/4/4,
+    // application/pokegear/map/pgmap_gra), as the game builds its BG layer: the first 47 x 20
+    // tiles of the screen of pieces (member 11, 64 x 64 tiles of member 10's, 8 bits a
+    // pixel), with `pieces` copied over them, in the colours of palette member `pal`.
+    // 376 x 160 pixels: a tile is a cell of the map (PokegearMapLocationSpec's x and y).
+    const Image* RegionMap(int pal, const std::vector<MapPiece>& pieces)
+    {
+        std::vector<int> key{ pal };
+        for (const MapPiece& p : pieces) key.insert(key.end(), { p.dx, p.dy, p.w, p.h, p.sx, p.sy });
+        auto it = mapCache.find(key);
+        if (it != mapCache.end()) return it->second.px.empty() ? nullptr : &it->second;
+        Image& img = mapCache[key];
+        const auto files = NdsNarcFiles(Rom, RomSize, "a/1/4/4");
+        if ((int)files.size() <= std::max(pal, 11)) return nullptr;
+        const uint8_t *g = Rom + files[10].first, *s = Rom + files[11].first;
+        const uint32_t gn = files[10].second, sn = files[11].second;
+        const std::vector<uint32_t> colours = NdsPalette(Rom + files[pal].first, files[pal].second);
+        // The tiles (RAHC: 8 bits a pixel is depth 4) and the screen (NRCS: its size in pixels).
+        if (gn < 0x30 || sn < 0x24 || memcmp(g + 0x10, "RAHC", 4) || memcmp(s + 0x10, "NRCS", 4) || RomGet32(g + 0x1C) != 4 || colours.empty())
+            return nullptr;
+        const uint8_t* tiles = g + 0x18 + RomGet32(g + 0x2C);
+        const uint32_t nTiles = std::min(RomGet32(g + 0x28), gn - (uint32_t)(tiles - g)) / 64;
+        const int sw = RomGet16(s + 0x18) / 8, sh = RomGet16(s + 0x1A) / 8;
+        if ((uint32_t)(0x24 + 2 * sw * sh) > sn) return nullptr;
+        auto scr = [&](int x, int y) { return (uint16_t)RomGet16(s + 0x24 + 2 * (y * sw + x)); };
+        constexpr int W = 47, H = 20;
+        std::vector<uint16_t> map(W * H);
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++) map[y * W + x] = scr(x, y);
+        for (const MapPiece& p : pieces)
+            for (int y = 0; y < p.h; y++)
+                for (int x = 0; x < p.w; x++)
+                    if (p.dx + x >= 0 && p.dx + x < W && p.dy + y >= 0 && p.dy + y < H && p.sx + x < sw && p.sy + y < sh)
+                        map[(p.dy + y) * W + p.dx + x] = scr(p.sx + x, p.sy + y);
+        img.w = 8 * W;
+        img.h = 8 * H;
+        img.px.assign((size_t)img.w * img.h, colours[0]);
+        for (int i = 0; i < W * H; i++)
+        {
+            const uint16_t e = map[i];
+            if ((e & 0x3FF) >= nTiles) continue;
+            const uint8_t* t = tiles + 64 * (e & 0x3FF);
+            for (int y = 0; y < 8; y++)
+                for (int x = 0; x < 8; x++)
+                {
+                    const uint8_t v = t[(e & 0x800 ? 7 - y : y) * 8 + (e & 0x400 ? 7 - x : x)];
+                    if (v < colours.size()) img.px[(size_t)((i / W) * 8 + y) * img.w + (i % W) * 8 + x] = colours[v];
+                }
+        }
+        return &img;
+    }
+
     // An item's price (the first field of its data in a/0/1/7), or -1 if unknown.
     int ItemPrice(int item) const
     {
@@ -249,7 +309,25 @@ private:
     const uint8_t* palTable = nullptr;
     std::vector<uint8_t> ownTable; // the table, when read from the ROM
     std::map<int, Image> cache;
+    std::map<std::vector<int>, Image> mapCache; // region maps by palette and pieces
 };
+
+// Draws the columns x1 to x2 (map cells, a tile each) of a region map (RomArt::RegionMap) as
+// large as fits in the design rectangle (ax, ay, aw, ah), centred, at a whole number of
+// screen pixels a map pixel so it stays crisp. Gives a cell's design size and where cell
+// (0, 0) is, for the markers on top.
+inline void HudRegionMap(Canvas& c, const Ui& ui, const Image& img, int x1, int x2, float ax, float ay, float aw, float ah, float& cell,
+    float& ox, float& oy)
+{
+    const int w = 8 * (x2 - x1), h = img.h;
+    float k = std::min(ui(aw) / w, ui(ah) / h);
+    if (k >= 1) k = std::floor(k);
+    const float px = std::round(ui(ax) + (ui(aw) - k * w) / 2), py = std::round(ui(ay) + (ui(ah) - k * h) / 2);
+    Blit(c, img, 8.0f * x1, 0, (float)w, (float)h, px, py, k * w, k * h, false);
+    cell = 8 * k / ui.s;
+    ox = (px - 8 * k * x1) / ui.s;
+    oy = py / ui.s;
+}
 
 // Draws a picture from the ROM (pixel art: nearest pixel) into the design rectangle.
 inline void HudPixelArt(Canvas& c, const Ui& ui, const Image* img, float x, float y, float w, float h)

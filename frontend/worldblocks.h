@@ -47,6 +47,8 @@ public:
         Sprites = NarcMembers("a/0/8/1");
         ZoneObjects.clear();
         SpriteTex.clear();
+        LooksMade = false;
+        LookList.clear();
         melonDS::Wide.ExternalTextures.clear();
         PlazaLoaded = false;
         PlazaModels.clear();
@@ -239,22 +241,46 @@ public:
         return TextureImage(GetSpriteTexture(sprite, facing & 3, frame & 3), out);
     }
 
-    // The same from the ROM alone (before the game runs): the sprite whose textures are
-    // named `stem` (".1" to ".16"): "hero" is the boy, "heroine" the girl.
-    bool RomSpriteImage(const std::string& stem, int facing, Image& out)
+    // The archive member of the sprite whose textures are named `stem` (".1" to ".16"), or
+    // -1: "hero" is the boy, "heroine" the girl.
+    int MemberByStem(const std::string& stem) const
     {
         for (uint32_t m = 0; m < Sprites.size(); m++)
-        {
-            const uint8_t* b = Rom + Sprites[m].first;
-            const uint32_t size = Sprites[m].second;
-            if (size < 0x40 || memcmp(b, "BTX0", 4) != 0 || Get32(b + 0x10) + 0x3C > size) continue;
-            const uint8_t* t = b + Get32(b + 0x10);
-            const auto names = Dict(t + Get16(t + 0x0E));
-            if (!names.empty() && names[0].first.rfind(stem + ".", 0) == 0 && names[0].first.find('.') == stem.size())
-                return TextureImage(MemberTexture(m, facing & 3, 0), out);
-        }
-        return false;
+            if (MemberStem(m) == stem) return (int)m;
+        return -1;
     }
+
+    // A frame of an archive member (a look, see Looks()) as a picture, from the ROM alone
+    // (before the game runs too).
+    bool MemberImage(int member, int facing, int frame, Image& out)
+    {
+        return member >= 0 && TextureImage(MemberTexture((uint32_t)member, facing & 3, frame & 3), out);
+    }
+
+    // The looks a player can choose (members of the overworld sprite archive): the people
+    // who walk in all four ways, i.e. with textures ".1" to ".16", 32 x 32, whose step
+    // frames differ from the standing ones (so no one-pose people, objects or the 8-frame
+    // Pokemon). The boy and the girl first, each look once.
+    const std::vector<int>& Looks()
+    {
+        if (LooksMade) return LookList;
+        LooksMade = true;
+        std::vector<std::string> stems = { "hero", "heroine" };
+        for (const std::string& first : stems)
+        {
+            const int m = MemberByStem(first);
+            if (m >= 0 && Walks((uint32_t)m)) LookList.push_back(m);
+        }
+        for (uint32_t m = 0; m < Sprites.size(); m++)
+        {
+            const std::string stem = MemberStem(m);
+            if (stem.empty() || std::find(stems.begin(), stems.end(), stem) != stems.end() || !Walks(m)) continue;
+            LookList.push_back((int)m);
+            stems.push_back(stem);
+        }
+        return LookList;
+    }
+    bool IsLook(int member) { return member >= 0 && std::count(Looks().begin(), Looks().end(), member) > 0; }
 
     // An external texture as a picture.
     static bool TextureImage(int tex, Image& out)
@@ -278,6 +304,7 @@ public:
     {
         int sprite, facing, frame; // the game's sprite id; 0 north, 1 south, 2 west, 3 east; 0-3 of the walk
         int32_t x, y, z;           // world position (fx32), as the game's map objects keep it
+        int member = -1;           // a look (Looks()) drawn instead of the sprite id, or -1
     };
     void EmitTrainers(melonDS::NDS& nds, const std::vector<Trainer>& trainers, std::vector<uint32_t>& out)
     {
@@ -290,7 +317,8 @@ public:
         int drawn = 0;
         for (const Trainer& t : trainers)
         {
-            const int tex = GetSpriteTexture((uint16_t)t.sprite, t.facing & 3, t.frame & 3);
+            const int tex = t.member >= 0 ? MemberTexture((uint32_t)t.member, t.facing & 3, t.frame & 3)
+                : GetSpriteTexture((uint16_t)t.sprite, t.facing & 3, t.frame & 3);
             if (tex < 0) continue;
             EmitBillboard(tex, t.x, t.y, (int64_t)t.z + 0x6000, out);
             drawn++;
@@ -432,6 +460,36 @@ private:
     std::vector<std::pair<uint32_t, uint32_t>> Events, Sprites; // ROM archives' members
     std::map<uint16_t, std::vector<Person>> ZoneObjects;         // by events bank
     std::map<uint32_t, int> SpriteTex;                           // (member << 4 | facing << 2 | frame) -> external texture, -1 if none
+    bool LooksMade = false;
+    std::vector<int> LookList;
+
+    // The name of a sprite archive member's textures without the frame ("hero" of
+    // "hero.1"), or empty.
+    std::string MemberStem(uint32_t m) const
+    {
+        if (m >= Sprites.size()) return "";
+        const uint8_t* b = Rom + Sprites[m].first;
+        const uint32_t size = Sprites[m].second;
+        if (size < 0x40 || memcmp(b, "BTX0", 4) != 0 || Get32(b + 0x10) + 0x3C > size) return "";
+        const uint8_t* t = b + Get32(b + 0x10);
+        const auto names = Dict(t + Get16(t + 0x0E));
+        const size_t dot = names.empty() ? std::string::npos : names[0].first.find('.');
+        return dot == std::string::npos ? "" : names[0].first.substr(0, dot);
+    }
+
+    // Whether a member walks in all four ways (see Looks()).
+    bool Walks(uint32_t m)
+    {
+        for (int facing = 0; facing < 4; facing++)
+        {
+            const int stand = MemberTexture(m, facing, 0), step = MemberTexture(m, facing, 1);
+            if (stand < 0 || step < 0 || MemberTexture(m, facing, 3) < 0) return false;
+            const auto& a = melonDS::Wide.ExternalTextures[stand];
+            const auto& b = melonDS::Wide.ExternalTextures[step];
+            if (a.W != 32 || a.H != 32 || b.W != 32 || b.H != 32 || a.Texels == b.Texels) return false;
+        }
+        return true;
+    }
 
     std::vector<std::pair<uint32_t, uint32_t>> NarcMembers(const char* path) const { return NdsNarcFiles(Rom, RomSize, path); }
 

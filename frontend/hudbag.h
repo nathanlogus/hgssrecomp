@@ -102,9 +102,10 @@ bool ReadMenu(Read rd, uint32_t view, uint32_t app, uint32_t& actionsCache, int 
 {
     const uint32_t actions = FindMenuActions(rd, actionsCache);
     if (!actions || (int)(rd(view + 0x66) & 0xFFFF) != item) return false;
-    // Each button may hold only what the game puts there: using, then trashing,
-    // (de)registering, giving, moving; Cancel has no function.
-    static const int allowed[4][3] = { { 0, -1, -1 }, { 5, 6, 7 }, { 8, -1, -1 }, { 12, -1, -1 } };
+    // Each button may hold only what the game puts there: using (or, choosing for the Berry
+    // Pots, putting it in one), then trashing, (de)registering, giving, moving; Cancel has
+    // no function.
+    static const int allowed[4][3] = { { 0, 14, -1 }, { 5, 6, 7 }, { 8, -1, -1 }, { 12, -1, -1 } };
     static const int name[16] = { 0, 6, 16, 98, 99, 1, 2, 18, 3, 4, 5, 8, 75, 86, 0, 128 };
     if (rd(app + 0x7F0 + 16)) return false;
     st.menuText[4] = 8;
@@ -117,7 +118,7 @@ bool ReadMenu(Read rd, uint32_t view, uint32_t app, uint32_t& actionsCache, int 
             if (k >= 0 && rd(actions + 4 * k) == f) st.menuText[b] = name[k];
         if (st.menuText[b] < 0) return false;
     }
-    if (st.menuText[0] == 0)
+    if (st.menuText[0] == 0 && rd(app + 0x7F0) == rd(actions))
     {
         const int pocketId = (int)(rd(view + 4 + 12 * st.pocket + 8) & 0xFF);
         if (item == 502) return false; // ITEM_GB_SOUNDS: "Use" or "Stop"
@@ -185,11 +186,11 @@ bool ReadState(Read rd, uint32_t man, State& st, uint32_t& actions)
     st.procState = (int)rd(man + 0x14);
     st.pocket = rd8(view + 0x64);
     st.cursor = (int)rd(app + 0x644);
-    // Only the bag opened from the menu, to give a Pokemon an item or to sell at a shop (not
-    // the berry pots).
+    // The bag opened from the menu, to give a Pokemon an item, to sell at a shop or to
+    // choose what to put in a Berry Pot (BagViewContext 0, 1, 2, 6).
     st.giving = rd8(view + 0x65) == 1;
     st.selling = rd8(view + 0x65) == 2;
-    if (st.procState < 0 || st.procState > 37 || st.pocket >= 8 || rd8(view + 0x65) > 2 || st.cursor < 0 || st.cursor > 20)
+    if (st.procState < 0 || st.procState > 37 || st.pocket >= 8 || (rd8(view + 0x65) > 2 && rd8(view + 0x65) != 6) || st.cursor < 0 || st.cursor > 20)
         return false;
     int pockets = 0;
     for (int i = 0; i < 8; i++)

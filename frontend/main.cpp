@@ -63,12 +63,18 @@
 #include "hudtrade.h"
 #include "huddex.h"
 #include "huddexinfo.h"
+#include "huddexsearch.h"
+#include "hudreports.h"
 #include "hudgear.h"
 #include "hudoptions.h"
 #include "hudnaming.h"
+#include "hudpots.h"
+#include "hudapricorn.h"
+#include "hudpalpad.h"
 #include "hudpcbox.h"
 #include "hudworld.h"
 #include "hudshop.h"
+#include "hudevents.h"
 #include "hudfrontier.h"
 #include "hudminigames.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -1075,6 +1081,8 @@ struct Settings
     int hostMax = 4;        // players a hosted session allows
     bool autoHost = true;   // host a session by itself once the player is in the world
     int onlinePartner = 0;  // the Pokemon shown with this player (species, 0 none)
+    int onlineLook = -1;    // how the others see this player: a member of the ROM's overworld sprites (-1: their own trainer)
+    std::string friendLooks; // friends' looks: "id:look," ... (apart from `friends`, which older versions read)
     bool showPing = true;
     bool onlineToasts = true;
     bool startScreen = true; // the frontend's own start screen before the game
@@ -1106,6 +1114,8 @@ struct Settings
             else if (k == "friends") friends = v;
             else if (k == "player_id") playerId = v.size() == 16 ? v : "";
             else if (k == "online_partner") onlinePartner = std::clamp(atoi(v.c_str()), 0, 493);
+            else if (k == "online_look") onlineLook = std::max(-1, atoi(v.c_str()));
+            else if (k == "friend_looks") friendLooks = v;
             else if (k == "show_ping") showPing = v == "1";
             else if (k == "online_toasts") onlineToasts = v == "1";
             else if (k == "start_screen") startScreen = v == "1";
@@ -1158,6 +1168,8 @@ struct Settings
         f << "host_max=" << hostMax << "\n";
         f << "auto_host=" << (autoHost ? 1 : 0) << "\n";
         f << "online_partner=" << onlinePartner << "\n";
+        f << "online_look=" << onlineLook << "\n";
+        f << "friend_looks=" << friendLooks << "\n";
         f << "friends=" << friends << "\n";
         f << "player_id=" << playerId << "\n";
         f << "show_ping=" << (showPing ? 1 : 0) << "\n";
@@ -2485,6 +2497,40 @@ int main(int argc, char** argv)
     std::vector<NightFly> fireflies;
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
+    // Looks (online): frames and faces of the ROM's overworld people, made once each.
+    if (cfg.onlineLook >= 0 && !worldBlocks.IsLook(cfg.onlineLook)) cfg.onlineLook = -1; // (chosen with another ROM)
+    std::map<int, Image> lookArt, lookFaces;
+    const HudOnline::LookArtFn lookImage = [&](int member, int facing, int frame) -> const Image* {
+        const int key = member << 4 | (facing & 3) << 2 | (frame & 3);
+        auto it = lookArt.find(key);
+        if (it == lookArt.end())
+        {
+            Image img;
+            worldBlocks.MemberImage(member, facing, frame, img);
+            it = lookArt.emplace(key, std::move(img)).first;
+        }
+        return it->second.px.empty() ? nullptr : &it->second;
+    };
+    // (Other players' looks are checked against the ROM's before use.)
+    auto lookFace = [&](int member) -> const Image* {
+        if (!worldBlocks.IsLook(member)) return nullptr;
+        auto it = lookFaces.find(member);
+        if (it == lookFaces.end())
+        {
+            const Image* s = lookImage(member, 1, 0);
+            it = lookFaces.emplace(member, s ? FaceCrop(*s) : Image()).first;
+        }
+        return it->second.px.empty() ? nullptr : &it->second;
+    };
+    HudOnline::FaceOf = [&](const PartyPeer& p) { return lookFace(p.look); };
+    // This player's look: the one chosen, or their own trainer (the boy or the girl).
+    auto myLook = [&](int gender) { return cfg.onlineLook >= 0 ? cfg.onlineLook : worldBlocks.MemberByStem(gender ? "heroine" : "hero"); };
+    // Chooses a look; their own trainer (the boy or the girl, as the save has it) is no choice.
+    auto setLook = [&](int member) {
+        const int gender = Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender;
+        cfg.onlineLook = member == worldBlocks.MemberByStem(gender ? "heroine" : "hero") ? -1 : member;
+        Party_SetLook(myLook(gender));
+    };
     battleUiHud.SetRom(rom.data(), rom.size());
     worldBlocks.Plaza = plazaMap;
     // The HUD: its sprites and the game's own font.
@@ -2928,7 +2974,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC, M_LOOK,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2938,7 +2984,8 @@ int main(int argc, char** argv)
         { "STATES", "menu/menu_states" } };
     menu.tab = T_DISPLAY;
     // Screens of the online HUD over (or instead of) the pause menu.
-    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE };
+    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE, SCR_LOOK };
+    int lookSel = 0; // the look chosen on SCR_LOOK (an index of worldBlocks.Looks())
     int screen = SCR_NONE;
     Menu sessionMenu;
     sessionMenu.open = true;
@@ -2949,6 +2996,7 @@ int main(int argc, char** argv)
         std::string id, name; // (no id: one remembered by an older version, by name only)
         int colour = 0;
         long long seen = 0;
+        int look = -1;        // as last seen (PartyPeer::look)
     };
     std::map<std::string, Friend> friends; // by id (or name)
     {
@@ -2962,13 +3010,22 @@ int main(int argc, char** argv)
             if (v.size() == 4 && v[0].size() == 16 && !v[1].empty()) friends[v[0]] = { v[0], v[1], atoi(v[2].c_str()) & 3, atoll(v[3].c_str()) };
             else if (v.size() == 3 && !v[0].empty()) friends[v[0]] = { "", v[0], atoi(v[1].c_str()) & 3, atoll(v[2].c_str()) };
         }
+        std::istringstream ls(cfg.friendLooks);
+        while (std::getline(ls, e, ','))
+        {
+            const size_t colon = e.find(':');
+            auto fr = colon == std::string::npos ? friends.end() : friends.find(e.substr(0, colon));
+            if (fr != friends.end()) fr->second.look = atoi(e.c_str() + colon + 1);
+        }
     }
     auto saveFriends = [&]() {
         cfg.friends.clear();
+        cfg.friendLooks.clear();
         std::vector<std::string> ids;
         for (const auto& [key, fr] : friends)
         {
             cfg.friends += (fr.id.empty() ? "" : fr.id + ":") + fr.name + ":" + std::to_string(fr.colour) + ":" + std::to_string(fr.seen) + ",";
+            if (fr.look >= 0) cfg.friendLooks += key + ":" + std::to_string(fr.look) + ",";
             if (!fr.id.empty()) ids.push_back(fr.id);
         }
         Party_SetFriends(ids);
@@ -2983,7 +3040,8 @@ int main(int argc, char** argv)
         auto old = friends.find(name);
         if (old != friends.end() && old->second.id.empty()) friends.erase(old);
         if (!friends.count(p.uid)) fprintf(stderr, "[party] %s is now a friend\n", name.c_str());
-        friends[p.uid] = { p.uid, name, p.colour, (long long)time(nullptr) };
+        const int look = p.look >= 0 ? p.look : friends.count(p.uid) ? friends[p.uid].look : -1;
+        friends[p.uid] = { p.uid, name, p.colour, (long long)time(nullptr), look };
         saveFriends();
     };
     Menu friendsMenu;
@@ -3176,7 +3234,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, the Battle Castle's screen, the Factory's swaps, choosing who enters a Frontier challenge, the Battle Arcade's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex with its pages and its search, the Unown Report, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, the Battle Castle's screen, the Factory's swaps, choosing who enters a Frontier challenge, the Battle Arcade's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, evolving, hatching and trading, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -3220,6 +3278,10 @@ int main(int argc, char** argv)
         add(T_PROFILE, M_NICK, "Nickname", onlineName(), "The name the other players see. Up to 10 letters; your trainer's name unless you change it.");
         add(T_PROFILE, M_PARTNER, "Partner", cfg.onlinePartner ? Party_SpeciesName(cfg.onlinePartner) : "None",
             "The Pok\xC3\xA9mon shown with you on your card and to the others: one from your party.");
+        const std::vector<int>& looks = worldBlocks.Looks();
+        const long lookAt = std::find(looks.begin(), looks.end(), cfg.onlineLook) - looks.begin();
+        add(T_PROFILE, M_LOOK, "Look", cfg.onlineLook < 0 ? "Your trainer" : "Look " + std::to_string(lookAt + 1),
+            "How the others see you walking around, and the face in your chip: any of the game's people who walk all four ways.");
         add(T_PROFILE, M_COLOUR, "Colour", cfg.onlineColour < 0 ? "Automatic" : HudOnline::ColourName(cfg.onlineColour),
             "Your colour: your chip, and your name in messages. Automatic gives each player in a session a different one.");
 
@@ -3302,6 +3364,7 @@ int main(int argc, char** argv)
                 HudOnline::FriendRow r;
                 r.who.name = fr.name;
                 r.who.colour = fr.colour;
+                r.who.look = fr.look;
                 const long long days = (now - fr.seen) / 86400;
                 r.info = days <= 0 ? "Last seen today" : days == 1 ? "Last seen yesterday" : "Last seen " + std::to_string(days) + " days ago";
                 if (fr.id.empty()) r.info += " \xC2\xB7 add them again to see when they are online";
@@ -3998,6 +4061,23 @@ int main(int argc, char** argv)
             else if (hit == M_LEAVE && dir == 0) screen = SCR_SUMMARY;
             else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
         }
+        else if (screen == SCR_LOOK && !toggleMenu)
+        {
+            const int n = (int)worldBlocks.Looks().size(), was = lookSel;
+            if (nav.left) lookSel = (lookSel + n - 1) % n;
+            if (nav.right) lookSel = (lookSel + 1) % n;
+            if (nav.up && lookSel >= HudOnline::LookColumns) lookSel -= HudOnline::LookColumns;
+            if (nav.down) lookSel = std::min(n - 1, lookSel + HudOnline::LookColumns);
+            if (lookSel != was) uiSound(GameSfx::Cursor);
+            if (nav.accept)
+            {
+                setLook(worldBlocks.Looks()[lookSel]);
+                screen = SCR_NONE;
+                buildMenu();
+                uiSound(GameSfx::Confirm);
+            }
+            else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
+        }
         else if (screen == SCR_SUMMARY && !toggleMenu)
         {
             if (nav.accept)
@@ -4269,8 +4349,24 @@ int main(int argc, char** argv)
             case M_NICK:
                 startEdit(E_NAME);
                 break;
+            case M_LOOK:
+            {
+                const std::vector<int>& looks = worldBlocks.Looks();
+                const auto it = std::find(looks.begin(), looks.end(), myLook(Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender));
+                lookSel = it == looks.end() ? 0 : (int)(it - looks.begin());
+                if (looks.empty()) break;
+                if (dir == 0)
+                {
+                    screen = SCR_LOOK;
+                    break;
+                }
+                // Left and right: the next or previous look at once, the card showing its face.
+                lookSel = (lookSel + (dir < 0 ? (int)looks.size() - 1 : 1)) % (int)looks.size();
+                setLook(looks[lookSel]);
+                break;
+            }
             case M_COLOUR:
-                cfg.onlineColour = (cfg.onlineColour + 1 + (dir < 0 ? 4 : 1)) % 5 - 1; // Automatic, then the four colours
+                cfg.onlineColour =(cfg.onlineColour + 1 + (dir < 0 ? 4 : 1)) % 5 - 1; // Automatic, then the four colours
                 Party_SetProfile(onlineName(), cfg.onlineColour);
                 break;
             case M_PARTNER:
@@ -4997,6 +5093,28 @@ int main(int argc, char** argv)
                     break;
                 }
         if (!alphRead) alphPad = HudMinigames::AlphPad();
+        // The Battle Frontier's scratch-off cards, played with the buttons (hudminigames.h).
+        static HudMinigames::ScratchPad scratchPad;
+        bool scratchRead = false;
+        if (!uiOpen && appRunning("ScratchOffCards"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "ScratchOffCards"))
+                {
+                    static uint32_t scAt = 0;
+                    const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                    const uint32_t man = HudParty::FindApp(ram, scAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                        [](uint32_t) { return true; });
+                    HudMinigames::Scratch sc;
+                    if (man && HudMinigames::ReadScratch(ram, man, sc))
+                    {
+                        scratchRead = true;
+                        if (getenv("SSR_SCRATCH_DEBUG")) fprintf(stderr, "[sc] %u step %d stage %d chosen %d\n", frame, sc.step, sc.stage, sc.chosen);
+                        int tx, ty;
+                        if (HudMinigames::ScratchInput(sc, scratchPad, keys, tx, ty)) touching = true, touchX = tx, touchY = ty;
+                    }
+                    break;
+                }
+        if (!scratchRead) scratchPad = HudMinigames::ScratchPad();
 
         // The Battle Arcade's game board stops only at a touch of its button (a circle at
         // 128, 96 on the bottom screen): A touches it, so it can be played with a controller.
@@ -5127,7 +5245,10 @@ int main(int argc, char** argv)
                     }
                     // Walking: standing, a step, standing, the other step, 4 frames each.
                     r.step = gap > 0x800 ? r.step + 1 : 0;
-                    remoteDraw.push_back({ w.sprite, w.facing, r.step ? (r.step / 4 + 1) % 4 : 0, (int32_t)r.x, (int32_t)r.y, (int32_t)r.z });
+                    // Their look while they walk as the boy or the girl (sprites 0 and 97): on a
+                    // bike, surfing and so on they keep the game's own sprite.
+                    const int look = (w.sprite == 0 || w.sprite == 97) && worldBlocks.IsLook(peers[i].look) ? peers[i].look : -1;
+                    remoteDraw.push_back({ w.sprite, w.facing, r.step ? (r.step / 4 + 1) % 4 : 0, (int32_t)r.x, (int32_t)r.y, (int32_t)r.z, look });
                 }
             }
             if (frame % 60 == 0) romArt.SetRam(nds->MainRAM, nds->MainRAMMask + 1);
@@ -5168,6 +5289,7 @@ int main(int argc, char** argv)
                 say("Your session is " + announcedCode + (lan.empty() ? ": share the code to play together"
                     : ": friends join with it on server " + lan), "icons/icon_wifi", 480);
             }
+            if (frame % 60 == 0) Party_SetLook(myLook(Party_MyCard().gender));
             if (trainerArt.px.empty() && frame % 60 == 0 && fieldActive())
                 worldBlocks.SpriteImage(*nds, Party_MyCard().gender ? 97 : 0, 1, trainerArt); // the boy or the girl, facing south
             // Friends in the session: seen now (every few seconds while together), with their
@@ -5191,6 +5313,7 @@ int main(int argc, char** argv)
                     t.nameColour = HudOnline::TextColourOf(who.colour);
                     t.chip = HudOnline::Initials(who.name);
                     t.chipRing = HudOnline::RingOf(who.colour);
+                    if (const Image* face = lookFace(who.look)) t.face = *face;
                 }
                 switch (pe.kind)
                 {
@@ -5253,6 +5376,8 @@ int main(int argc, char** argv)
                     t.nameColour = HudOnline::TextColourOf(colour);
                     t.chip = HudOnline::Initials(t.name);
                     t.chipRing = HudOnline::RingOf(colour);
+                    const int look = fr != friends.end() ? fr->second.look : -1;
+                    if (const Image* face = lookFace(look)) t.face = *face;
                     if (screen != SCR_NONE || menu.open || startOpen || pstate != PS_FIELD)
                     {
                         t.text = " invited you to their session: see Friends";
@@ -5262,6 +5387,7 @@ int main(int argc, char** argv)
                     inviteWho = PartyPeer();
                     inviteWho.name = t.name;
                     inviteWho.colour = colour;
+                    inviteWho.look = look;
                     inviteCode = pe.text;
                     inviteFrom = -1;
                     inviteKind = PI_SESSION;
@@ -5299,6 +5425,8 @@ int main(int argc, char** argv)
                             inviteMenu.items = { yes, no };
                             inviteMenu.selected = 0;
                             screen = SCR_INVITE;
+                            // Test aid: SSR_ACCEPT_INVITE=1 says yes at once (headless online tests).
+                            if (getenv("SSR_ACCEPT_INVITE")) answerInvite(true), screen = SCR_NONE;
                         }
                         continue;
                     }
@@ -5674,7 +5802,8 @@ int main(int argc, char** argv)
                 Image img;
                 if (!dsPlace((t.x - 0x10000) / 4096.0, t.y / 4096.0, (t.z + 0x6000) / 4096.0, lx, ly) ||
                     !dsPlace((t.x + 0x10000) / 4096.0, t.y / 4096.0, (t.z + 0x6000) / 4096.0, rx, ry) ||
-                    !worldBlocks.SpriteImage(*nds, (uint16_t)t.sprite, t.facing, img, t.frame))
+                    !(t.member >= 0 ? worldBlocks.MemberImage(t.member, t.facing, t.frame, img)
+                        : worldBlocks.SpriteImage(*nds, (uint16_t)t.sprite, t.facing, img, t.frame)))
                     continue;
                 const float size = rx - lx;
                 Blit(canvas, img, 0, 0, (float)img.w, (float)img.h, lx, ly - size, size, size, false);
@@ -6023,7 +6152,10 @@ int main(int argc, char** argv)
             const bool may = spritesOk && cfg.redrawn && merged && hudFree && fieldView;
             // A sign slides in and out: drawn as low as the game's is. It slides away with its
             // last page (the game lets go of it first): that page, while it is on the screen.
-            const int top = may ? HudWorld::BoxTop(screenImages[0].flags) : -1;
+            // A question's answers (a list of the game's beside the box is allowed on BG3 then).
+            HudWorld::Choice choice;
+            const bool asked = may && HudWorld::ReadChoice(ram, choice);
+            const int top = may ? HudWorld::BoxTop(screenImages[0].flags, choice.window) : -1;
             int slide = std::max(0, top - HudWorld::kBoxY - 1);
             HudWorld::Dialogue dlg;
             bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
@@ -6064,8 +6196,7 @@ int main(int argc, char** argv)
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
             if (shown)
             {
-                HudWorld::Choice choice;
-                if (HudWorld::ReadChoice(ram, choice)) scene.items.resize(1);
+                if (asked) scene.items.resize(1);
                 const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
                 HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
                     HudWorld::kBoxH * u - 6, frame, &choice);
@@ -6090,6 +6221,68 @@ int main(int argc, char** argv)
                 HudWorld::DrawXMenu(canvas, ui, sprites, font, xm, trainerName(), x, y, w, h);
                 worldFade(x, y, w, h); // (the screen fading to what was chosen)
                 scene.items.resize(1);
+                overlayUsed = true;
+            }
+        }
+        // The messages of an evolution and of an egg hatching redrawn (hudevents.h), while
+        // the piece of the view that shows the box's screen has nothing but the box on the
+        // box's background. That background is left out of it then (and for two frames after,
+        // as its tiles go a frame later); the question's buttons on the other screen too.
+        {
+            static HudEvents::Message eventMsg;
+            static uint32_t evoTask = 0, hatchAt = 0, tradeAt = 0, eventOwner = 0;
+            static int eventHold = 0, eventItem = -1;
+            static uint8_t eventLayer = 0;
+            HudEvents::Box box;
+            bool read = false;
+            if (spritesOk && cfg.redrawn && merged && hudFree)
+            {
+                const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                const RcApp *hatch = nullptr, *trade = nullptr;
+                for (unsigned i = 0; i < rc_num_apps; i++)
+                    if (!strcmp(rc_apps[i].name, "HatchEgg")) hatch = &rc_apps[i];
+                    else if (!strcmp(rc_apps[i].name, "TradeSequence")) trade = &rc_apps[i];
+                const uint32_t owner = hatch && appRunning("HatchEgg") ? 1 : trade && appRunning("TradeSequence") ? 3 : 2;
+                if (owner != eventOwner) eventMsg = {}, eventOwner = owner;
+                read = owner == 1   ? HudEvents::ReadHatch(ram, hatchAt, hatch->initAddr, hatch->execAddr, hatch->exitAddr, eventMsg, box)
+                    : owner == 3 ? HudEvents::ReadTrade(ram, tradeAt, trade->initAddr, trade->execAddr, trade->exitAddr, eventMsg, box)
+                                 : HudEvents::ReadEvolution(ram, rom, evoTask, eventMsg, box);
+            }
+            // The screen that shows the box's background, and the piece of the view that shows that screen.
+            const int boxScreen = (box.bg < 4) == (topUnit == 0) ? 0 : 1;
+            const uint8_t layer = (uint8_t)(LAYER_BG0 << (box.bg & 3));
+            const int top = read ? HudEvents::BoxTop(screenImages[boxScreen].flags, layer) : -1;
+            int item = -1;
+            for (int i = 0; i < (int)scene.items.size() && top >= 0 && item < 0; i++)
+            {
+                const Element& el = scene.items[i];
+                if (el.screen == boxScreen && el.sx <= HudWorld::kBoxX && el.sy <= HudWorld::kBoxY && el.sx + el.sw >= HudWorld::kBoxX + HudWorld::kBoxW &&
+                    el.sy + el.sh >= HudWorld::kBoxY + HudWorld::kBoxH)
+                    item = i;
+            }
+            // The view while the box's screen fills it alone, kept for the questions: their
+            // buttons are on the other screen, which the view would bring in beside it.
+            static Element eventFull;
+            static bool eventFullOk = false;
+            if (!read) eventFullOk = false;
+            else if (item == 0 && scene.items.size() == 1) eventFull = scene.items[0], eventFullOk = true;
+            // (While the scene fades, the game's box fades with it and shows instead.)
+            const bool lit = top >= 0 && HudEvents::BoxLit(screenImages[boxScreen].pixels);
+            if (top >= 0 && !lit) eventHold = 0;
+            if (eventHold > 0 && eventItem < (int)scene.items.size() && !(item >= 0 && top <= HudWorld::kBoxY + 2 && lit))
+                scene.items[eventItem].drop |= eventLayer;
+            eventHold = std::max(0, eventHold - 1);
+            if (item >= 0 && top <= HudWorld::kBoxY + 2 && lit)
+            {
+                eventHold = 3, eventItem = item, eventLayer = layer;
+                if (box.yesNo >= 0 && eventFullOk) scene.items = { eventFull }, eventItem = 0;
+                else box.yesNo = -1; // (the game's buttons show beside it)
+                scene.items[eventItem].drop |= layer;
+                const Element el = scene.items[eventItem];
+                const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
+                const float bx = el.dx + (HudWorld::kBoxX - el.sx) * el.scale, by = el.dy + (HudWorld::kBoxY - el.sy) * el.scale;
+                HudEvents::Draw(canvas, ui, sprites, font, box, x0 + bx * u, y0 + by * u, HudWorld::kBoxW * el.scale * u,
+                    HudWorld::kBoxH * el.scale * u - 6, frame, PadGlyph(cfg.byLabel ? PAD_B : PAD_A));
                 overlayUsed = true;
             }
         }
@@ -6135,6 +6328,7 @@ int main(int argc, char** argv)
                 me.name = onlineName();
                 me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
                 me.partner = cfg.onlinePartner;
+                me.look = myLook(Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender);
                 HudOnline::TrainerCardPreview(canvas, ui, sprites, font, side, me, Party_DexCount(), Party_MyBadges(), sessionStats, monIcon);
             }
             else
@@ -6373,6 +6567,33 @@ int main(int argc, char** argv)
                     }
                     break;
                 }
+        // A ring around a place of the touch screen (DS pixels) where the view shows it, for
+        // the minigames played with the buttons; false when the touch screen is not shown.
+        auto touchRing = [&](int x, int y, int w, int h, uint32_t col) {
+            float px, py, s;
+            if (merged)
+            {
+                const Element* touch = nullptr;
+                for (const Element& el : scene.items)
+                    if (el.screen == 1) { touch = &el; break; }
+                if (!touch) return false;
+                s = touch->scale * view.unit;
+                px = view.originX + (touch->dx + (x - touch->sx) * touch->scale) * view.unit;
+                py = view.originY + (touch->dy + (y - touch->sy) * touch->scale) * view.unit;
+            }
+            else
+            {
+                if (rects[1].w <= 0) return false;
+                s = rects[1].w / 256.0f;
+                px = rects[1].x + x * s, py = rects[1].y + y * s;
+            }
+            const int t = std::max(2, (int)(2 * s)), W = (int)(w * s), H = (int)(h * s);
+            canvas.Fill((int)px - t, (int)py - t, W + 2 * t, t, col);
+            canvas.Fill((int)px - t, (int)py + H, W + 2 * t, t, col);
+            canvas.Fill((int)px - t, (int)py, t, H, col);
+            canvas.Fill((int)px + W, (int)py, t, H, col);
+            return true;
+        };
         // The Ruins of Alph's puzzles (hudminigames.h): redrawn around the game's board, or
         // without the new screens the cursor over the game's own picture of it.
         if (alphRead && screen == SCR_NONE && !menu.open && !startOpen && alphState.step >= 1 && alphState.step <= 6 && alphState.step != 5)
@@ -6389,24 +6610,11 @@ int main(int argc, char** argv)
                 HudMinigames::DrawAlph(canvas, ui, sprites, font, alphState, alphPad, bot, hints);
                 overlayUsed = true;
             }
-            else if (merged && alphState.step <= 4)
-                for (const Element& el : scene.items)
-                    if (el.screen == 1)
-                    {
-                        // The place under the cursor, where the merged view shows the touch screen.
-                        const float s = el.scale * view.unit;
-                        const float px = view.originX + (el.dx + (32 + 32 * alphPad.cx - el.sx) * el.scale) * view.unit;
-                        const float py = view.originY + (el.dy + (32 * alphPad.cy - el.sy) * el.scale) * view.unit;
-                        const int t = std::max(2, (int)(2 * s));
-                        const uint32_t col = carrying ? 0xFFFFC23A : 0xFFFFFFFF;
-                        canvas.Fill((int)px, (int)py, (int)(32 * s), t, col);
-                        canvas.Fill((int)px, (int)(py + 32 * s) - t, (int)(32 * s), t, col);
-                        canvas.Fill((int)px, (int)py, t, (int)(32 * s), col);
-                        canvas.Fill((int)(px + 32 * s) - t, (int)py, t, (int)(32 * s), col);
-                        overlayUsed = true;
-                        break;
-                    }
+            else if (alphState.step <= 4)
+                overlayUsed |= touchRing(32 + 32 * alphPad.cx, 32 * alphPad.cy, 32, 32, carrying ? 0xFFFFC23A : 0xFFFFFFFF);
         }
+        if (scratchPad.shown && screen == SCR_NONE && !menu.open && !startOpen)
+            overlayUsed |= touchRing(scratchPad.curX, scratchPad.curY, scratchPad.curW, scratchPad.curH, 0xFFFFC23A);
         // The Pokégear redrawn (hudgear.h): its phone and map tabs, read from the game's
         // memory each frame; calls, menus and the other tabs are the game's own picture.
         static uint32_t gearManager = 0;
@@ -6445,6 +6653,7 @@ int main(int argc, char** argv)
                 env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
                 env.me.map = partyMap;
                 env.rd = readRam;
+                env.art = &romArt;
                 int year, month, day, hour, minute, second;
                 nds->RTC.GetDateTime(year, month, day, hour, minute, second);
                 // Sakamoto's day of the week (0 Sunday), as the DS clock counts it.
@@ -6485,6 +6694,7 @@ int main(int argc, char** argv)
                 env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
                 env.me.map = partyMap;
                 env.rd = readRam;
+                env.art = &romArt;
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" } };
                 if (fs.mode == 1) hints.push_back({ { accept }, "Fly here" });
@@ -6541,6 +6751,61 @@ int main(int argc, char** argv)
                     break;
                 }
         namingShown = namingNow;
+        // The Berry Pots redrawn (hudpots.h); while they fade out (step 1) only if shown before.
+        static bool potsShown = false;
+        bool potsNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("BerryPots"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "BerryPots"))
+                {
+                    static uint32_t potsAt = 0;
+                    HudPots::State ps;
+                    if (HudPots::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, potsAt, ps) &&
+                        (ps.step != 1 || potsShown))
+                    {
+                        potsNow = true;
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose a pot" }, { { accept }, "Select" }, { { back }, "Close" } };
+                        if (!ps.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
+                        else if (ps.step >= 3) hints = { { { accept }, "OK" } };
+                        HudPots::Draw(canvas, ui, sprites, font, romArt, bagTexts, ps, hints);
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        potsShown = potsNow;
+        // The Apricorn Box redrawn (hudapricorn.h), while it takes the input.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("ApricornBox"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "ApricornBox"))
+                {
+                    static uint32_t apricornAt = 0;
+                    HudApricorn::State as;
+                    if (HudApricorn::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, apricornAt, as))
+                    {
+                        const std::string back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudApricorn::Draw(canvas, ui, sprites, font, romArt, bagTexts, as, { { { "buttons/button_dpad" }, "Choose" }, { { back }, "Close" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        // The Pal Pad's menu and Friend Code page redrawn (hudpalpad.h).
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("PalPad"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "PalPad"))
+                {
+                    static uint32_t palPadAt = 0;
+                    HudPalPad::State pp;
+                    if (HudPalPad::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, palPadAt, pp))
+                    {
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudPalPad::Draw(canvas, ui, sprites, font, bagTexts, trainerName(), pp,
+                            pp.screen == 0 ? std::vector<HudHint>{ { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Close" } }
+                                           : std::vector<HudHint>{ { { accept }, "Back" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
         // The Union Room's trade screen redrawn (hudtrade.h), mirroring the game's own; for
         // up to three frames that do not check out the last picture stays, as with the bag.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("WirelessTradeSelectMon"))
@@ -6610,8 +6875,8 @@ int main(int argc, char** argv)
             }
         }
         // The Pokedex redrawn (huddex.h): its front page and its list, mirrored from the game's
-        // application; its details and search are the game's own picture.
-        static int dexShown = 0; // what was drawn the frame before: 0 nothing, 1 the front page, 2 the list, 3 the details
+        // application, with its details (huddexinfo.h) and search (huddexsearch.h).
+        static int dexShown = 0; // drawn the frame before: 0 nothing, 1 the front page, 2 the list, 3 the details, 4 a search's results, 5 the search
         int dexNow = 0;
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Pokedex"))
             for (unsigned i = 0; i < rc_num_apps; i++)
@@ -6625,7 +6890,8 @@ int main(int argc, char** argv)
                     HudDexInfo::View iv;
                     const int info = HudDexInfo::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr,
                         rc_apps[i].exitAddr, HudDex::JohtoNumbers(rom.data(), rom.size()), iv);
-                    if (info == 1 || (info < 0 && dexShown == 3))
+                    const bool infoNow = info == 1 || (info < 0 && dexShown == 3);
+                    if (infoNow)
                     {
                         if (info == 1) infoLast = iv;
                         const HudDexInfo::View& v = infoLast;
@@ -6639,14 +6905,59 @@ int main(int argc, char** argv)
                             hints.push_back({ { a }, "Compare" });
                         }
                         if (v.page == HudDexInfo::Back) hints.push_back({ { a }, "Back to the list" });
+                        if (v.page == HudDexInfo::Compare)
+                        {
+                            hints.clear();
+                            if (v.forms.size() >= 3)
+                            {
+                                hints.push_back({ { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Side" });
+                                hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Form" });
+                            }
+                        }
                         hints.push_back({ { b }, "Back" });
                         HudDexInfo::Draw(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), v, trainerArt.px.empty() ? nullptr : &trainerArt,
                             Party_MyCard().gender, hints);
                         dexNow = 3;
                         overlayUsed = true;
                     }
-                    else if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
-                            HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown == 3 ? 0 : dexShown, dv))
+                    // The search (huddexsearch.h), drawn as 5, likewise; the body styles'
+                    // pictures come from the game's touch screen, so the page and the menu
+                    // with one chosen wait for them.
+                    static HudDexSearch::View searchLast;
+                    // Leaving a search's results rebuilds the list at once while the game slides
+                    // away: the results read last stay for those frames (up to half a second).
+                    static HudDex::View resultsLast;
+                    static uint32_t resultsAt = 0;
+                    static HudDexSearch::Shapes shapes;
+                    HudDexSearch::View sv;
+                    const int search = infoNow ? 0 : HudDexSearch::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr,
+                        rc_apps[i].execAddr, rc_apps[i].exitAddr, sv);
+                    if (search == 1) shapes.Take(sv, nds->GPU.Framebuffer[nds->GPU.FrontBuffer][1].get());
+                    const auto shapesOk = [&](const HudDexSearch::View& v) {
+                        for (int s = 0; s < 14; s++)
+                            if (!shapes.Get(s) && (v.page == HudDexSearch::Body || (int)v.crit[9] == s)) return false;
+                        return true;
+                    };
+                    if ((search == 1 && shapesOk(sv)) || (search < 0 && dexShown == 5))
+                    {
+                        if (search == 1) searchLast = sv;
+                        const HudDexSearch::View& v = searchLast;
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Cancel" } };
+                        if (v.message >= 0) hints.clear();
+                        HudDexSearch::Draw(canvas, ui, sprites, font, v, shapes, hints);
+                        dexNow = 5;
+                        overlayUsed = true;
+                    }
+                    else if (!infoNow && [&] {
+                                 if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                                         HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown == 3 || dexShown == 5 ? 0 : dexShown, dv))
+                                 {
+                                     if (dv.results) resultsLast = dv, resultsAt = frame;
+                                     return true;
+                                 }
+                                 return dexShown == 4 && frame - resultsAt < 30 && (dv = resultsLast, true);
+                             }())
                     {
                         const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y), y = PadGlyph(cfg.byLabel ? PAD_Y : PAD_X);
@@ -6654,9 +6965,10 @@ int main(int argc, char** argv)
                         {
                             std::vector<HudHint> hints = { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Page" }, { { "buttons/button_dpad" }, "Choose" } };
                             if (dv.places[dv.pos].species) hints.push_back({ { a }, "Details" });
+                            if (dv.results && dv.page == 0 && dv.pos == 0) hints.push_back({ { a }, "Search" });
                             hints.push_back({ { x }, "Cry" });
-                            hints.push_back({ { y }, "Search" });
-                            hints.push_back({ { b }, "Close" });
+                            if (!dv.results) hints.push_back({ { y }, "Search" });
+                            hints.push_back({ { b }, dv.results ? "Back" : "Close" });
                             HudDex::DrawList(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), dv, hints);
                         }
                         else
@@ -6668,12 +6980,40 @@ int main(int argc, char** argv)
                             hints.push_back({ { b }, "Close" });
                             HudDex::DrawFront(canvas, ui, sprites, font, romArt, dv, hints);
                         }
-                        dexNow = dv.list ? 2 : 1;
+                        dexNow = dv.results ? 4 : dv.list ? 2 : 1;
                         overlayUsed = true;
                     }
                     break;
                 }
         dexShown = dexNow;
+        // The Unown Report and the certificates redrawn (hudreports.h), whole while they run.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && (appRunning("UnownReport") || appRunning("Certificates")))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+            {
+                const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                if (!strcmp(rc_apps[i].name, "UnownReport") && appRunning("UnownReport"))
+                {
+                    static uint32_t unownAt = 0;
+                    HudReports::Unown u;
+                    if (HudReports::ReadUnown(ram, unownAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, u))
+                    {
+                        HudReports::DrawUnown(canvas, ui, sprites, font, romArt, u,
+                            { { { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Page" }, { { b }, "Close" } });
+                        overlayUsed = true;
+                    }
+                }
+                if (!strcmp(rc_apps[i].name, "Certificates") && appRunning("Certificates"))
+                {
+                    static uint32_t certAt = 0;
+                    HudReports::Certificate ct;
+                    if (HudReports::ReadCertificate(ram, certAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, ct))
+                    {
+                        HudReports::DrawCertificate(canvas, ui, sprites, font, romArt, ct, trainerName(), { { { a }, "Close" } });
+                        overlayUsed = true;
+                    }
+                }
+            }
         // The PC's Pokemon storage redrawn (hudpcbox.h), mirroring the game's application;
         // its messages, questions and the screens it does not draw are the game's own. Its
         // short animations are drawn when it was drawn just before (some frames skip this).
@@ -6817,6 +7157,14 @@ int main(int argc, char** argv)
                     left / 20, left,
                     { { { accept }, "Choose" }, { { back }, "Not now" } });
             }
+            else if (screen == SCR_LOOK)
+            {
+                PartyPeer me;
+                me.name = onlineName();
+                me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                HudOnline::LookChooser(canvas, ui, sprites, font, worldBlocks.Looks(), lookSel, me, (uint32_t)frame, lookImage,
+                    { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Confirm" }, { { back }, "Back" } });
+            }
             else if (screen == SCR_SUMMARY)
                 HudOnline::Summary(canvas, ui, sprites, font, { { { accept }, "Leave" }, { { back }, "Stay" } }, sessionStats, monIcon);
             else if (screen == SCR_EDIT)
@@ -6868,7 +7216,7 @@ int main(int argc, char** argv)
                 if (!saveArt && saveCard.known)
                 {
                     saveArt = true;
-                    worldBlocks.RomSpriteImage(saveCard.gender ? "heroine" : "hero", 1, saveTrainer);
+                    worldBlocks.MemberImage(myLook(saveCard.gender), 1, 0, saveTrainer); // their look, else the boy or the girl
                 }
                 auto drawSave = [&](float y) {
                     if (!saveCard.known) return;

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Online: choose your look (Profile, Look) from any of the game's people who walk all
+  four ways, browsing them with the d-pad and seeing them walk before you confirm (left
+  and right on Look change it straight away). The others see you walking around with that
+  look, and everyone's chip, friends list row, invite card and message shows their face
+  instead of their initials. Your own trainer stays as the game draws it on your screen.
+- The start screen's save card shows your chosen look.
+
+- New screens: the Pokégear's map, the fly map, the Town Map and the Pokédex's Area page
+  now show the game's own map of Johto or Kanto (read from your ROM, in the colours of
+  your Pokégear skin), with towns you have not visited greyed as in the game; the cursor,
+  the towns you can fly to, where a Pokémon lives and where your friends are sit on top.
+- New screens: when a Pokémon evolves, an egg hatches or a Pokémon is traded, the
+  messages appear in the new message box while the game's own animation plays: "What? …
+  is evolving!" (with a hint that B stops it), the moves it wants to learn and the
+  questions about them, whether to give the hatched Pokémon a nickname (its answers beside
+  the box), and the trade's "… will be sent to …" and "Take good care of …!".
+- New screens: the Apricorn Box and the Pal Pad's menu are drawn anew. The skin you choose
+  in the Pokégear's settings now colours the new Pokégear.
+- New screens: the Berry Pots are drawn anew (the four pots with their Berries, how wet
+  the soil is and the mulch, and the menus), as is the bag when choosing a Berry or mulch
+  for a pot.
 - New screens: choosing your rental Pokémon at the Battle Frontier's Battle Factory. All
   six Pokémon on offer are shown at once, with everything about the one you are on (types,
   ability, nature, held item and moves), the team you have picked so far, the Summary,
@@ -14,6 +35,10 @@
   Pokémon) and choosing which Pokémon to enter in a Frontier challenge are drawn anew too.
 - The Battle Arcade's game board can be stopped with A (before, only by touching the
   screen), and with the new screens it is drawn anew: every panel says what it does.
+- The Battle Frontier's scratch-off cards can be played with a controller: the d-pad
+  chooses a card, a panel or NEXT CARD and A touches it; on a panel A scratches it clean.
+- New screens: Voltorb Flip's Game Info lessons (How to Play, Hint!, About Memos) are drawn
+  in the same style as its board, with the game's explanations.
 - New screens: Voltorb Flip at the Goldenrod Game Corner is drawn anew on the one screen:
   the board with its cards, your memo marks and the totals along each row and column, the
   level, your coins and those of the game, the memo panel, Quit and the game's messages and
@@ -24,7 +49,13 @@
   pieces are in place; without them a cursor shows over the game's own picture.
 - New screens: a Pokémon's pages in the Pokédex are drawn anew. Area shows the region's
   map with the places it lives at that time of day marked, beside the list of them; Size
-  puts it next to you, height and weight; Forms lists the forms you have seen.
+  puts it next to you, height and weight; Forms lists the forms you have seen, and two of
+  them can be compared side by side.
+- New screens: the Pokédex's search is drawn anew, with what you search by and each choice
+  (order, first letter, types, height, weight, area, body style), and so is the list of
+  what it finds.
+- New screens: the Unown Report (its cover, the Unown you have found with their words, and
+  the researchers' notes) and the certificates from Game Freak's office are drawn anew.
 - New screens: the Pokégear's settings tab (choosing its skin) is drawn anew.
 - New screens: the keyboard for naming (nicknames, boxes, your name) is drawn anew, with
   the name in its boxes and the keys of each page.
@@ -37,7 +68,7 @@
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) and lists of choices (such as the shop clerk's
-  BUY, SELL, SEE YA!) show their answers beside it, and signs slide in with the same box.
+  BUY, SELL, SEE YA! or the Union Room's GREET, DRAW, BATTLE, TRADE) show their answers beside it, and signs slide in with the same box.
   The X menu and the place's name shown when you arrive somewhere are drawn anew too.
 - New screens: phone calls in the Pokégear are drawn anew (who is calling, the ringing,
   what they say line by line and the hang-up), as are the phone's Call, Sort and Quit

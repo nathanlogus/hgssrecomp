@@ -179,8 +179,15 @@ inline bool ReadDialogue(const Ram& r, Dialogue& d)
 // The top row of the message box on the top screen's BG3, or -1 unless BG3 shows the box and
 // nothing else (no menu or other window beside it), from the renderer's per-pixel layer flags.
 // The box is still in memory once the game has stopped showing it (a sign slid away), and
-// must not be drawn then. A sign slides in and out: its top is lower then.
-inline int BoxTop(const uint8_t* flags)
+// must not be drawn then. A sign slides in and out: its top is lower then. `also`: a window of
+// the game's that is redrawn too (x, y, w, h in DS pixels), whose pixels are allowed.
+struct Rect
+{
+    int x = 0, y = 0, w = 0, h = 0;
+    bool In(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
+};
+
+inline int BoxTop(const uint8_t* flags, const Rect& also = Rect())
 {
     if (!flags) return -1;
     int inBox = 0, top = -1;
@@ -188,7 +195,11 @@ inline int BoxTop(const uint8_t* flags)
         for (int x = 0; x < 256; x++)
             if (LayerClass(flags[y * 256 + x]) == LAYER_BG3)
             {
-                if (x < kBoxX || x >= kBoxX + kBoxW || y < kBoxY || y >= kBoxY + kBoxH) return -1;
+                if (x < kBoxX || x >= kBoxX + kBoxW || y < kBoxY || y >= kBoxY + kBoxH)
+                {
+                    if (also.In(x, y)) continue;
+                    return -1;
+                }
                 if (top < 0) top = y;
                 inBox++;
             }
@@ -238,10 +249,17 @@ inline bool StringText(const Ram& r, uint32_t s, std::string& out)
 // +0 its step (yes/no: 4 waiting for the answer, 5 taken; a list: 8 and 9), +4 where the
 // answer goes, +0xC the list, +0x24 the FieldSystem, +0x394 the cursor. The list
 // (overlay 1's, MoveTutorMenu_SetListItem): +0x9B how many choices, +0x1C4 + 8i their texts.
+//
+// Or a list on the top screen beside the box (ScrCmd_064/065, 066 its choices, 067 or 585 to
+// ask, waiting in sub_020418B4 or sub_02041900), as the Union Room's GREET, DRAW, BATTLE,
+// TRADE...: the script environment's +0x10, the same kind of list with its window at +8 and
+// its ListMenu2D at +0xB8 (+0 the choices, a text and a value each; +9 how many across, +0xA
+// down; +0x15 the cursor). `window`: where the game draws it, frame included.
 struct Choice
 {
     std::vector<std::string> items;
     int cursor = -1;
+    Rect window;
 };
 
 inline bool ReadChoice(const Ram& r, Choice& ch)
@@ -256,9 +274,27 @@ inline bool ReadChoice(const Ram& r, Choice& ch)
     for (uint32_t k = 0; k < 3 && !ctx; k++)
     {
         const uint32_t c = r.R32(env + 0x38 + 4 * k), w = r.R32(c + 4) & ~1u;
-        if (r.Ptr(c) && (w == 0x020477C0 || w == 0x020478D0)) ctx = c, waits = w;
+        if (r.Ptr(c) && (w == 0x020477C0 || w == 0x020478D0 || w == 0x020418B4 || w == 0x02041900)) ctx = c, waits = w;
     }
     if (!ctx) return false;
+    if (waits == 0x020418B4 || waits == 0x02041900)
+    {
+        const uint32_t list = r.R32(env + 0x10), lm = r.R32(list + 0xB8), items = r.R32(lm);
+        const uint32_t across = r.R8(lm + 9), down = r.R8(lm + 0xA), cur = r.R8(lm + 0x15), win = list + 8;
+        // One column, on the top screen's BG3, in its window (tiles).
+        if (!r.Ptr(list) || !r.Ptr(lm) || !r.Ptr(items) || r.R32(lm + 4) != win || across != 1 || down < 1 || down > 8 || cur >= down ||
+            r.R8(win + 4) != 3 || r.R8(win + 8) != 2 * down)
+            return false;
+        for (uint32_t i = 0; i < down; i++)
+        {
+            std::string t;
+            if (!StringText(r, r.R32(items + 8 * i), t)) return false;
+            ch.items.push_back(t);
+        }
+        ch.cursor = (int)cur;
+        ch.window = { (int)r.R8(win + 5) * 8 - 8, (int)r.R8(win + 6) * 8 - 8, (int)r.R8(win + 7) * 8 + 16, (int)r.R8(win + 8) * 8 + 16 };
+        return true;
+    }
     const uint32_t d = r.R32(r.R32(fs + 0xD8) + 0x10);
     if (!r.Ptr(d) || r.R8(d) != 3) return false;
     const uint32_t a = r.R32(r.R32(d + 4) + 0x10), step = r.R32(a), cur = r.R32(a + 0x394);

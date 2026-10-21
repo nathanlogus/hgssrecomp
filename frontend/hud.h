@@ -182,6 +182,43 @@ inline void Blit(Canvas& c, const Image& img, float sx, float sy, float sw, floa
     }
 }
 
+// A person's face for a player's chip: the head from the top of their front-facing sprite
+// frame, 18 pixels square, cut to a circle on white (empty if the frame is empty).
+inline Image FaceCrop(const Image& s)
+{
+    Image o;
+    const auto opaque = [&](int x, int y) { return (s.px[(size_t)y * s.w + x] >> 24) != 0; };
+    int top = 0;
+    while (top < s.h && [&] { for (int x = 0; x < s.w; x++) if (opaque(x, top)) return false; return true; }()) top++;
+    if (top >= s.h) return o;
+    // Centred on the head: the opaque columns of its first 12 rows.
+    int lo = s.w, hi = -1;
+    for (int y = top; y < std::min(s.h, top + 12); y++)
+        for (int x = 0; x < s.w; x++)
+            if (opaque(x, y)) lo = std::min(lo, x), hi = std::max(hi, x);
+    const int n = 18, x0 = (int)std::lround((lo + hi + 1) / 2.0 - n / 2.0), y0 = top - 1;
+    o.w = o.h = n;
+    o.px.assign((size_t)n * n, 0);
+    for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++)
+        {
+            const float dx = x + 0.5f - n / 2.0f, dy = y + 0.5f - n / 2.0f;
+            if (dx * dx + dy * dy > n * n / 4.0f) continue;
+            const int sx = x0 + x, sy = y0 + y;
+            const bool in = sx >= 0 && sy >= 0 && sx < s.w && sy < s.h && opaque(sx, sy);
+            o.px[(size_t)y * n + x] = in ? s.px[(size_t)sy * s.w + sx] : 0xFFFFFFFF;
+        }
+    return o;
+}
+
+// A face (FaceCrop) inside a chip ring drawn at x, y, `size` canvas pixels square: the
+// ring's inside is the circle of radius 34 at (48, 46) of its 96.
+inline void DrawRingFace(Canvas& c, const Image& face, float x, float y, float size, uint32_t tint = 0xFFFFFFFF)
+{
+    const float r = size * 33 / 96, cx = x + size / 2, cy = y + size * 46 / 96;
+    Blit(c, face, 0, 0, (float)face.w, (float)face.h, cx - r, cy - r, 2 * r, 2 * r, false, tint);
+}
+
 // A soft drop shadow for `img` drawn at dx, dy, dw, dh (call it before drawing the image),
 // like CSS's box-shadow: rgba(100, 100, 111, 0.2) 0 7px 29px, for a logo about 230 pixels
 // tall: a wide, faint, bluish-grey haze a little below, following the image's outline.
