@@ -5875,27 +5875,48 @@ int main(int argc, char** argv)
         // The PC's Pokemon storage redrawn (hudpcbox.h), mirroring the game's application;
         // its messages, questions and the screens it does not draw are the game's own. Its
         // short animations are drawn when it was drawn just before (some frames skip this).
-        static uint32_t pcShownAt = 0;
-        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("PCBox"))
+        static uint32_t pcShownAt = 0, pcLiveAt = 0, pcTabsAt = 0;
+        static HudPcBox::Screen pc;
+        const bool pcMay = spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen;
+        const bool pcHold = pcMay && pcShownAt && pcShownAt == frame - 1;
+        bool pcNow = false;
+        if (pcMay && appRunning("PCBox"))
+        {
             for (unsigned i = 0; i < rc_num_apps; i++)
                 if (!strcmp(rc_apps[i].name, "PCBox"))
                 {
                     static uint32_t pcAt = 0;
-                    static HudPcBox::Screen pc;
-                    pc = HudPcBox::Screen();
-                    const bool pcNow = HudPcBox::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, pcAt, rc_apps[i].initAddr,
-                                           rc_apps[i].execAddr, rc_apps[i].exitAddr, pc) &&
-                        HudPcBox::Shown(pc, pcShownAt && frame - pcShownAt <= 3);
-                    if (pcNow)
-                    {
-                        auto ds = [&](int k) { return PadGlyph(PadButtonFor(k, cfg.byLabel, cfg.padMap)); };
-                        HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, trainerName(), Party_MyCard().id,
-                            { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" }, { { ds(1) }, "Back" } });
-                        overlayUsed = true;
-                        pcShownAt = frame;
-                    }
+                    HudPcBox::Screen now;
+                    const bool read = HudPcBox::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, pcAt, rc_apps[i].initAddr,
+                        rc_apps[i].execAddr, rc_apps[i].exitAddr, now);
+                    // Coming back from the boxes' tabs (the game's picture) counts as shown before.
+                    // The fade in (step 2 after loading at 11, or at 15 back from a summary; step 2 is
+                    // the fade out too) is drawn at once rather than the game's picture fading in.
+                    static bool pcOpening = false;
+                    if (read) pcOpening = now.step == 11 || now.step == 15 || (pcOpening && now.step == 2);
+                    pcNow = read && (HudPcBox::Shown(now, (pcShownAt && frame - pcShownAt <= 3) || (pcTabsAt && frame - pcTabsAt <= 3)) ||
+                                        (pcOpening && now.step == 2 && !HudPcBox::OnTabs(now)));
+                    if (read && HudPcBox::OnTabs(now)) pcTabsAt = frame;
+                    if (pcNow) pc = now, pcLiveAt = frame;
+                    // A Pokemon being put down is copied over a frame: the storage reads
+                    // half-written for that frame and the last screen stands in for it.
+                    else if (!read && pcHold && frame - pcLiveAt <= 2) pcNow = true;
                     break;
                 }
+        }
+        // While the game is busy for a few frames (loading the menu after A on a Pokemon) the
+        // application's per-frame function does not run and its picture stands still: the last
+        // redrawn screen stands in for it rather than the game's own flashing up.
+        else if (pcHold && frame - pcLiveAt <= 30)
+            pcNow = true;
+        if (pcNow)
+        {
+            auto ds = [&](int k) { return PadGlyph(PadButtonFor(k, cfg.byLabel, cfg.padMap)); };
+            HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, trainerName(), Party_MyCard().id,
+                { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" }, { { ds(1) }, "Back" } });
+            overlayUsed = true;
+            pcShownAt = frame;
+        }
         if (spritesOk && (bootMode != BOOT_NONE || frame < resumeCoverUntil) && !menu.open && screen == SCR_NONE)
         {
             HudOnline::LoadingScreen(canvas, ui, sprites, font, logo.px.empty() ? nullptr : &logo, "POK\xC3\xA9MON",

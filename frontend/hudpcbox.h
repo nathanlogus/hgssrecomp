@@ -93,9 +93,11 @@ inline bool Read(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, 
 // depositing), and through the short animations from there (5 the cursor or a menu moving,
 // 8 and 140-180 a button pressed) when it was shown the frame before. Messages, questions
 // (7) and the fades in and out are the game's own picture.
+inline bool OnTabs(const Screen& s) { return s.grid == kGridMoveParty && s.cursor >= 37; }
+
 inline bool Shown(const Screen& s, bool before)
 {
-    if (s.grid == kGridMoveParty && s.cursor >= 37) return false; // the boxes' tabs
+    if (OnTabs(s)) return false; // the boxes' tabs
     if (s.step == 12 || s.step == 41 || s.step == 115 || s.step == 81 || s.step == 91) return true;
     return before && (s.step == 5 || s.step == 8 || (s.step >= 140 && s.step <= 180));
 }
