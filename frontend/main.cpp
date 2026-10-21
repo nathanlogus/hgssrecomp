@@ -5839,6 +5839,17 @@ int main(int argc, char** argv)
             static const bool worldTested = getenv("SSR_WORLDUI_SELFTEST") &&
                 fprintf(stderr, "[worldui] self-test %s\n", HudWorld::SelfTest() ? "passed" : "FAILED");
             (void)worldTested;
+            // The game's fade of the top screen (master brightness, or a brightness effect of
+            // its layers, as the widescreen world takes it) over a redrawn panel at (x, y, w, h).
+            auto worldFade = [&](float x, float y, float w, float h) {
+                const auto& tu = (nds->PowerControl9 & (1 << 15)) ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+                int mode = (tu.MasterBrightness >> 14) & 3, fade = std::min(16, tu.MasterBrightness & 0x1F);
+                if (mode != 1 && mode != 2) fade = 0;
+                if (const int effect = (tu.BlendCnt >> 6) & 3; (tu.BlendCnt & 1) && effect >= 2)
+                    if (const int evy = std::min<int>(16, tu.EVY); evy > fade) mode = effect == 2 ? 1 : 2, fade = evy;
+                if (fade)
+                    FillBlend(canvas, ui(x - 16), ui(y - 16), ui(w + 32), ui(h + 32), (uint32_t)(fade * 255 / 16) << 24 | (mode == 1 ? 0xFFFFFF : 0));
+            };
             const bool fieldView = (!strcmp(scene.name, "top") || !strcmp(scene.name, "choice")) && !scene.items.empty() && scene.items[0].screen == 0;
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop &= ~LAYER_BG3;
             const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
@@ -5869,7 +5880,20 @@ int main(int argc, char** argv)
             }
             else
                 worldBoxPicture = 0;
-            worldBoxHold = shown ? 3 : std::max(0, worldBoxHold - 1);
+            // The place's name sliding down at the top, when nothing else is on the game's BG3.
+            std::string placeName;
+            int placeSlide = 0;
+            const bool placeShown = may && !shown && HudWorld::OnlyTheName(screenImages[0].flags) &&
+                HudWorld::ReadMapName(ram, placeName, placeSlide);
+            if (placeShown)
+            {
+                const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
+                const float px = x0 + 6 * u, py = y0 + (6 - placeSlide) * u - placeSlide * 1.5f;
+                HudWorld::DrawMapName(canvas, ui, sprites, font, placeName, px, py);
+                worldFade(px, py, HudTextWidth(ui, font, 48, placeName) + 150, 84);
+                overlayUsed = true;
+            }
+            worldBoxHold = shown || placeShown ? 3 : std::max(0, worldBoxHold - 1);
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
             if (shown)
             {
@@ -5878,6 +5902,7 @@ int main(int argc, char** argv)
                 const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
                 HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
                     HudWorld::kBoxH * u - 6, frame, &choice);
+                worldFade(x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u, HudWorld::kBoxH * u - 6);
                 overlayUsed = true;
             }
             // The game's X menu, drawn where its touch-screen panel stands, which is left out;
@@ -5896,15 +5921,7 @@ int main(int argc, char** argv)
                 const float u = view.unit / ui.s, x = (mergedX + view.originX) / ui.s + el.dx * u, y = view.originY / ui.s + el.dy * u;
                 const float w = el.sw * el.scale * u, h = el.sh * el.scale * u;
                 HudWorld::DrawXMenu(canvas, ui, sprites, font, xm, trainerName(), x, y, w, h);
-                // The screen fading to what was chosen (master brightness): the menu fades with it.
-                const auto& tu = (nds->PowerControl9 & (1 << 15)) ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
-                int fadeMode = (tu.MasterBrightness >> 14) & 3, fade = std::min(16, tu.MasterBrightness & 0x1F);
-                if (fadeMode != 1 && fadeMode != 2) fade = 0;
-                // (Or a brightness effect of the 2D layers, as the widescreen world takes it.)
-                if (const int effect = (tu.BlendCnt >> 6) & 3; (tu.BlendCnt & 1) && effect >= 2)
-                    if (const int evy = std::min<int>(16, tu.EVY); evy > fade) fadeMode = effect == 2 ? 1 : 2, fade = evy;
-                if ((fadeMode == 1 || fadeMode == 2) && fade)
-                    FillBlend(canvas, ui(x - 16), ui(y - 16), ui(w + 32), ui(h + 32), (uint32_t)(fade * 255 / 16) << 24 | (fadeMode == 1 ? 0xFFFFFF : 0));
+                worldFade(x, y, w, h); // (the screen fading to what was chosen)
                 scene.items.resize(1);
                 overlayUsed = true;
             }

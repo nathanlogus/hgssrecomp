@@ -393,6 +393,37 @@ inline void DrawXMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
     }
 }
 
+// The place's name that slides down at the top when the player comes into a town or route
+// (src/field/draw_map_name.c: FieldSystem +4 -> +8, a FieldDrawMapNameInfo: +0 onScreen,
+// +4 positionState (1 down, 2 in place, 3 up), +0xC layerY (0 shown to 38 hidden above, the
+// BG3 scroll), +0x40 the name). `slide`: how far up it is, in DS pixels.
+inline bool ReadMapName(const Ram& r, std::string& name, int& slide)
+{
+    const uint32_t fs = r.R32(kFieldSystem), info = r.R32(r.R32(fs + 4) + 8);
+    if (!r.Ptr(fs) || !r.Ptr(info) || r.R32(info) != 1) return false;
+    const uint32_t state = r.R8(info + 4);
+    slide = (int)r.R32(info + 0x0C);
+    return state >= 1 && state <= 3 && slide >= 0 && slide <= 38 && StringText(r, r.R32(info + 0x40), name);
+}
+
+// Whether the top screen's BG3 shows nothing below the place's name (its 40 rows at the top).
+inline bool OnlyTheName(const uint8_t* flags)
+{
+    if (!flags) return false;
+    for (int i = 40 * 256; i < 256 * 192; i++)
+        if (LayerClass(flags[i]) == LAYER_BG3) return false;
+    return true;
+}
+
+// The place's name in a pill at (x, y) of the view's top left, in design pixels.
+inline void DrawMapName(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const std::string& name, float x, float y)
+{
+    const float w = HudTextWidth(ui, f, 48, name) + 150, h = 84;
+    HudPanel(c, ui, sp, "panels/button_white", x, y, w, h);
+    HudSprite(c, ui, sp, "icons/icon_map", x + 26, y + 18, 48, 48, 0xFF4FA36B);
+    HudText(c, ui, f, x + 96, y + 16, 48, name, HudColour::Ink);
+}
+
 // A check of Page on made-up messages (run with SSR_WORLDUI_SELFTEST=1).
 inline bool SelfTest()
 {
