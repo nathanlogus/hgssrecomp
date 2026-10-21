@@ -2948,6 +2948,21 @@ int main(int argc, char** argv)
     PartyPeer inviteWho;
     std::string inviteCode;
     uint32_t inviteAt = 0;
+    // The Union Room hand-off: an accepted battle or trade invite takes both players there and
+    // matches them (see where it runs, after the controller is read).
+    enum { H_OFF, H_SAVE, H_WARP, H_WARPING, H_ROOM, H_WALK, H_MENU, H_ANSWER };
+    struct Handoff
+    {
+        int phase = H_OFF;
+        int peer = -1, kind = 0;       // the other player, PI_BATTLE or PI_TRADE
+        std::string name;              // theirs
+        bool asker = false;            // sent the invite: walks to the other and asks
+        uint32_t start = 0, since = 0; // frames: the hand-off's start, this phase's
+        bool saveAsked = false, saveSeen = false; // a save has been asked for, has begun
+        bool answered = false;         // the question has been answered
+    } hand;
+    uint32_t handTapAt = 0, handKey = 0; // a press of the hand-off's, held three frames
+    bool unionWarped = false; // in the Union Room by the hand-off: Party_LeftUnionRoom once out
     int partyMap = -1; // this player's map, as last given to the party
     Image trainerArt;  // this player's trainer, for the trainer card
     // The frontend's own start screen, before the game runs (not for tests or a party or
@@ -3299,6 +3314,17 @@ int main(int argc, char** argv)
         t.frames = frames;
         toasts.Push(t);
     };
+    auto startHand = [&](int peer, int kind, bool asker) {
+        hand = Handoff();
+        hand.phase = H_SAVE;
+        hand.peer = peer;
+        hand.kind = kind;
+        hand.name = Party_Peers()[peer].name;
+        hand.asker = asker;
+        hand.start = hand.since = frame;
+        fprintf(stderr, "[handoff] frame %u: to the Union Room with player %d (%s), %s\n", frame, peer + 1,
+            kind == PI_TRADE ? "trade" : "battle", asker ? "asking" : "answering");
+    };
     auto answerInvite = [&](bool yes) {
         if (inviteKind == PI_SESSION)
         {
@@ -3310,8 +3336,10 @@ int main(int argc, char** argv)
         }
         Party_SendInvite(inviteFrom, (yes ? PI_YES : PI_NO) | inviteKind);
         if (yes)
-            say(inviteKind == PI_TRADE ? "Meet in the Union Room: a Pok\xC3\xA9mon Center's wireless counters" : "Meet in the Colosseum: a Pok\xC3\xA9mon Center's wireless counters",
-                "icons/icon_wifi", 300);
+        {
+            say("Going to the Union Room with " + Party_Peers()[inviteFrom].name + "\xE2\x80\xA6", "icons/icon_wifi", 240);
+            startHand(inviteFrom, inviteKind, false);
+        }
         screen = SCR_NONE;
         inviteFrom = -1;
     };
@@ -4283,6 +4311,167 @@ int main(int argc, char** argv)
             }
             wheelPrev = emoteWheel ? dpad : 0;
         }
+        // The Union Room hand-off (an accepted battle or trade invite): first a save, as at a
+        // Pokemon Center's counter (Autosave::GameSave, below), then the counter's own warp
+        // (Party_GoToUnionRoom) once nothing runs on the overworld. There the one who invited
+        // walks to the other and picks Battle or Trade from the game's menu, and the other's
+        // game says yes to that question only. The player's B there stops it on both sides
+        // (as a "no" to the other); the other leaving, their "no" or a long wait calls it off.
+        {
+            int hmap = -1, hx = 0, hz = 0;
+            if (!playerPos(hmap, hx, hz)) hmap = -1;
+            const uint32_t player = keys;
+            if (hand.phase != H_OFF)
+            {
+                auto go = [&](int phase) {
+                    fprintf(stderr, "[handoff] frame %u: phase %d -> %d (map %d)\n", frame, hand.phase, phase, hmap);
+                    hand.phase = phase;
+                    hand.since = frame;
+                };
+                auto callOff = [&](const std::string& why, bool tell) {
+                    fprintf(stderr, "[handoff] frame %u: called off in phase %d%s%s\n", frame, hand.phase, why.empty() ? "" : ": ", why.c_str());
+                    if (tell) Party_SendInvite(hand.peer, PI_NO | hand.kind);
+                    if (!why.empty()) say(why, "icons/icon_wifi", 240);
+                    hand.phase = H_OFF;
+                };
+                // A press, held three frames (the overworld reads the buttons every other one),
+                // at most one every 14 frames.
+                auto tap = [&](int key) {
+                    if (frame - handTapAt < 14) return false;
+                    handTapAt = frame;
+                    handKey = 1u << key;
+                    return true;
+                };
+                // The overworld's script (its task's environment, include/script.h): the native
+                // function its first context waits in, and VAR_SPECIAL_RESULT.
+                const uint32_t fs = readRam(0x021D4158), task = fs ? readRam(fs + 0x10) : 0, env = task ? readRam(task + 0x0C) : 0;
+                const bool script = env && readRam(env) == 222271; // Unk80_10_C_MAGIC
+                const uint32_t ctx = script ? readRam(env + 0x38) : 0, waits = ctx ? readRam(ctx + 4) & ~1u : 0;
+                const uint32_t result = script ? readRam(env + 0xA4) & 0xFFFF : 0;
+                const bool back = player & (1u << KEY_B);
+                const PartyPeer& who = Party_Peers()[hand.peer];
+                if (getenv("SSR_HANDOFF_DEBUG") && frame % 30 == 0)
+                    fprintf(stderr, "[handoff] frame %u phase %d map %d at %d,%d task %08X script %d waits %08X result %u; them map %d\n",
+                        frame, hand.phase, hmap, hx, hz, task, script, waits, result, who.map);
+                if (Party_Link() != PartyLink::Online || !who.present)
+                    callOff(hmap == 2 ? "" : "Not going to the Union Room: " + hand.name + " left", false);
+                else switch (hand.phase)
+                {
+                case H_SAVE:
+                    // As at the counter, a save first: a link that breaks restarts the game from it.
+                    if (hmap == 2) go(H_ROOM);
+                    else if (frame - hand.start > 60 * 60) callOff("Not going to the Union Room: the game could not be saved", true);
+                    else if (gameSave.Busy()) hand.saveSeen = true;
+                    else if (hand.saveSeen && gameSave.wrote) go(H_WARP);
+                    else if (!hand.saveAsked || hand.saveSeen)
+                    {
+                        gameSave.Want(frame, true); // (again after a press cut it short)
+                        hand.saveAsked = true;
+                        hand.saveSeen = false;
+                    }
+                    break;
+                case H_WARP:
+                    if (hmap == 2) go(H_ROOM);
+                    else if (frame - hand.start > 60 * 90) callOff("Not going to the Union Room: the game is busy", true);
+                    else if (fieldIdle() && !uiOpen && !player && !gameSave.Busy() && !task && Party_GoToUnionRoom()) go(H_WARPING);
+                    break;
+                case H_WARPING:
+                    keys = 0;
+                    if (hmap == 2)
+                    {
+                        unionWarped = true;
+                        go(H_ROOM);
+                    }
+                    else if (frame - hand.since > 30 && fieldIdle() && !task)
+                        go(H_WARP); // it did not run (the overworld started something first): again
+                    break;
+                case H_ROOM:
+                    // Both there.
+                    if (hmap != 2) callOff("", false);
+                    else if (who.map == 2)
+                        go(hand.asker ? H_WALK : H_ANSWER);
+                    else if (frame - hand.since > 60 * 120) callOff(hand.name + " did not come to the Union Room", true);
+                    break;
+                case H_WALK:
+                {
+                    // To the other's trainer, facing them, then A; once the game has stopped the
+                    // player for the conversation, on. The Union Room shows each other player as
+                    // the map object of their slot (id 1-10, sub_0205AF78); which slot is whose is
+                    // not known here, so this goes ahead only when there is one other player there.
+                    const uint32_t mgr = readRam(fs + 0x3C), me = readRam(readRam(fs + 0x40) + 0x30);
+                    if (hmap != 2 || back || frame - hand.since > 60 * 40) { callOff("", back); break; }
+                    if (script || (readRam(me) & 0x40)) { go(H_MENU); break; }
+                    const uint32_t count = readRam(mgr + 4), objs = readRam(mgr + 0x124);
+                    int seen = 0, tx = 0, tz = 0;
+                    for (uint32_t i = 0; objs && count < 256 && i < count; i++)
+                    {
+                        const uint32_t o = objs + i * 0x12C, id = readRam(o + 8);
+                        if (o == me || id < 1 || id > 10 || (readRam(o) & 0x201) != 1) continue; // active and not hidden
+                        tx = (int)readRam(o + 0x64);
+                        tz = (int)readRam(o + 0x6C);
+                        seen++;
+                    }
+                    // (On arrival every slot shows for a moment.)
+                    if (seen > 1 && frame - hand.since > 180) { callOff("Talk to " + hand.name + " in the Union Room", false); break; }
+                    if (seen != 1) break;
+                    static const int dirKeys[4] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT };
+                    if (std::abs(tx - hx) + std::abs(tz - hz) == 1)
+                    {
+                        const int dir = tz < hz ? 0 : tz > hz ? 1 : tx < hx ? 2 : 3;
+                        // currentFacing: 0 up, 1 down, 2 left, 3 right, as the directions here.
+                        tap((int)readRam(me + 0x28) != dir ? dirKeys[dir] : KEY_A);
+                    }
+                    else if (const int dir = navStep(hx, hz, tx, tz); dir >= 0)
+                        keys |= 1u << dirKeys[dir];
+                    break;
+                }
+                case H_MENU:
+                {
+                    // "Is there something that you wanted to do?" (scr_seq_UNION_003: ScrCmd_064's
+                    // menu, waited for by ScrCmd_585's native function): Greet, Draw, Battle, Trade...
+                    // The cursor (the menu's ListMenu2D, +0xB8, its selectedIndex) to Battle or
+                    // Trade, then A.
+                    if (hmap != 2 || back || frame - hand.since > 60 * 30) { callOff("", back); break; }
+                    if (waits != 0x02041900) break;
+                    const uint32_t menu = readRam(env + 0x10), list = menu ? readRam(menu + 0xB8) : 0;
+                    if (!list) break;
+                    const int cur = (int)(readRam(list + 0x15) & 0xFF), want = hand.kind == PI_TRADE ? 3 : 2;
+                    if (cur != want) tap(cur < want ? KEY_DOWN : KEY_UP);
+                    else if (tap(KEY_A))
+                    {
+                        fprintf(stderr, "[handoff] frame %u: asked for a %s\n", frame, want == 3 ? "trade" : "battle");
+                        hand.phase = H_OFF;
+                    }
+                    break;
+                }
+                case H_ANSWER:
+                    // The other's question (scr_seq_UNION_004: what they ask for in VAR_SPECIAL_RESULT,
+                    // 2 a battle and 3 a trade, its message, waited on in ov01_021EF348 for A, then
+                    // GetMenuChoice's yes/no): yes, to this one only.
+                    if (hmap != 2 || back || frame - hand.since > 60 * 120) { callOff("", back); break; }
+                    if (result == (hand.kind == PI_TRADE ? 3u : 2u) && (waits == 0x021EF348 || waits == 0x020477C0))
+                        hand.answered |= tap(KEY_A) && waits == 0x020477C0;
+                    else if (hand.answered)
+                    {
+                        fprintf(stderr, "[handoff] frame %u: said yes\n", frame);
+                        hand.phase = H_OFF;
+                    }
+                    break;
+                }
+            }
+            if (frame - handTapAt < 3) keys |= handKey;
+            // Back out of a Union Room visit of the hand-off's.
+            if (unionWarped && hmap >= 0 && hmap != 2 && fieldIdle())
+            {
+                Party_LeftUnionRoom();
+                unionWarped = false;
+                fprintf(stderr, "[handoff] frame %u: back from the Union Room (map %d)\n", frame, hmap);
+            }
+            // Test aid: SSR_INVITE=<frame>,<player 0-3>,<1 battle, 2 trade> sends an invite then.
+            static const char* inviteEnv = getenv("SSR_INVITE");
+            unsigned invF, invP, invK;
+            if (inviteEnv && sscanf(inviteEnv, "%u,%u,%u", &invF, &invP, &invK) == 3 && frame == invF) Party_SendInvite((int)invP, (int)invK);
+        }
         // Autosave (autosave.h): the game's own save at calm moments, and resume points.
         {
             int amap = -1, ax = 0, az = 0;
@@ -4301,7 +4490,7 @@ int main(int argc, char** argv)
             // Test aid: SSR_AUTOSAVE_AT=<frame> asks for a save then.
             static const char* saveAt = getenv("SSR_AUTOSAVE_AT");
             if (saveAt && frame == (uint32_t)atoi(saveAt)) gameSave.Want(frame, true);
-            if ((on && cfg.autosaveGame) || gameSave.Busy() || saveAt)
+            if ((on && cfg.autosaveGame) || gameSave.Busy() || saveAt || hand.phase == H_SAVE)
             {
                 Autosave::GameSave::In in;
                 in.frame = frame;
@@ -5002,11 +5191,17 @@ int main(int argc, char** argv)
                     t.frames = 300;
                     if (pe.arg & PI_YES)
                     {
-                        t.text = (pe.arg & PI_TRADE) ? " said yes: meet in the Union Room" : " said yes: meet in the Colosseum";
+                        t.text = " said yes: going to the Union Room";
                         t.trail = "emotes/emote_thanks";
+                        startHand(pe.player, pe.arg & (PI_BATTLE | PI_TRADE), true);
                     }
                     else
                     {
+                        if (hand.phase != H_OFF && pe.player == hand.peer && (pe.arg & hand.kind))
+                        {
+                            fprintf(stderr, "[handoff] frame %u: called off by the other player\n", frame);
+                            hand.phase = H_OFF;
+                        }
                         t.text = (pe.arg & PI_BUSY) ? " is busy right now" : " can't right now";
                         t.trail = "emotes/emote_sweat";
                     }

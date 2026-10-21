@@ -154,6 +154,12 @@ void Party_SetPartner(int species);  // the Pokemon shown with this player
 void Party_SendEmote(int emote);     // shows an emote over this player's trainer to the others
 void Party_SendInvite(int player, int invite); // a PartyInvite to one player
 uint32_t Party_Now();                // the clock of PartyWalker::at (ms)
+// Takes this player to the Union Room as a Pokemon Center's counter does (the way back is
+// where they stand), at the game's next communication update. Only while online and with
+// nothing running on the overworld; false if it cannot.
+bool Party_GoToUnionRoom();
+// Back from a Union Room visit started by Party_GoToUnionRoom: clears what it set.
+void Party_LeftUnionRoom();
 // A map's place name ("Route 30"), from the ROM's text.
 std::string Party_PlaceName(int map);
 // The name of a species (from the ROM's text), e.g. "Hoothoot".

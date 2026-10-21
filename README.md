@@ -241,8 +241,10 @@ points to anyone out of view. Hold **R** and press the D-pad for an emote over y
 trainer: up Hi!, left a question mark, right a heart, down thanks.
 **Friends** in the Online tab lists who is in your session: choose Battle, Trade
 or Add friend with left and right and press A to ask them. They get a card to say
-yes or not now (it goes away by itself after 20 seconds); then meet at a Pokemon
-Center's wireless counters. While someone is in a battle you can choose Watch
+yes or not now (it goes away by itself after 20 seconds). After a yes, both games save
+(stand still a moment) and take you to the Union Room; there the one who asked walks
+over and picks Battle or Trade, and the other's game says yes to it. Press B to stop
+and do it yourself. The way out of the Union Room leads back to where you were. While someone is in a battle you can choose Watch
 instead: a small card then shows their Pokemon, its HP and the turn until the
 battle ends. In a link battle, a timer under the VS banner shows how long the
 current move is taking (it only shows: no one is hurried).

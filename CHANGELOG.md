@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Online battles and trades: after a player says yes to your Battle or Trade, both games
+  save and go straight to the Union Room from wherever you are, and there the game walks
+  you to each other and starts the battle or trade (the other side's yes is given for
+  them). Press B to stop it and do it yourself; leaving the Union Room takes you back to
+  where you were.
 - NEW SCREENS: the Union Room's trade screen: both parties side by side, the Pokémon you
   and the other player are on in cards in the middle (ability and held item), the menu,
   "Cancel trading?", the trade question and the Ball Capsule warning along the bottom, and
