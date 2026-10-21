@@ -54,15 +54,20 @@
 #include "hudtoast.h"
 #include "hudscreens.h"
 #include "hudbattle.h"
+#include "hudbattleui.h"
+#include "hudbattlebag.h"
 #include "hudbag.h"
 #include "hudparty.h"
 #include "hudtrade.h"
 #include "huddex.h"
+#include "huddexinfo.h"
 #include "hudgear.h"
 #include "hudoptions.h"
 #include "hudpcbox.h"
 #include "hudworld.h"
 #include "hudshop.h"
+#include "hudfrontier.h"
+#include "hudminigames.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -2462,6 +2467,12 @@ int main(int argc, char** argv)
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
     BattleWide battleWide;
+    // The battle's HP boxes, message box and level-up stats redrawn (hudbattleui.h), while
+    // the wide battle picture is built without the game's boxes (battleUiWide).
+    HudBattleUi::Reader battleUiReader;
+    HudBattleUi::State battleUi;
+    HudBattleUi::Hud battleUiHud;
+    bool battleUiWide = false;
     VoidFill voidFill;
     // The map blocks around the loaded ones, drawn into the widescreen world when a frame's
     // 3D is flushed (inside the emulated frame, with that frame's camera).
@@ -2471,6 +2482,7 @@ int main(int argc, char** argv)
     std::vector<NightFly> fireflies;
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
+    battleUiHud.SetRom(rom.data(), rom.size());
     worldBlocks.Plaza = plazaMap;
     // The HUD: its sprites and the game's own font.
     Sprites sprites;
@@ -3161,7 +3173,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, what people say, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -4713,6 +4725,7 @@ int main(int argc, char** argv)
         bool composingBetween = false;
         auto takeWideImage = [&]() {
             wideImage = WideImage();
+            battleUiWide = false;
             // A battle on a wide view: the screen widened (battlewide.h) instead of the bars.
             if (scene.edgeFill && cfg.wide && !opt.noWide)
             {
@@ -4727,8 +4740,12 @@ int main(int argc, char** argv)
                 const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
                 const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(),
                     static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D()).LayerFlags[tu] };
+                // With the new screens the HP boxes are drawn anew (hudbattleui.h).
+                battleWide.HideBoxes = cfg.redrawn && spritesOk && merged && HudBattleUi::Battle({ nds->MainRAM, nds->MainRAMMask }) != 0;
+                battleUiWide = false;
                 if (vw >= 300 && battleWide.Build(*nds, topImage, (int)std::ceil((vw - 256) / 2), &world, vw, wideImage))
                 {
+                    battleUiWide = battleWide.HideBoxes;
                     scene.wide = true;
                     return;
                 }
@@ -4953,6 +4970,30 @@ int main(int argc, char** argv)
                 stripTouch--;
             }
         }
+
+        // The Ruins of Alph's puzzles, played with the buttons (hudminigames.h): they become
+        // the touches the game expects.
+        static HudMinigames::AlphPad alphPad;
+        static HudMinigames::Alph alphState;
+        static bool alphRead = false;
+        alphRead = false;
+        if (!uiOpen && appRunning("AlphPuzzle"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "AlphPuzzle"))
+                {
+                    static uint32_t alphAt = 0;
+                    const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                    const uint32_t man = HudParty::FindApp(ram, alphAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                        [](uint32_t) { return true; });
+                    if (man && HudMinigames::ReadAlph(ram, man, alphState))
+                    {
+                        alphRead = true;
+                        int tx, ty;
+                        if (HudMinigames::AlphInput(alphState, alphPad, keys, tx, ty)) touching = true, touchX = tx, touchY = ty;
+                    }
+                    break;
+                }
+        if (!alphRead) alphPad = HudMinigames::AlphPad();
 
         if (uiOpen && bootMode == BOOT_NONE && !gameSave.Busy())
         {
@@ -5810,6 +5851,7 @@ int main(int argc, char** argv)
         // The battle's commands and moves redrawn over the strip under the field (hudbattle.h);
         // also while one set slides out and the other in, as long as the game's memory says
         // which is up. Otherwise the strip stays as it is.
+        bool battleHudDrawn = false;
         if (spritesOk && cfg.redrawn && merged && hudFree &&
             (!strcmp(scene.name, "battle-cmd") || !strcmp(scene.name, "battle-moves") || !strcmp(scene.name, "battle-strip") ||
                 !strcmp(scene.name, "battle-pick")))
@@ -5828,7 +5870,66 @@ int main(int argc, char** argv)
                 if (bs.moves || bs.kind == HudBattle::Target || (bs.kind == HudBattle::Commands && bs.cancel)) hints.push_back({ { back }, "Back" });
                 battleHud.Draw(canvas, ui, sprites, font, battleMoves, romArt, bs, sel, hints, (view.originY + 137 * view.unit) / ui.s);
                 overlayUsed = true;
+                battleHudDrawn = true;
             }
+        }
+        // The HP boxes, the message box and the level-up stats redrawn (hudbattleui.h), where
+        // the battle's wide picture was built without the game's boxes.
+        // (Read every frame: the HP bars' animation is followed from one frame to the next.)
+        const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+        const auto& unit = tu == 0 ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+        HudBattleUi::Vram battleVram;
+        for (int b = 0; b < 4; b++) battleVram.bgCnt[b] = unit.BGCnt[b];
+        battleVram.charOffset = tu == 0 ? ((unit.DispCnt >> 24) & 7) * 0x10000 : 0;
+        battleVram.read8 = [&](uint32_t a) { return tu == 0 ? nds->GPU.ReadVRAM_ABG<u8>(a) : nds->GPU.ReadVRAM_BBG<u8>(a); };
+        if (cfg.redrawn && spritesOk && battleUiReader.Read(nds->MainRAM, nds->MainRAMMask, battleVram, battleUi) && battleUiWide && merged &&
+            hudFree && !strncmp(scene.name, "battle", 6))
+        {
+            // The game's fade, as it applies to the message box's layer (BG1): the master
+            // brightness, or a brightness effect on the layer; or as the box looks.
+            HudBattleUi::Fade fade;
+            fade.mode = (unit.MasterBrightness >> 14) & 3;
+            fade.f = std::min(16, unit.MasterBrightness & 0x1F);
+            if (fade.mode != 1 && fade.mode != 2) fade.mode = 0;
+            if (!fade.mode && (unit.BlendCnt & 2) && ((unit.BlendCnt >> 6) & 3) >= 2)
+            {
+                fade.mode = ((unit.BlendCnt >> 6) & 3) == 2 ? 1 : 2;
+                fade.f = std::min<int>(16, unit.EVY);
+            }
+            auto& soft = static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D());
+            const uint32_t* topPixels = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get();
+            const bool msgShown = HudBattleUi::MessageShown(battleUi.msg, soft.LayerFlags[tu]);
+            if (msgShown) HudBattleUi::FadeFromScreen(battleUi.msg, topPixels, fade);
+            // The HP boxes as the game's own look (hidden, faded).
+            HudBattleUi::Look(battleUi, topPixels, soft.LayerFlags[tu], soft.ObjPrio[tu]);
+            // (The band of the touch screen's menus has the message box's place then.)
+            const bool band = !battleHudDrawn && msgShown;
+            const float half = view.width / 2 * view.unit;
+            battleUiHud.Draw(canvas, ui, sprites, font, battleUi, view.originX + 128 * view.unit - half, view.originX + 128 * view.unit + half,
+                view.originY, view.unit, (view.originY + 137 * view.unit) / ui.s, band, fade);
+            overlayUsed = true;
+        }
+        // The bag of a battle redrawn (hudbattlebag.h), in place of the touch screen's.
+        static HudBattleBag::Reader battleBagReader;
+        static HudBag::Texts battleTexts(rom.data(), rom.size());
+        if (spritesOk && cfg.redrawn && merged && hudFree && !strcmp(scene.name, "battle-submenu"))
+        {
+            const auto& bottom = tu == 0 ? nds->GPU.GPU2D_B : nds->GPU.GPU2D_A;
+            HudBattleUi::Vram& v = battleBagReader.vram;
+            for (int b = 0; b < 4; b++) v.bgCnt[b] = bottom.BGCnt[b];
+            v.charOffset = tu == 1 ? ((bottom.DispCnt >> 24) & 7) * 0x10000 : 0;
+            v.read8 = [&](uint32_t a) { return tu == 1 ? nds->GPU.ReadVRAM_ABG<u8>(a) : nds->GPU.ReadVRAM_BBG<u8>(a); };
+            battleBagReader.words = &battleUiHud.Words();
+            HudBattleBag::State st;
+            if (battleBagReader.Read(nds->MainRAM, nds->MainRAMMask, frame, st))
+            {
+                const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, st.screen == 2 ? "Use" : "Select" },
+                    { { back }, st.screen == 0 ? "Close bag" : "Back" } };
+                HudBattleBag::Draw(canvas, ui, sprites, font, romArt, battleTexts, st, hints);
+                overlayUsed = true;
+            }
+            v.read8 = nullptr;
         }
         // The overworld's message box redrawn (hudworld.h), with a script's yes/no question,
         // while the single-screen view shows the overworld and nothing but the box is on the
@@ -5839,6 +5940,17 @@ int main(int argc, char** argv)
             static const bool worldTested = getenv("SSR_WORLDUI_SELFTEST") &&
                 fprintf(stderr, "[worldui] self-test %s\n", HudWorld::SelfTest() ? "passed" : "FAILED");
             (void)worldTested;
+            // The game's fade of the top screen (master brightness, or a brightness effect of
+            // its layers, as the widescreen world takes it) over a redrawn panel at (x, y, w, h).
+            auto worldFade = [&](float x, float y, float w, float h) {
+                const auto& tu = (nds->PowerControl9 & (1 << 15)) ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+                int mode = (tu.MasterBrightness >> 14) & 3, fade = std::min(16, tu.MasterBrightness & 0x1F);
+                if (mode != 1 && mode != 2) fade = 0;
+                if (const int effect = (tu.BlendCnt >> 6) & 3; (tu.BlendCnt & 1) && effect >= 2)
+                    if (const int evy = std::min<int>(16, tu.EVY); evy > fade) mode = effect == 2 ? 1 : 2, fade = evy;
+                if (fade)
+                    FillBlend(canvas, ui(x - 16), ui(y - 16), ui(w + 32), ui(h + 32), (uint32_t)(fade * 255 / 16) << 24 | (mode == 1 ? 0xFFFFFF : 0));
+            };
             const bool fieldView = (!strcmp(scene.name, "top") || !strcmp(scene.name, "choice")) && !scene.items.empty() && scene.items[0].screen == 0;
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop &= ~LAYER_BG3;
             const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
@@ -5851,22 +5963,67 @@ int main(int argc, char** argv)
             bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
             static HudWorld::Dialogue worldLast;
             static uint32_t worldLastAt = 0;
-            if (shown) worldLast = dlg, worldLastAt = frame;
+            // A script lets go of its box and leaves the last page on the screen (HoldMsg, before
+            // a list of choices): that page, while the game's box shows exactly what it did.
+            static uint64_t worldBoxPicture = 0;
+            const uint64_t picture = top >= 0 ? HudWorld::BoxPicture(screenImages[0]) : 0;
+            if (shown) worldLast = dlg, worldLastAt = frame, worldBoxPicture = dlg.more ? 0 : picture;
             else if (top >= 0 && slide && worldLast.sign >= 0 && frame - worldLastAt < 12)
             {
                 dlg = worldLast;
                 dlg.more = false;
                 shown = true;
             }
-            worldBoxHold = shown ? 3 : std::max(0, worldBoxHold - 1);
+            else if (top >= 0 && !slide && picture && picture == worldBoxPicture && worldLast.sign < 0)
+            {
+                dlg = worldLast;
+                shown = true;
+            }
+            else
+                worldBoxPicture = 0;
+            // The place's name sliding down at the top, when nothing else is on the game's BG3.
+            std::string placeName;
+            int placeSlide = 0;
+            const bool placeShown = may && !shown && HudWorld::OnlyTheName(screenImages[0].flags) &&
+                HudWorld::ReadMapName(ram, placeName, placeSlide);
+            if (placeShown)
+            {
+                const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
+                const float px = x0 + 6 * u, py = y0 + (6 - placeSlide) * u - placeSlide * 1.5f;
+                HudWorld::DrawMapName(canvas, ui, sprites, font, placeName, px, py);
+                worldFade(px, py, HudTextWidth(ui, font, 48, placeName) + 150, 84);
+                overlayUsed = true;
+            }
+            worldBoxHold = shown || placeShown ? 3 : std::max(0, worldBoxHold - 1);
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
             if (shown)
             {
-                const int yesNo = HudWorld::ReadYesNo(ram);
-                if (yesNo >= 0) scene.items.resize(1);
+                HudWorld::Choice choice;
+                if (HudWorld::ReadChoice(ram, choice)) scene.items.resize(1);
                 const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
                 HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
-                    HudWorld::kBoxH * u - 6, frame, yesNo);
+                    HudWorld::kBoxH * u - 6, frame, &choice);
+                worldFade(x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u, HudWorld::kBoxH * u - 6);
+                overlayUsed = true;
+            }
+            // The game's X menu, drawn where its touch-screen panel stands, which is left out;
+            // as it was last while the game closes it or opens what was chosen (its panel stays
+            // up for a few frames).
+            static HudWorld::XMenu xmLast;
+            static uint32_t xmAt = 0;
+            HudWorld::XMenu xm;
+            const bool xmView = spritesOk && cfg.redrawn && merged && hudFree && !strcmp(scene.name, "start-menu") && scene.items.size() == 2;
+            if (xmView && HudWorld::ReadXMenu(ram, xm)) xmLast = xm, xmAt = frame;
+            else if (xmView && xmAt && frame - xmAt <= 20)
+                xm = xmLast;
+            if (xm.cursor >= 0)
+            {
+                const Element& el = scene.items[1];
+                const float u = view.unit / ui.s, x = (mergedX + view.originX) / ui.s + el.dx * u, y = view.originY / ui.s + el.dy * u;
+                const float w = el.sw * el.scale * u, h = el.sh * el.scale * u;
+                HudWorld::DrawXMenu(canvas, ui, sprites, font, xm, trainerName(), x, y, w, h);
+                worldFade(x, y, w, h); // (the screen fading to what was chosen)
+                scene.items.resize(1);
                 overlayUsed = true;
             }
         }
@@ -6030,6 +6187,98 @@ int main(int argc, char** argv)
                 HudShop::Draw(canvas, ui, sprites, font, romArt, bagTexts, ss, hints);
                 overlayUsed = true;
             }
+        }
+        // The Battle Factory's rental screen redrawn (hudfrontier.h), while its overlay runs.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && sectionActive("OVY_81"))
+        {
+            static uint32_t factoryAt = 0;
+            HudFrontier::Factory fv;
+            if (HudFrontier::ReadFactory({ nds->MainRAM, nds->MainRAMMask + 1 }, factoryAt, fv))
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" } };
+                if (fv.menu || fv.step == 4) hints.push_back({ { b }, "Back" });
+                else if (fv.numChosen) hints.push_back({ { b }, "Undo" });
+                HudFrontier::DrawFactory(canvas, ui, sprites, font, fv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                overlayUsed = true;
+            }
+        }
+        // The Battle Hall's type board redrawn (hudfrontier.h), while its overlay runs.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && sectionActive("OVY_82"))
+        {
+            static uint32_t hallAt = 0;
+            HudFrontier::Hall hv;
+            if (HudFrontier::ReadHall({ nds->MainRAM, nds->MainRAMMask + 1 }, hallAt, hv))
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" } };
+                if (hv.yesNo >= 0) hints.push_back({ { b }, "No" });
+                HudFrontier::DrawHall(canvas, ui, sprites, font, hv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                overlayUsed = true;
+            }
+        }
+        // Voltorb Flip redrawn (hudminigames.h); the game keeps its own controls.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("VoltorbFlip"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "VoltorbFlip"))
+                {
+                    static uint32_t vfAt = 0;
+                    const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                    HudMinigames::Voltorb v;
+                    const uint32_t man = HudParty::FindApp(ram, vfAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                        [](uint32_t) { return true; });
+                    if (man && HudMinigames::ReadVoltorb(ram, man, v))
+                    {
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y);
+                        std::vector<HudHint> hints;
+                        if (!v.menu.empty() || v.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
+                        else if (v.memoFocused) hints = { { { "buttons/button_dpad" }, "Mark" }, { { a }, "Set / clear" }, { { x }, "Close memo" }, { { b }, "Back to the board" } };
+                        else if (v.workflow == HudMinigames::WF_BOARD || v.workflow == HudMinigames::WF_MEMO_TOUCH)
+                            hints = { { { "buttons/button_dpad" }, "Move" }, { { a }, v.memoOpen ? "Mark" : "Flip" }, { { x }, v.memoOpen ? "Close memo" : "Memo" }, { { b }, "Quit" } };
+                        // (A Voltorb's message passes by itself; a number's waits for a button.)
+                        else if (v.message.more || (v.workflow == HudMinigames::WF_FLIP && v.messageShown && v.task == 4 && v.type[v.focus] != 4))
+                            hints = { { { a }, "Next" } };
+                        HudMinigames::DrawVoltorb(canvas, ui, sprites, font, romArt, v, hints);
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        // The Ruins of Alph's puzzles (hudminigames.h): redrawn around the game's board, or
+        // without the new screens the cursor over the game's own picture of it.
+        if (alphRead && screen == SCR_NONE && !menu.open && !startOpen && alphState.step >= 1 && alphState.step <= 6 && alphState.step != 5)
+        {
+            const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+            const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y);
+            const bool carrying = alphPad.phase == 2 || alphPad.phase == 3;
+            std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" }, { { a }, carrying ? "Put down" : "Pick up" } };
+            if (!carrying) hints.push_back({ { x }, "Turn" });
+            hints.push_back({ { b }, carrying ? "Put back" : "Quit" });
+            if (alphState.step == 6) hints.clear();
+            if (spritesOk && cfg.redrawn)
+            {
+                HudMinigames::DrawAlph(canvas, ui, sprites, font, alphState, alphPad, bot, hints);
+                overlayUsed = true;
+            }
+            else if (merged && alphState.step <= 4)
+                for (const Element& el : scene.items)
+                    if (el.screen == 1)
+                    {
+                        // The place under the cursor, where the merged view shows the touch screen.
+                        const float s = el.scale * view.unit;
+                        const float px = view.originX + (el.dx + (32 + 32 * alphPad.cx - el.sx) * el.scale) * view.unit;
+                        const float py = view.originY + (el.dy + (32 * alphPad.cy - el.sy) * el.scale) * view.unit;
+                        const int t = std::max(2, (int)(2 * s));
+                        const uint32_t col = carrying ? 0xFFFFC23A : 0xFFFFFFFF;
+                        canvas.Fill((int)px, (int)py, (int)(32 * s), t, col);
+                        canvas.Fill((int)px, (int)(py + 32 * s) - t, (int)(32 * s), t, col);
+                        canvas.Fill((int)px, (int)py, t, (int)(32 * s), col);
+                        canvas.Fill((int)(px + 32 * s) - t, (int)py, t, (int)(32 * s), col);
+                        overlayUsed = true;
+                        break;
+                    }
         }
         // The Pokégear redrawn (hudgear.h): its phone and map tabs, read from the game's
         // memory each frame; calls, menus and the other tabs are the game's own picture.
@@ -6209,7 +6458,7 @@ int main(int argc, char** argv)
         }
         // The Pokedex redrawn (huddex.h): its front page and its list, mirrored from the game's
         // application; its details and search are the game's own picture.
-        static int dexShown = 0; // what was drawn the frame before: 0 nothing, 1 the front page, 2 the list
+        static int dexShown = 0; // what was drawn the frame before: 0 nothing, 1 the front page, 2 the list, 3 the details
         int dexNow = 0;
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Pokedex"))
             for (unsigned i = 0; i < rc_num_apps; i++)
@@ -6217,8 +6466,34 @@ int main(int argc, char** argv)
                 {
                     static uint32_t dexAt = 0;
                     HudDex::View dv;
-                    if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
-                            HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown, dv))
+                    // The details (huddexinfo.h), drawn as 3; while they fade or flash a
+                    // button, the page drawn last stays.
+                    static HudDexInfo::View infoLast;
+                    HudDexInfo::View iv;
+                    const int info = HudDexInfo::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr,
+                        rc_apps[i].exitAddr, HudDex::JohtoNumbers(rom.data(), rom.size()), iv);
+                    if (info == 1 || (info < 0 && dexShown == 3))
+                    {
+                        if (info == 1) infoLast = iv;
+                        const HudDexInfo::View& v = infoLast;
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" } };
+                        if (v.page == HudDexInfo::Area && !v.places.empty()) hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Place" });
+                        if (v.page == HudDexInfo::Area) hints.push_back({ { a }, "Time of day" });
+                        if (v.page == HudDexInfo::Forms && v.forms.size() > 1)
+                        {
+                            hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Choose" });
+                            hints.push_back({ { a }, "Compare" });
+                        }
+                        if (v.page == HudDexInfo::Back) hints.push_back({ { a }, "Back to the list" });
+                        hints.push_back({ { b }, "Back" });
+                        HudDexInfo::Draw(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), v, trainerArt.px.empty() ? nullptr : &trainerArt,
+                            Party_MyCard().gender, hints);
+                        dexNow = 3;
+                        overlayUsed = true;
+                    }
+                    else if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                            HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown == 3 ? 0 : dexShown, dv))
                     {
                         const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y), y = PadGlyph(cfg.byLabel ? PAD_Y : PAD_X);

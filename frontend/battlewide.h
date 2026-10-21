@@ -18,6 +18,9 @@
 class BattleWide
 {
 public:
+    // The HP boxes are left out of the picture (where they were, the background shows), as
+    // they are drawn anew over it (hudbattleui.h).
+    bool HideBoxes = false;
     // Builds the picture for a view `extend` base pixels wider than the screen on each side.
     // `world` is the widescreen 3D picture across the whole view (`viewWidth` base pixels),
     // if there is one: beside the screen the 3D parts of the battle come from it (the grass
@@ -671,7 +674,7 @@ public:
             for (int sx = 0; sx < 256; sx++)
             {
                 const int l = Label[y * 256 + sx];
-                if (l && shift[l]) row[l == 1 ? sx : sx + 2 * extend] = 0xFF000000 | top.pixels[y * 256 + sx];
+                if (l && shift[l] && !HideBoxes) row[l == 1 ? sx : sx + 2 * extend] = 0xFF000000 | top.pixels[y * 256 + sx];
             }
         }
         out = WideImage();
