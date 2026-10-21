@@ -70,6 +70,7 @@ struct State
     Menu menu;
     Call call;
     Radio radio;
+    int skins = 0, skin = 0, skinCursor = 0; // the settings: the skins had (bits), in use, under the cursor
     int moving = -1; // the phone's contact being moved (its place in the list), -1 none
 };
 
@@ -90,7 +91,7 @@ bool ReadMenu(Read rd, uint32_t m, Menu& out)
     {
         std::string s;
         if (!HudScreens::GameString([&](uint32_t a) { return rd(a) & 0xFFFF; }, rd(items + 8 * i), s)) return false;
-        out.items.push_back(s);
+        out.items.push_back(HudScreens::TitleCase(s));
     }
     out.cursor = (rd(m + 0x25) & 0xFF) == 1 ? chosen : cur;
     return true;
@@ -286,8 +287,8 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
     using HudBag::InRam;
     auto rd8 = [&](uint32_t a) { return (int)(rd(a) & 0xFF); };
     auto rd16 = [&](uint32_t a) { return (int)(rd(a) & 0xFFFF); };
-    const auto *gear = app("Pokegear"), *phone = app("GearPhone"), *map = app("GearMap"), *radio = app("GearRadio");
-    if (!gear || !phone || !map || !radio) return false;
+    const auto *gear = app("Pokegear"), *phone = app("GearPhone"), *map = app("GearMap"), *radio = app("GearRadio"), *conf = app("GearConfigure");
+    if (!gear || !phone || !map || !radio || !conf) return false;
     const uint32_t man = HudBag::FindManager(rd, gear->initAddr, gear->execAddr, gear->exitAddr, cache);
     if (!man) return false;
     const uint32_t data = rd(man + 0x1C);
@@ -314,7 +315,7 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
         if (st.tabCursor > APP_CANCEL) return false;
     }
     // The tab's own application, run by the Pokégear (childApplication) in its per-frame step.
-    const auto* tab = st.app == APP_PHONE ? phone : st.app == APP_MAP ? map : st.app == APP_RADIO ? radio : nullptr;
+    const auto* tab = st.app == APP_PHONE ? phone : st.app == APP_MAP ? map : st.app == APP_RADIO ? radio : st.app == APP_CONFIGURE ? conf : nullptr;
     const uint32_t child = rd(data + 0x70);
     if (!tab || !InRam(child) || (rd(child) & ~1u) != tab->initAddr || (rd(child + 4) & ~1u) != tab->execAddr ||
         (rd(child + 8) & ~1u) != tab->exitAddr || rd(child + 0x18) != data)
@@ -324,9 +325,9 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
     }
     const uint32_t own = rd(child + 0x1C);
     step = (int)rd(child + 0x14);
-    // Starting (0), ending (2) or done (the phone's 14, the map's 13, the radio's 9), or not
-    // yet in its per-frame function: between tabs.
-    if (rd(child + 0x10) != 2 || step == 0 || step == 2 || step == (st.app == APP_PHONE ? 14 : st.app == APP_RADIO ? 9 : 13))
+    // Starting (0), ending (2) or done (the phone's 14, the map's 13, the radio's and the
+    // settings' 9), or not yet in its per-frame function: between tabs.
+    if (rd(child + 0x10) != 2 || step == 0 || step == 2 || step == (st.app == APP_PHONE ? 14 : st.app == APP_MAP ? 13 : 9))
     {
         between = true;
         return false;
@@ -360,6 +361,25 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
         return true;
     }
     if (st.app == APP_RADIO) return rd(own + 0x0C) == data && ReadRadio(rd, own, st.radio);
+    if (st.app == APP_CONFIGURE)
+    {
+        // PokegearConfigureAppData: the skins had (+0x12, 9 bits) and the one in use (the 7
+        // bits above), the one chosen for the menu (+0x11) and the menu asking whether to
+        // use it (+0x40, step 3); the cursor on the six skins is the Pokégear's last cursor.
+        if (rd(own + 0x0C) != data) return false;
+        const int w = rd16(own + 0x12);
+        st.skins = w & 0x3F;
+        st.skin = w >> 9;
+        st.skinCursor = rd8(own + 0x11);
+        if (!st.inTabs)
+        {
+            const uint32_t cm = rd(data + 0x7C), cur = InRam(cm) ? rd(cm + 8) : 0;
+            if (!InRam(cur)) return false;
+            st.skinCursor = rd8(cur + 1);
+        }
+        if (step == 3) ReadMenu(rd, rd(own + 0x40), st.menu);
+        return st.skin < 6 && st.skinCursor < 6;
+    }
     // PokegearMapAppData: the Pokégear's map (not flying or the Town Map).
     return rd(own + 0x10) == data && rd8(own + 0x0D) == 0 && ReadMap(rd, own, st);
 }
@@ -434,10 +454,12 @@ inline bool Shown(const State& st, int step, bool before)
         case 9: return true; // moving a contact
         default: return false;
         }
-    if (st.app == APP_RADIO)
-        switch (step) // PokegearRadio_Main
+    if (st.app == APP_RADIO || st.app == APP_CONFIGURE)
+        switch (step) // PokegearRadio_Main, PokegearConfigure_Main (3 its menu, 4 changing skins)
         {
-        case 1:  // tuning
+        case 1:  // tuning, choosing
+        case 3:
+        case 4:
         case 5:  // fading in
         case 7: return true; // wiping in from another tab
         case 6:  // fading out to close
@@ -704,6 +726,24 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         if (st.first > 0) HudSprite(c, ui, sp, "icons/icon_arrow_up", mx + mw - 64, my + 112, 40, 40);
         if (st.first + 6 < n) HudSprite(c, ui, sp, "icons/icon_arrow_down", mx + mw - 64, my + 112 + 5 * 108 + 52, 40, 40);
     }
+    else if (st.app == APP_CONFIGURE)
+    {
+        // The settings: the Pokégear's six skins as the game lays them out (two rows of
+        // three), the one in use marked, those not had yet empty.
+        HudOnline::TitledCard(c, ui, sp, f, mx + 24, my + 24, mw - 48, 60, "SETTINGS", "Pok\xC3\xA9gear skin");
+        for (int i = 0; i < 6; i++)
+        {
+            const bool has = st.skins >> i & 1, cur = !st.inTabs && i == st.skinCursor, used = i == st.skin;
+            const float bw = 300, bh = 260, x = mx + 100 + (i % 3) * (bw + 40), y = my + 140 + (i / 3) * (bh + 50);
+            HudPanel(c, ui, sp, cur ? "panels/button_yellow" : has ? "panels/button_white" : "panels/row_disabled", x, y, bw, bh,
+                has || cur ? 0xFFFFFFFF : 0x80FFFFFF);
+            if (cur) HudSprite(c, ui, sp, "cursor/cursor_small", x + 14, y + 20, 30, 32);
+            const float d = 120;
+            HudSprite(c, ui, sp, !has ? "people/chip_empty" : used ? "people/chip_ring_orange" : "people/chip_ring_grey", x + bw / 2 - d / 2, y + 40, d, d);
+            if (has) HudText(c, ui, f, x + bw / 2, y + 40 + d / 2 - 24, 48, std::to_string(i + 1), Ink, 1, true);
+            HudText(c, ui, f, x + bw / 2, y + bh - 70, 32, !has ? "Not yet" : used ? "In use" : "Skin " + std::to_string(i + 1), has ? Ink : Muted, 1);
+        }
+    }
     else if (st.app == APP_RADIO)
     {
         // The radio: the tuning dial with the game's channels as numbered rings and its
@@ -832,6 +872,11 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         title = Name(tx, id);
         sub = book.Class(tx, id);
     }
+    else if (st.app == APP_CONFIGURE && !st.inTabs)
+    {
+        title = "Skin " + std::to_string(st.skinCursor + 1);
+        sub = !(st.skins >> st.skinCursor & 1) ? "Not had yet" : st.skinCursor == st.skin ? "In use" : "Ready to use";
+    }
     else if (st.app == APP_RADIO)
     {
         title = st.radio.title;
@@ -853,7 +898,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     float y = my + 24;
     if (!title.empty())
     {
-        HudOnline::TitledCard(c, ui, sp, f, sx + 24, y, sw - 48, 60, st.app == APP_PHONE ? "CONTACT" : st.app == APP_RADIO ? "ON AIR" : "PLACE");
+        HudOnline::TitledCard(c, ui, sp, f, sx + 24, y, sw - 48, 60, st.app == APP_PHONE ? "CONTACT" : st.app == APP_RADIO ? "ON AIR" : st.app == APP_CONFIGURE ? "SKIN" : "PLACE");
         HudText(c, ui, f, sx + 40, y + 84, 48, title, Ink, 0, true);
         float ty = y + 148;
         if (!sub.empty()) HudText(c, ui, f, sx + 40, ty, 32, sub, st.flyHere >= 0 ? Ink : Muted), ty += 40;

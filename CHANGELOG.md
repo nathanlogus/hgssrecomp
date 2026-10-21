@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New screens: the Pokégear's settings tab (choosing its skin) is drawn anew.
+
 - New screens: the keyboard for naming (nicknames, boxes, your name) is drawn anew, with
   the name in its boxes and the keys of each page.
 
