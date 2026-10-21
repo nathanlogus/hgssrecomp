@@ -48,8 +48,15 @@
   Store the items for sale are shown in pages with their prices, the item you are on with
   its description and how many you have, how many to buy with the total, "Is that OK?"
   and the clerk's answers, and your money. Selling opens the bag in the same style, with
-  what the shop pays, how many to sell and your money. The Pokéathlon Dome's shops and
-  the clerk's questions before and after are still the game's own.
+  what the shop pays, how many to sell and your money. The Pokéathlon Dome's two shops
+  (the day's prizes and the Data Cards) are drawn the same way, with prices and your
+  Athlete Points, and what you have already bought marked. The clerk's questions before
+  and after are still the game's own, as are the seal shops.
+- New screens: more of the PC's Pokémon storage is drawn anew: Move Items (the Pokémon
+  holding an item stand out with it, giving and putting away items), the box's menu
+  (change box, wallpaper, name), choosing a wallpaper, "Deposit where?" with the box you
+  point at shown, and the storage's messages and yes/no questions, such as releasing a
+  Pokémon or a full box.
 - New screens, battles: the HP boxes, the message box and the stats after a level up are
   drawn in the new style too (widescreen view). The HP and EXP bars run down and fill as
   the game's do, the boxes slide in and out with the game's, and the messages appear
