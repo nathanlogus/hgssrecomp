@@ -842,17 +842,18 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
             }
         const std::string sel = st.selMap >= 0 && !st.inTabs ? Party_PlaceName(st.selMap) : "";
         HudOnline::TitledCard(c, ui, sp, f, mx + 24, my + 24, mw - 48, 60, region == 2 ? "JOHTO" : "KANTO", sel);
-        const float ax = mx + 40, ay = my + 110, aw = mw - 80, ah = mh - 190;
-        FillBlend(c, ui(ax), ui(ay), ui(aw), ui(ah), 0xFFE6F5DA);
+        // Johto's picture runs to Mount Silver, Kanto's from Route 27. It fills the card below
+        // the title to the card's inner edges (2 in, its corners 22 round).
+        const Image* art = env.art ? env.art->RegionMap(st.mapPal, MapPieces(st)) : nullptr;
+        const float ax = art ? mx + 2 : mx + 40, ay = art ? my + 100 : my + 110, aw = art ? mw - 4 : mw - 80, ah = art ? mh - 102 : mh - 190;
+        if (!art) FillBlend(c, ui(ax), ui(ay), ui(aw), ui(ah), 0xFFE6F5DA);
         if (shown.empty()) x1 = y1 = 0, x2 = y2 = 1;
         float cell = std::min((aw - 80) / (x2 - x1), (ah - 80) / (y2 - y1));
         float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
-        // Johto's picture runs to Mount Silver, Kanto's from Route 27.
-        const Image* art = env.art ? env.art->RegionMap(st.mapPal, MapPieces(st)) : nullptr;
         // Zoomed to fill the panel, following the cursor.
         static float pan[2] = { -1, -1 };
         if (art)
-            HudRegionMap(c, ui, *art, region == 2 ? 0 : 22, region == 2 ? 26 : 47, ax, ay, aw, ah, (float)st.curX, (float)st.curY, 3, pan,
+            HudRegionMap(c, ui, *art, region == 2 ? 0 : 22, region == 2 ? 26 : 47, ax, ay, aw, ah, (float)st.curX, (float)st.curY, 3, 20, pan,
                 cell, ox, oy);
         // What is drawn on the map stays inside the panel.
         auto box = [&](float x, float y, float w, float h, uint32_t col) {

@@ -315,11 +315,11 @@ private:
 // Draws the columns x1 to x2 (map cells, a tile each) of a region map (RomArt::RegionMap) so
 // it fills the design rectangle (ax, ay, aw, ah): zoomed to the next whole number of screen
 // pixels a map pixel that covers it (crisp), cropped, and panned so the cell (fx, fy) stays
-// at least `margin` cells from the edges. `pan` keeps the view's corner (map pixels) from
+// at least `margin` cells from the edges, its bottom corners rounded. `pan` keeps the view's corner (map pixels) from
 // one frame to the next, so it glides there; a negative x starts it at its place. Gives a
 // cell's design size and where cell (0, 0) is, for the markers on top.
 inline void HudRegionMap(Canvas& c, const Ui& ui, const Image& img, int x1, int x2, float ax, float ay, float aw, float ah, float fx,
-    float fy, float margin, float* pan, float& cell, float& ox, float& oy)
+    float fy, float margin, float radius, float* pan, float& cell, float& ox, float& oy)
 {
     const float w = 8.0f * (x2 - x1), h = (float)img.h, pw = std::round(ui(aw)), ph = std::round(ui(ah));
     float k = std::max(pw / w, ph / h);
@@ -335,7 +335,14 @@ inline void HudRegionMap(Canvas& c, const Ui& ui, const Image& img, int x1, int 
     else pan[0] += (tx - pan[0]) * 0.25f, pan[1] += (ty - pan[1]) * 0.25f;
     // Whole screen pixels, so every map pixel stays k wide.
     const float sx = std::round(pan[0] * k) / k, sy = std::round(pan[1] * k) / k, px = std::round(ui(ax)), py = std::round(ui(ay));
-    Blit(c, img, sx, sy, vw, vh, px, py, pw, ph, false);
+    // Row by row, so the bottom corners can be rounded as the card's (`radius`, design).
+    const float r = ui(radius);
+    for (int y = 0; y < (int)ph; y++)
+    {
+        const float d = ph - y - 0.5f; // from the bottom edge
+        const float in = d < r ? std::round(r - std::sqrt(std::max(0.0f, r * r - (r - d) * (r - d)))) : 0;
+        if (pw > 2 * in) Blit(c, img, sx + in / k, sy + y / k, (pw - 2 * in) / k, 1 / k, px + in, py + y, pw - 2 * in, 1, false);
+    }
     cell = 8 * k / ui.s;
     ox = (px - sx * k) / ui.s;
     oy = (py - sy * k) / ui.s;
