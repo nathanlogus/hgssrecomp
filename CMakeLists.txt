@@ -94,4 +94,24 @@ else()
     if(WIN32)
         target_link_libraries(ssrecomp PRIVATE ws2_32)
     endif()
+
+    # A clean copy to play and test from: `ninja -C build bin` (or `cmake --install build
+    # --prefix bin --strip`) puts the game, without its debug information, in bin/ beside
+    # assets/, with the DLLs it needs on Windows. build/ stays the compiler's workspace.
+    if(POLICY CMP0207)
+        cmake_policy(SET CMP0207 NEW) # paths compared with forward slashes
+    endif()
+    if(WIN32 AND NOT CMAKE_VERSION VERSION_LESS 3.21)
+        get_filename_component(SSR_TOOL_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        install(TARGETS ssrecomp
+            RUNTIME_DEPENDENCIES DIRECTORIES "${SSR_TOOL_BIN}"
+            PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
+            POST_EXCLUDE_REGEXES "[Ss][Yy][Ss][Tt][Ee][Mm]32"
+            RUNTIME DESTINATION .)
+    else()
+        install(TARGETS ssrecomp RUNTIME DESTINATION .)
+    endif()
+    add_custom_target(bin
+        COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}" --prefix "${CMAKE_SOURCE_DIR}/bin" --strip
+        DEPENDS ssrecomp USES_TERMINAL)
 endif()

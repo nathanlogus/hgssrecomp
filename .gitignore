@@ -27,6 +27,7 @@ __pycache__/
 /ssrecomp.rom
 /gen.new/
 /dist/
+/bin/
 .DS_Store
 # ROM hack patches (made from the game) and the patched ROM
 /definitive/

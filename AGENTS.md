@@ -68,6 +68,10 @@ From a ROM (what the setup program does):
     python3 tools/apps.py --layout layouts/soulsilver-us.json gen
     cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
     ninja -C build
+    ninja -C build bin      # optional: a clean copy (game + DLLs, no debug info) in bin/
+
+`build/` is the compiler's workspace (deleting it means recompiling everything); play
+and test from `bin/`, which finds `assets/` beside it.
 
 From the decompilation, see README "Building from the decompilation".
 
