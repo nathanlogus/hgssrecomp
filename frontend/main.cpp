@@ -6179,11 +6179,19 @@ int main(int argc, char** argv)
             // last page (the game lets go of it first): that page, while it is on the screen.
             // A question's answers (a list of the game's beside the box is allowed on BG3 then).
             HudWorld::Choice choice;
-            const bool asked = may && HudWorld::ReadChoice(ram, choice);
+            const bool asked = may && HudWorld::ReadChoice(ram, choice, rom.data(), rom.size());
             const int top = may ? HudWorld::BoxTop(screenImages[0].flags, choice.window) : -1;
             int slide = std::max(0, top - HudWorld::kBoxY - 1);
             HudWorld::Dialogue dlg;
-            bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
+            bool shown = false;
+            if (asked && !choice.about.empty() && top >= 0 && !slide)
+            {
+                // A list whose answers each have a text about them, which the game writes in the box.
+                dlg.lines = HudWrap(ui, font, 64, choice.about, HudWorld::kBoxW * view.unit / ui.s - 150);
+                shown = dlg.lines.size() <= 2;
+            }
+            else
+                shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
             static HudWorld::Dialogue worldLast;
             static uint32_t worldLastAt = 0;
             // A script lets go of its box and leaves the last page on the screen (HoldMsg, before

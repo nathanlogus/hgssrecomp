@@ -234,8 +234,13 @@ inline bool StringText(const Ram& r, uint32_t s, std::string& out)
     {
         const uint16_t c = (uint16_t)r.R16(s + 8 + 2 * i);
         if (c == 0xFFFF) break;
-        const std::string ch = NdsCharToUtf8(c);
-        if (ch.empty() || c == 0xE000 || c == 0x25BC || c == 0x25BD) return false;
+        if (c == 0xFFFE) // a control code (a colour, ...): its kind, its number of fields, the fields
+        {
+            i += 2 + r.R16(s + 8 + 2 * (i + 2));
+            continue;
+        }
+        const std::string ch = NdsCharToUtf8(c); // (a line break, as the touch screen's two-line buttons have: a space)
+        if (ch.empty() || c == 0x25BC || c == 0x25BD) return false;
         out += ch;
     }
     return !out.empty();
@@ -259,10 +264,12 @@ struct Choice
 {
     std::vector<std::string> items;
     int cursor = -1;
+    int across = 1; // columns (a grid's choices go along its rows)
+    std::string about; // what the chosen answer does, which the game writes in the box (a list's +0x2A4 + 2i, its text's number)
     Rect window;
 };
 
-inline bool ReadChoice(const Ram& r, Choice& ch)
+inline bool ReadChoice(const Ram& r, Choice& ch, const uint8_t* rom = nullptr, size_t romSize = 0)
 {
     ch = Choice();
     const uint32_t fs = r.R32(kFieldSystem);
@@ -281,11 +288,12 @@ inline bool ReadChoice(const Ram& r, Choice& ch)
     {
         const uint32_t list = r.R32(env + 0x10), lm = r.R32(list + 0xB8), items = r.R32(lm);
         const uint32_t across = r.R8(lm + 9), down = r.R8(lm + 0xA), cur = r.R8(lm + 0x15), win = list + 8;
-        // One column, on the top screen's BG3, in its window (tiles).
-        if (!r.Ptr(list) || !r.Ptr(lm) || !r.Ptr(items) || r.R32(lm + 4) != win || across != 1 || down < 1 || down > 8 || cur >= down ||
-            r.R8(win + 4) != 3 || r.R8(win + 8) != 2 * down)
+        // One or two columns, on the top screen's BG3, in its window (tiles).
+        if (!r.Ptr(list) || !r.Ptr(lm) || !r.Ptr(items) || r.R32(lm + 4) != win || across < 1 || across > 2 || down < 1 || down > 8 ||
+            cur >= across * down || r.R8(win + 4) != 3 || r.R8(win + 8) != 2 * down)
             return false;
-        for (uint32_t i = 0; i < down; i++)
+        ch.across = (int)across;
+        for (uint32_t i = 0; i < across * down; i++)
         {
             std::string t;
             if (!StringText(r, r.R32(items + 8 * i), t)) return false;
@@ -317,6 +325,10 @@ inline bool ReadChoice(const Ram& r, Choice& ch)
             if (!StringText(r, r.R32(list + 0x1C4 + 8 * i), t)) return false;
             ch.items.push_back(t);
         }
+        // The text about the chosen answer (ov01_021EEF9C writes it in the box, from the list's
+        // messages, +0x8C: a MsgData, its bank +6).
+        const uint32_t about = r.R16(list + 0x2A4 + 2 * cur), md = r.R32(list + 0x8C);
+        if (rom && about != 0xFF && r.Ptr(md)) ch.about = NdsMessage(rom, romSize, (int)r.R16(md + 6), (int)about);
     }
     ch.cursor = (int)cur;
     return true;
@@ -345,15 +357,14 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const D
     }
     if (choice && choice->cursor >= 0)
     {
-        // The answers in a column at the right above the box, as wide as the longest.
-        const int n = (int)choice->items.size();
-        const float bh = n > 4 ? 72 : 86, gap = n > 4 ? 12 : 18, px = n > 4 ? 48 : 56;
+        // The answers at the right above the box, in the game's columns, as wide as the longest.
+        const int n = (int)choice->items.size(), across = std::max(1, choice->across), rows = (n + across - 1) / across;
+        const float bh = rows > 4 ? 72 : 86, gap = rows > 4 ? 12 : 18, px = rows > 4 ? 48 : 56;
         float bw = 340;
         for (const std::string& t : choice->items) bw = std::max(bw, HudTextWidth(ui, f, px, t) + 140);
-        const float bx = x + w - bw;
         for (int i = 0; i < n; i++)
         {
-            const float by = y - 30 - (n - i) * (bh + gap) + gap;
+            const float bx = x + w - (across - i % across) * (bw + gap) + gap, by = y - 30 - (rows - i / across) * (bh + gap) + gap;
             const bool on = i == choice->cursor;
             HudPanel(c, ui, sp, on ? "panels/row_selected" : "panels/row", bx, by, bw, bh);
             if (on) HudSprite(c, ui, sp, "cursor/cursor", bx + 24, by + bh / 2 - 20, 36, 40);
