@@ -35,6 +35,8 @@ struct Voltorb
     std::vector<std::string> menu; // the list the game shows, with its cursor
     int menuCursor = -1;
     int yesNo = -1;
+    // One of the three lessons of Game Info (1-3), shown in place of the board.
+    int Lesson() const { return workflow >= 4 && workflow <= 6 ? workflow - 3 : 0; }
 };
 
 // The text of a message printed by the game's text printer into `win` from the String `s`
@@ -83,8 +85,6 @@ inline bool ReadVoltorb(const Ram& r, uint32_t man, Voltorb& v)
     v.wfState = (int)r.R8(wf + 0x0D);
     v.task = (int)r.R8(wf + 0x0E);
     if (v.workflow > WF_QUIT || v.wfState > 4) return false;
-    // The lessons draw pictures of their own: the game's screen shows.
-    if (v.workflow >= WF_HOW_TO_PLAY && v.workflow <= WF_ABOUT_MEMO) return false;
     for (int i = 0; i < 25; i++)
     {
         const uint32_t c = g + 12 * i;
@@ -138,7 +138,7 @@ inline bool ReadVoltorb(const Ram& r, uint32_t man, Voltorb& v)
     HudWorld::Dialogue page;
     if (PrinterPage(r, r.R32(d + 0x140), d + 0x24, (int)r.R8(d + 0x22B), page)) kept = page, keptFor = v.workflow;
     const bool mainWindow = v.workflow == WF_COIN_CASE_FULL || v.workflow == WF_NEW_ROUND || v.workflow == WF_MAIN_MENU ||
-        v.workflow == WF_GAME_INFO || v.workflow == WF_WIN || (v.workflow == WF_AWARD && v.wfState < 3) ||
+        v.workflow == WF_GAME_INFO || v.Lesson() || v.workflow == WF_WIN || (v.workflow == WF_AWARD && v.wfState < 3) ||
         (v.workflow == WF_QUIT && v.wfState < 3);
     v.messageShown = false;
     v.message = HudWorld::Dialogue();
@@ -226,9 +226,61 @@ inline void DrawVoltorb(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
         HudPixelArt(c, ui, voltorbIcon, x + w / 2 - s / 2, y + h / 2 - s * 0.66f, s, s);
     };
 
-    // The board: 5 x 5 cards, the totals of each row at its right and of each column below.
     const float pitch = 150, cs = 128, bx = x0 + 80, by = 52;
     FillRound(c, ui, bx - 30, by - 30, pitch * 6 + 40, pitch * 6 + 40, 36, 0xF0FFFFFF);
+    if (const int lesson = v.Lesson())
+    {
+        // A lesson of Game Info: the game's own captions for its pictures, with an example.
+        static const char* title[3] = { "How to Play", "Hint!", "About Memos" };
+        static const char* caption[3] = {
+            "If you flip the cards in this order, you\xE2\x80\x99ll collect: 3 \xC3\x97 1 \xC3\x97 2 \xC3\x97 1 \xC3\x97 3... A total of 18 Coins! "
+            "If you select \xE2\x80\x9CQuit,\xE2\x80\x9D you\xE2\x80\x99ll keep those 18 Coins. But if you find Voltorb, you\xE2\x80\x99ll lose all your Coins!",
+            "By looking at the numbers on the sides of the cards, you can see the hidden number and Voltorb totals.",
+            "Open the Memo, then choose the cards to add and remove marks." };
+        HudText(c, ui, f, bx + 20, by, 48, title[lesson - 1], Ink, 0, true);
+        // The example: a row of five cards and its totals.
+        static const int row[3][5] = { { 3, 1, 2, 1, 3 }, { 1, 4, 2, 1, 3 }, { 0, 0, 0, 0, 0 } };
+        const float ey = by + 120;
+        int points = 0, volts = 0;
+        for (int k = 0; k < 5; k++)
+        {
+            const int t = row[lesson - 1][k];
+            const float x = bx + k * pitch;
+            points += t < 4 ? t : 0, volts += t == 4;
+            if (t)
+            {
+                FillRound(c, ui, x, ey, cs, cs, 18, t == 4 ? 0xFFFFE3DC : 0xFFFFFBEA);
+                if (t == 4) voltorbAt(x + 14, ey + 14, cs - 28, cs - 28);
+                else HudText(c, ui, f, x + cs / 2, ey + 24, 80, std::to_string(t), Ink, 1, true);
+            }
+            else
+            {
+                FillRound(c, ui, x, ey, cs, cs, 18, 0xFF2F8F66);
+                FillRound(c, ui, x + 10, ey + 10, cs - 20, cs - 20, 12, 0xFF3FA978);
+                if (k == 1 || k == 3)
+                {
+                    FillRound(c, ui, x + 8, ey + 8, 38, 38, 10, 0xFFFFFFFF);
+                    if (k == 1) voltorbAt(x + 11, ey + 11, 32, 32);
+                    else HudText(c, ui, f, x + 27, ey + 11, 32, "2", Ink, 1, true);
+                }
+            }
+        }
+        if (lesson == 2)
+        {
+            const float x = bx + 5 * pitch;
+            FillRound(c, ui, x, ey, cs, cs, 18, kLineColour[0]);
+            char pts[8];
+            snprintf(pts, sizeof pts, "%02d", points);
+            HudText(c, ui, f, x + cs / 2, ey + 6, 48, pts, White, 1, true);
+            voltorbAt(x + 12, ey + cs / 2 + 6, 44, 44);
+            HudText(c, ui, f, x + cs - 34, ey + cs / 2 + 6, 48, std::to_string(volts), White, 1, true);
+        }
+        const std::vector<std::string> lines = HudWrap(ui, f, 40, caption[lesson - 1], pitch * 6 - 60);
+        for (size_t i = 0; i < lines.size() && i < 9; i++) HudText(c, ui, f, bx + 20, ey + cs + 50 + 54 * i, 40, lines[i], Ink);
+    }
+    else
+    {
+    // The board: 5 x 5 cards, the totals of each row at its right and of each column below.
     // The lines joining the cards, in their row's and column's colours.
     for (int k = 0; k < 5; k++)
         for (int j = 0; j < 5; j++)
@@ -289,6 +341,7 @@ inline void DrawVoltorb(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
             voltorbAt(x + 12, y + cs / 2 + 6, 44, 44);
             HudText(c, ui, f, x + cs - 34, y + cs / 2 + 6, 48, std::to_string(v.totals ? v.voltorbs[a][k] : 0), White, 1, true);
         }
+    }
 
     // The right: the level and the coins, the memo, Quit and the game's messages.
     const float rx = x0 + 1100, rw = 760;
@@ -484,6 +537,128 @@ inline bool AlphInput(const Alph& a, AlphPad& p, uint32_t& keys, int& tx, int& t
         if (a.step != 1 || p.timer > 20) p.phase = 0;
         return false;
     }
+    return false;
+}
+
+// ---- The Battle Frontier's scratch-off cards (overlay 87, not decompiled) ----
+// Touch only: three of four cards are chosen by touching them, then on each card three of
+// its nine panels are scratched by rubbing them, NEXT CARD moves on and a yes/no asks
+// whether to stop. Here: the d-pad chooses (a card, or a panel / NEXT CARD, or the answer)
+// and A touches it; on a panel A rubs it clean, the stylus going over it row by row.
+// Read from its OverlayManager: the step (+0x14) and, in its data, the step's own stage
+// (+8) and the cards chosen so far (+0x0E, which ones from +0x15). Found by watching them.
+struct Scratch
+{
+    int step = 0, stage = 0, chosen = 0;
+    int picked[3] = { -1, -1, -1 };
+};
+
+inline bool ReadScratch(const Ram& r, uint32_t man, Scratch& s)
+{
+    const uint32_t d = r.R32(man + 0x1C);
+    if (!r.Ptr(d) || r.R32(man + 0x10) != 2) return false;
+    s.step = (int)r.R32(man + 0x14);
+    s.stage = (int)r.R8(d + 8);
+    s.chosen = (int)r.R8(d + 0x0E);
+    if (s.step > 7 || s.chosen > 3) return false;
+    for (int i = 0; i < 3; i++) s.picked[i] = i < s.chosen ? (int)r.R8(d + 0x15 + i) : -1;
+    return true;
+}
+
+struct ScratchPad
+{
+    int card = 0;  // choosing: 0-3
+    int spot = 0;  // scratching: 0-8 the panels, 9 NEXT CARD
+    int answer = 0; // the question: 0 yes, 1 no
+    int rub = -1;  // frames into rubbing a panel, or -1
+    int tap = 0, tapX = 0, tapY = 0;
+    uint32_t prev = 0;
+    // Where it is on the touch screen (for the cursor), and how big.
+    int curX = 0, curY = 0, curW = 0, curH = 0;
+    bool shown = false;
+};
+
+// The touch screen's places: the cards (their hitboxes' middles), the panels and NEXT CARD,
+// and the question's YES and NO.
+constexpr int kCardX[4] = { 40, 113, 169, 229 }, kCardY = 98;
+constexpr int kPanelX[3] = { 60, 128, 195 }, kPanelY[3] = { 36, 82, 127 }, kPanelW = 50, kPanelH = 37;
+
+inline bool ScratchInput(const Scratch& s, ScratchPad& p, uint32_t& keys, int& tx, int& ty)
+{
+    const uint32_t edge = keys & ~p.prev;
+    p.prev = keys;
+    const bool choosing = s.step == 2 && s.stage == 1, scratching = s.step == 5 && s.stage == 3, asking = s.step == 5 && s.stage == 9;
+    p.shown = false;
+    if (p.tap > 0)
+    {
+        p.tap--;
+        tx = p.tapX, ty = p.tapY;
+        keys &= ~(kA | kB | kUp | kDown | kLeft | kRight);
+        return true;
+    }
+    if (p.rub >= 0)
+    {
+        // Row by row over the panel, 5 pixels apart (the scratch is about 6 wide).
+        const int cols = kPanelW / 5 + 1, rows = kPanelH / 5 + 1;
+        const int k = p.rub++, row = k / cols, col = row % 2 ? cols - 1 - k % cols : k % cols;
+        keys &= ~(kA | kB | kUp | kDown | kLeft | kRight);
+        if (row >= rows || !scratching) { p.rub = -1; return false; }
+        tx = kPanelX[p.spot % 3] - kPanelW / 2 + col * 5;
+        ty = kPanelY[p.spot / 3] - kPanelH / 2 + row * 5;
+        p.shown = true;
+        p.curX = kPanelX[p.spot % 3] - kPanelW / 2, p.curY = kPanelY[p.spot / 3] - kPanelH / 2, p.curW = kPanelW, p.curH = kPanelH;
+        return true;
+    }
+    auto start = [&](int x, int y) { p.tap = 5, p.tapX = x, p.tapY = y; };
+    if (choosing)
+    {
+        auto taken = [&](int c) { return c == s.picked[0] || c == s.picked[1] || c == s.picked[2]; };
+        if (taken(p.card))
+            for (int c = 0; c < 4; c++)
+                if (!taken(c)) { p.card = c; break; }
+        for (int dir : { (edge & kRight) ? 1 : 0, (edge & kLeft) ? -1 : 0 })
+            if (dir)
+                for (int c = p.card + dir; c >= 0 && c < 4; c += dir)
+                    if (!taken(c)) { p.card = c; break; }
+        if (edge & kA) start(kCardX[p.card], kCardY);
+        keys &= ~(kA | kUp | kDown | kLeft | kRight);
+        p.shown = true;
+        const int x0 = p.card ? kCardX[p.card] - 28 : 4;
+        p.curX = x0, p.curY = 42, p.curW = 56, p.curH = 112;
+    }
+    else if (scratching)
+    {
+        if (p.spot < 9)
+        {
+            const int col = p.spot % 3, row = p.spot / 3;
+            if ((edge & kLeft) && col > 0) p.spot--;
+            if ((edge & kRight) && col < 2) p.spot++;
+            if ((edge & kUp) && row > 0) p.spot -= 3;
+            if (edge & kDown) p.spot = row < 2 ? p.spot + 3 : 9;
+        }
+        else if (edge & kUp) p.spot = 7;
+        if (edge & kA)
+        {
+            if (p.spot == 9) start(128, 180);
+            else p.rub = 0;
+        }
+        keys &= ~(kA | kUp | kDown | kLeft | kRight);
+        p.shown = true;
+        if (p.spot == 9) p.curX = 88, p.curY = 170, p.curW = 80, p.curH = 20;
+        else p.curX = kPanelX[p.spot % 3] - kPanelW / 2, p.curY = kPanelY[p.spot / 3] - kPanelH / 2, p.curW = kPanelW, p.curH = kPanelH;
+    }
+    else if (asking)
+    {
+        if (edge & (kUp | kDown)) p.answer ^= 1;
+        if (edge & kA) start(216, p.answer ? 112 : 81);
+        else if (edge & kB) start(216, 112);
+        keys &= ~(kA | kB | kUp | kDown | kLeft | kRight);
+        p.shown = true;
+        p.curX = 194, p.curY = (p.answer ? 112 : 81) - 11, p.curW = 44, p.curH = 22;
+    }
+    else
+        p.answer = 0;
+    if (p.tap > 0) return ScratchInput(s, p, keys, tx, ty);
     return false;
 }
 

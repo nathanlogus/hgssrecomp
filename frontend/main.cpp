@@ -4993,6 +4993,28 @@ int main(int argc, char** argv)
                     break;
                 }
         if (!alphRead) alphPad = HudMinigames::AlphPad();
+        // The Battle Frontier's scratch-off cards, played with the buttons (hudminigames.h).
+        static HudMinigames::ScratchPad scratchPad;
+        bool scratchRead = false;
+        if (!uiOpen && appRunning("ScratchOffCards"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "ScratchOffCards"))
+                {
+                    static uint32_t scAt = 0;
+                    const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                    const uint32_t man = HudParty::FindApp(ram, scAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                        [](uint32_t) { return true; });
+                    HudMinigames::Scratch sc;
+                    if (man && HudMinigames::ReadScratch(ram, man, sc))
+                    {
+                        scratchRead = true;
+                        if (getenv("SSR_SCRATCH_DEBUG")) fprintf(stderr, "[sc] %u step %d stage %d chosen %d\n", frame, sc.step, sc.stage, sc.chosen);
+                        int tx, ty;
+                        if (HudMinigames::ScratchInput(sc, scratchPad, keys, tx, ty)) touching = true, touchX = tx, touchY = ty;
+                    }
+                    break;
+                }
+        if (!scratchRead) scratchPad = HudMinigames::ScratchPad();
 
         if (uiOpen && bootMode == BOOT_NONE && !gameSave.Busy())
         {
@@ -6214,6 +6236,33 @@ int main(int argc, char** argv)
                     }
                     break;
                 }
+        // A ring around a place of the touch screen (DS pixels) where the view shows it, for
+        // the minigames played with the buttons; false when the touch screen is not shown.
+        auto touchRing = [&](int x, int y, int w, int h, uint32_t col) {
+            float px, py, s;
+            if (merged)
+            {
+                const Element* touch = nullptr;
+                for (const Element& el : scene.items)
+                    if (el.screen == 1) { touch = &el; break; }
+                if (!touch) return false;
+                s = touch->scale * view.unit;
+                px = view.originX + (touch->dx + (x - touch->sx) * touch->scale) * view.unit;
+                py = view.originY + (touch->dy + (y - touch->sy) * touch->scale) * view.unit;
+            }
+            else
+            {
+                if (rects[1].w <= 0) return false;
+                s = rects[1].w / 256.0f;
+                px = rects[1].x + x * s, py = rects[1].y + y * s;
+            }
+            const int t = std::max(2, (int)(2 * s)), W = (int)(w * s), H = (int)(h * s);
+            canvas.Fill((int)px - t, (int)py - t, W + 2 * t, t, col);
+            canvas.Fill((int)px - t, (int)py + H, W + 2 * t, t, col);
+            canvas.Fill((int)px - t, (int)py, t, H, col);
+            canvas.Fill((int)px + W, (int)py, t, H, col);
+            return true;
+        };
         // The Ruins of Alph's puzzles (hudminigames.h): redrawn around the game's board, or
         // without the new screens the cursor over the game's own picture of it.
         if (alphRead && screen == SCR_NONE && !menu.open && !startOpen && alphState.step >= 1 && alphState.step <= 6 && alphState.step != 5)
@@ -6230,24 +6279,11 @@ int main(int argc, char** argv)
                 HudMinigames::DrawAlph(canvas, ui, sprites, font, alphState, alphPad, bot, hints);
                 overlayUsed = true;
             }
-            else if (merged && alphState.step <= 4)
-                for (const Element& el : scene.items)
-                    if (el.screen == 1)
-                    {
-                        // The place under the cursor, where the merged view shows the touch screen.
-                        const float s = el.scale * view.unit;
-                        const float px = view.originX + (el.dx + (32 + 32 * alphPad.cx - el.sx) * el.scale) * view.unit;
-                        const float py = view.originY + (el.dy + (32 * alphPad.cy - el.sy) * el.scale) * view.unit;
-                        const int t = std::max(2, (int)(2 * s));
-                        const uint32_t col = carrying ? 0xFFFFC23A : 0xFFFFFFFF;
-                        canvas.Fill((int)px, (int)py, (int)(32 * s), t, col);
-                        canvas.Fill((int)px, (int)(py + 32 * s) - t, (int)(32 * s), t, col);
-                        canvas.Fill((int)px, (int)py, t, (int)(32 * s), col);
-                        canvas.Fill((int)(px + 32 * s) - t, (int)py, t, (int)(32 * s), col);
-                        overlayUsed = true;
-                        break;
-                    }
+            else if (alphState.step <= 4)
+                overlayUsed |= touchRing(32 + 32 * alphPad.cx, 32 * alphPad.cy, 32, 32, carrying ? 0xFFFFC23A : 0xFFFFFFFF);
         }
+        if (scratchPad.shown && screen == SCR_NONE && !menu.open && !startOpen)
+            overlayUsed |= touchRing(scratchPad.curX, scratchPad.curY, scratchPad.curW, scratchPad.curH, 0xFFFFC23A);
         // The Pokégear redrawn (hudgear.h): its phone and map tabs, read from the game's
         // memory each frame; calls, menus and the other tabs are the game's own picture.
         static uint32_t gearManager = 0;
