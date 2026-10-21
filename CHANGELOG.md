@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New screens: what people say in the overworld appears in a new message box, the text
+  coming in as the game writes it, with the arrow when there is more; yes/no questions
+  (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
+  with the same box.
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a

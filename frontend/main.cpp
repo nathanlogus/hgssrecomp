@@ -60,6 +60,7 @@
 #include "huddex.h"
 #include "hudgear.h"
 #include "hudpcbox.h"
+#include "hudworld.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -5788,6 +5789,46 @@ int main(int argc, char** argv)
                 if (!bs.idle) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Confirm" } };
                 if (bs.moves || bs.kind == HudBattle::Target || (bs.kind == HudBattle::Commands && bs.cancel)) hints.push_back({ { back }, "Back" });
                 battleHud.Draw(canvas, ui, sprites, font, battleMoves, romArt, bs, sel, hints, (view.originY + 137 * view.unit) / ui.s);
+                overlayUsed = true;
+            }
+        }
+        // The overworld's message box redrawn (hudworld.h), with a script's yes/no question,
+        // while the single-screen view shows the overworld and nothing but the box is on the
+        // game's BG3. The game's box (BG3) and the question's buttons from the touch screen are
+        // left out of the picture then; the box for two frames after (its tiles go a frame later).
+        {
+            static int worldBoxHold = 0;
+            static const bool worldTested = getenv("SSR_WORLDUI_SELFTEST") &&
+                fprintf(stderr, "[worldui] self-test %s\n", HudWorld::SelfTest() ? "passed" : "FAILED");
+            (void)worldTested;
+            const bool fieldView = (!strcmp(scene.name, "top") || !strcmp(scene.name, "choice")) && !scene.items.empty() && scene.items[0].screen == 0;
+            if (worldBoxHold > 0 && fieldView) scene.items[0].drop &= ~LAYER_BG3;
+            const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+            const bool may = spritesOk && cfg.redrawn && merged && hudFree && fieldView;
+            // A sign slides in and out: drawn as low as the game's is. It slides away with its
+            // last page (the game lets go of it first): that page, while it is on the screen.
+            const int top = may ? HudWorld::BoxTop(screenImages[0].flags) : -1;
+            int slide = std::max(0, top - HudWorld::kBoxY - 1);
+            HudWorld::Dialogue dlg;
+            bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
+            static HudWorld::Dialogue worldLast;
+            static uint32_t worldLastAt = 0;
+            if (shown) worldLast = dlg, worldLastAt = frame;
+            else if (top >= 0 && slide && worldLast.sign >= 0 && frame - worldLastAt < 12)
+            {
+                dlg = worldLast;
+                dlg.more = false;
+                shown = true;
+            }
+            worldBoxHold = shown ? 3 : std::max(0, worldBoxHold - 1);
+            if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
+            if (shown)
+            {
+                const int yesNo = HudWorld::ReadYesNo(ram);
+                if (yesNo >= 0) scene.items.resize(1);
+                const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
+                HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
+                    HudWorld::kBoxH * u - 6, frame, yesNo);
                 overlayUsed = true;
             }
         }
