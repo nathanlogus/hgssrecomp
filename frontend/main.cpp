@@ -68,6 +68,9 @@
 #include "hudgear.h"
 #include "hudoptions.h"
 #include "hudnaming.h"
+#include "hudpots.h"
+#include "hudapricorn.h"
+#include "hudpalpad.h"
 #include "hudpcbox.h"
 #include "hudworld.h"
 #include "hudshop.h"
@@ -6568,6 +6571,61 @@ int main(int argc, char** argv)
                     break;
                 }
         namingShown = namingNow;
+        // The Berry Pots redrawn (hudpots.h); while they fade out (step 1) only if shown before.
+        static bool potsShown = false;
+        bool potsNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("BerryPots"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "BerryPots"))
+                {
+                    static uint32_t potsAt = 0;
+                    HudPots::State ps;
+                    if (HudPots::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, potsAt, ps) &&
+                        (ps.step != 1 || potsShown))
+                    {
+                        potsNow = true;
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose a pot" }, { { accept }, "Select" }, { { back }, "Close" } };
+                        if (!ps.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
+                        else if (ps.step >= 3) hints = { { { accept }, "OK" } };
+                        HudPots::Draw(canvas, ui, sprites, font, romArt, bagTexts, ps, hints);
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        potsShown = potsNow;
+        // The Apricorn Box redrawn (hudapricorn.h), while it takes the input.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("ApricornBox"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "ApricornBox"))
+                {
+                    static uint32_t apricornAt = 0;
+                    HudApricorn::State as;
+                    if (HudApricorn::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, apricornAt, as))
+                    {
+                        const std::string back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudApricorn::Draw(canvas, ui, sprites, font, romArt, bagTexts, as, { { { "buttons/button_dpad" }, "Choose" }, { { back }, "Close" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        // The Pal Pad's menu and Friend Code page redrawn (hudpalpad.h).
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("PalPad"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "PalPad"))
+                {
+                    static uint32_t palPadAt = 0;
+                    HudPalPad::State pp;
+                    if (HudPalPad::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, palPadAt, pp))
+                    {
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudPalPad::Draw(canvas, ui, sprites, font, bagTexts, trainerName(), pp,
+                            pp.screen == 0 ? std::vector<HudHint>{ { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Close" } }
+                                           : std::vector<HudHint>{ { { accept }, "Back" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
         // The Union Room's trade screen redrawn (hudtrade.h), mirroring the game's own; for
         // up to three frames that do not check out the last picture stays, as with the bag.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("WirelessTradeSelectMon"))
