@@ -6575,6 +6575,7 @@ int main(int argc, char** argv)
                 env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
                 env.me.map = partyMap;
                 env.rd = readRam;
+                env.art = &romArt;
                 int year, month, day, hour, minute, second;
                 nds->RTC.GetDateTime(year, month, day, hour, minute, second);
                 // Sakamoto's day of the week (0 Sunday), as the DS clock counts it.
@@ -6615,6 +6616,7 @@ int main(int argc, char** argv)
                 env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
                 env.me.map = partyMap;
                 env.rd = readRam;
+                env.art = &romArt;
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" } };
                 if (fs.mode == 1) hints.push_back({ { accept }, "Fly here" });
