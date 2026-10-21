@@ -4659,12 +4659,19 @@ int main(int argc, char** argv)
                 wh = cfg.wideLines;
             }
             onPlaza = worldBlocks.OnPlaza(*nds);
-            const bool wantWide = merged && ((cfg.wide && view.width >= 300) || onPlaza) && !opt.noWide && !opt.lockstep &&
+            // (On the Plaza in the layouts with both screens too, as the DS's own view: the
+            // top screen is then made from it, see plazaTop.)
+            const bool wantWide = ((merged && cfg.wide && view.width >= 300) || onPlaza) && !opt.noWide && !opt.lockstep &&
                 (fieldActive() || menuReturn > 0 || scene.edgeFill);
+            if (!merged)
+            {
+                ww = 256;
+                wh = 192;
+            }
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
-            melonDS::Wide.Between = cfg.fpsUnlimited && !opt.headless;
-            melonDS::Wide.ViewWidth = view.width;
-            melonDS::Wide.Zoom = (fieldActive() || menuReturn > 0) && !scene.edgeFill ? cfg.zoom / 100.0f : 1;
+            melonDS::Wide.Between = cfg.fpsUnlimited && !opt.headless && merged;
+            melonDS::Wide.ViewWidth = merged ? view.width : 256;
+            melonDS::Wide.Zoom = merged && (fieldActive() || menuReturn > 0) && !scene.edgeFill ? cfg.zoom / 100.0f : 1;
             melonDS::Wide.Width = ww;
             melonDS::Wide.Height = wh;
             wideFrames = wantWide ? wideFrames + 1 : 0;
@@ -6340,6 +6347,23 @@ int main(int argc, char** argv)
             char lname[64];
             snprintf(lname, sizeof(lname), "/layers_%06u.png", frame);
             WritePNG(opt.shotDir + lname, img.data(), 256, 384);
+        }
+        // The Wi-Fi Plaza's room is drawn only by the widescreen renderer: in the layouts with
+        // both screens the top screen shown is its picture (the DS's own view) with the game's
+        // 2D over it, put together as the single-screen view does it.
+        static std::vector<uint32_t> plazaTop;
+        if (!merged && onPlaza && melonDS::Wide.Owner && top)
+        {
+            takeWideImage();
+            if (wideImage.pixels)
+            {
+                Scene plaza;
+                plaza.wide = true;
+                plaza.items = { FullScreen(0) };
+                plaza.items[0].drop |= LAYER_BACKDROP;
+                MergedCompose(plaza, screenImages, 256, 192, plazaTop, false, &wideImage);
+                top = plazaTop.data();
+            }
         }
         if (wantShot && top && bot)
         {
