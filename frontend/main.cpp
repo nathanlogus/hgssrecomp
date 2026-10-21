@@ -1067,6 +1067,7 @@ struct Settings
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
     bool redrawn = true;
     bool newSongs = true;
+    bool autoRun = false;   // runs on foot without holding B (holding B walks)
     bool menuSounds = true; // the game's own cursor and button sounds in the frontend's menus (gamesfx.h)
     std::string textFont = "new"; // Text: a font family of the player's (assets/fonts) by name, "new" (the first), or "game"
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
@@ -1141,6 +1142,7 @@ struct Settings
             else if (k == "redrawn_screens") redrawn = v == "1";
             else if (k == "music") newSongs = v != "original";
             else if (k == "menu_sounds") menuSounds = v == "1";
+            else if (k == "auto_run") autoRun = v == "1";
             else if (k == "text_font") textFont = v;
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v == "1";
@@ -1191,6 +1193,7 @@ struct Settings
         f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
         f << "music=" << (newSongs ? "new" : "original") << "\n";
         f << "menu_sounds=" << (menuSounds ? 1 : 0) << "\n";
+        f << "auto_run=" << (autoRun ? 1 : 0) << "\n";
         f << "text_font=" << textFont << "\n";
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
@@ -2975,7 +2978,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC, M_LOOK,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -3203,6 +3206,8 @@ int main(int argc, char** argv)
         add(T_GAME, M_MUSIC, "Music", !songs.Any() ? "Original" : cfg.newSongs ? "New songs" : "Original",
             songs.Any() ? "New songs: your own music files (assets/songs, listed in songs.txt) in place of the game's tunes. Sound effects stay."
                         : "Put music files and a songs.txt in assets/songs to hear your own songs in place of the game's tunes.")->disabled = !songs.Any();
+        add(T_GAME, M_AUTORUN, "Auto run", onOff(cfg.autoRun),
+            "Runs whenever you walk, once you have the Running Shoes. Hold B to walk instead.");
         add(T_GAME, M_MENUSOUNDS, "Menu sounds", onOff(cfg.menuSounds), "The game's own cursor and button sounds in these menus.");
         add(T_GAME, M_FPSMAX, "Frame rate", cfg.fpsUnlimited ? "Unlimited" : "60",
             "Unlimited: as many pictures of the world as your computer can draw, for screens faster than 60 Hz. The game runs at its normal speed either way.");
@@ -4286,6 +4291,9 @@ int main(int argc, char** argv)
             case M_MENUSOUNDS:
                 cfg.menuSounds = !cfg.menuSounds;
                 break;
+            case M_AUTORUN:
+                cfg.autoRun = !cfg.autoRun;
+                break;
             case M_REDRAWN:
                 cfg.redrawn = !cfg.redrawn;
                 break;
@@ -5134,6 +5142,15 @@ int main(int argc, char** argv)
             arcadeA = aNow;
         }
 
+        // Auto run: B inverted, but only while a direction (bits 0xF0) is held and the player
+        // walks on foot with nothing of the game up (the map object's sprite 0 or 97, the boy or
+        // the girl: not on a bike or surfing), so B is never pressed into a message, menu or
+        // battle, where it means back.
+        if (cfg.autoRun && !uiOpen && (keys & 0xF0) && fieldIdle())
+        {
+            const uint32_t sprite = readRam(readRam(readRam(readRam(0x021D4158) + 0x40) + 0x30) + 0x10);
+            if (sprite == 0 || sprite == 97) keys ^= 1u << KEY_B;
+        }
         if (uiOpen && bootMode == BOOT_NONE && !gameSave.Busy())
         {
             // The buttons are the menu's (scripted test input and the keyboard too); an autosave

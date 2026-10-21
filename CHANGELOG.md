@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Auto run (Settings, Game): once you have the Running Shoes, you run whenever you walk,
+  and holding B makes you walk instead. Off unless you turn it on.
 - Online: choose your look (Profile, Look) from any of the game's people who walk all
   four ways, browsing them with the d-pad and seeing them walk before you confirm (left
   and right on Look change it straight away). The others see you walking around with that
