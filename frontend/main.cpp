@@ -2525,6 +2525,7 @@ int main(int argc, char** argv)
     HudOnline::FaceOf = [&](const PartyPeer& p) { return lookFace(p.look); };
     // This player's look: the one chosen, or their own trainer (the boy or the girl).
     auto myLook = [&](int gender) { return cfg.onlineLook >= 0 ? cfg.onlineLook : worldBlocks.MemberByStem(gender ? "heroine" : "hero"); };
+    auto myLookNow = [&]() { return myLook(Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender); };
     // Chooses a look; their own trainer (the boy or the girl, as the save has it) is no choice.
     auto setLook = [&](int member) {
         const int gender = Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender;
@@ -6310,8 +6311,8 @@ int main(int argc, char** argv)
                 PartyPeer me;
                 me.name = onlineName();
                 me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                me.look = myLookNow();
                 me.partner = cfg.onlinePartner;
-                me.look = myLook(Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender);
                 HudOnline::TrainerCardPreview(canvas, ui, sprites, font, side, me, Party_DexCount(), Party_MyBadges(), sessionStats, monIcon);
             }
             else
@@ -6358,6 +6359,7 @@ int main(int argc, char** argv)
             PartyPeer me;
             me.name = onlineName();
             me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+            me.look = myLookNow();
             const PartyCard card = Party_MyCard();
             if (card.known)
             {
@@ -6573,6 +6575,7 @@ int main(int argc, char** argv)
                 HudGear::Env env;
                 env.me.name = onlineName();
                 env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                env.me.look = myLookNow();
                 env.me.map = partyMap;
                 env.rd = readRam;
                 env.art = &romArt;
@@ -6614,6 +6617,7 @@ int main(int argc, char** argv)
                 HudGear::Env env;
                 env.me.name = onlineName();
                 env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                env.me.look = myLookNow();
                 env.me.map = partyMap;
                 env.rd = readRam;
                 env.art = &romArt;
@@ -7084,6 +7088,7 @@ int main(int argc, char** argv)
                 PartyPeer me;
                 me.name = onlineName();
                 me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                me.look = myLookNow();
                 HudOnline::LookChooser(canvas, ui, sprites, font, worldBlocks.Looks(), lookSel, me, (uint32_t)frame, lookImage,
                     { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Confirm" }, { { back }, "Back" } });
             }
