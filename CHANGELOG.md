@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- New screens: the Apricorn Box and the Pal Pad's menu are drawn anew. The skin you choose
+  in the Pokégear's settings now colours the new Pokégear.
+
 - New screens: the Berry Pots are drawn anew (the four pots with their Berries, how wet
   the soil is and the mulch, and the menus), as is the bag when choosing a Berry or mulch
   for a pot.

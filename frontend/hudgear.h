@@ -298,6 +298,8 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
     if (gearStep < 2 || gearStep > 11) return false;
     st.app = rd8(data + 4);
     st.cards = rd8(data + 5) & 0x7F;
+    st.skin = rd8(data + 8); // the skin chosen in the settings tab
+    if (st.skin > 5) return false;
     st.inTabs = rd8(data + 6) == 1;
     st.hour = (int)rd(data + 0x80);
     st.minute = (int)rd(data + 0x84);
@@ -631,7 +633,9 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     const Env& env, const std::vector<HudHint>& hints)
 {
     using namespace HudColour;
-    DrawBackdrop(c, sp, "backgrounds/bg_dusk", 0xFFFFFFFF);
+    // The skin chosen in the settings tab colours the backdrop, so choosing one still shows.
+    static const uint32_t skinTint[6] = { 0xFFFFFFFF, 0xFFFFB8C8, 0xFFB8F0C0, 0xFFFFE0A0, 0xFFD8C0FF, 0xFFA8E8F0 };
+    DrawBackdrop(c, sp, "backgrounds/bg_dusk", skinTint[st.mode ? 0 : st.skin]);
     const float wd = ui.W / ui.s, x0 = wd / 2 - 960;
 
     // The tabs in the game's order (its d-pad walks them so), the one running large and
@@ -742,6 +746,9 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
             HudSprite(c, ui, sp, !has ? "people/chip_empty" : used ? "people/chip_ring_orange" : "people/chip_ring_grey", x + bw / 2 - d / 2, y + 40, d, d);
             if (has) HudText(c, ui, f, x + bw / 2, y + 40 + d / 2 - 24, 48, std::to_string(i + 1), Ink, 1, true);
             HudText(c, ui, f, x + bw / 2, y + bh - 70, 32, !has ? "Not yet" : used ? "In use" : "Skin " + std::to_string(i + 1), has ? Ink : Muted, 1);
+            // The colour the skin gives the Pokégear's backdrop.
+            static const uint32_t swatch[6] = { 0xFF3C4C8C, 0xFF8C4C70, 0xFF3C7C64, 0xFF8C7040, 0xFF6C4C9C, 0xFF347C8C };
+            if (has) FillBlend(c, ui(x + 40), ui(y + bh - 26), ui(bw - 80), ui(10), swatch[i]);
         }
     }
     else if (st.app == APP_RADIO)
