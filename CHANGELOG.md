@@ -12,6 +12,8 @@
   Points and ranks, the Heal and Rental menus, and the Berries to rent with their prices.
   The Battle Factory's swap after a win (your team and theirs, everything about each
   Pokémon) and choosing which Pokémon to enter in a Frontier challenge are drawn anew too.
+- The Battle Arcade's game board can be stopped with A (before, only by touching the
+  screen), and with the new screens it is drawn anew: every panel says what it does.
 - New screens: Voltorb Flip at the Goldenrod Game Corner is drawn anew on the one screen:
   the board with its cards, your memo marks and the totals along each row and column, the
   level, your coins and those of the game, the memo panel, Quit and the game's messages and

@@ -385,6 +385,104 @@ inline void DrawSwap(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, con
     DrawHintBar(c, ui, sp, f, hints);
 }
 
+// The Battle Arcade's game board (src/battle_arcade_game_board.c): sixteen panels, each an
+// event (the board's own numbering, as Platinum's ARCADE_EFFECT_*), the cursor running
+// over them until A stops it, your Pokemon and the opponent's beside it.
+struct Arcade
+{
+    int panels[16] = {};
+    int cursor = 0;
+    bool stopping = false;  // A was pressed: the cursor slows down and stops
+    int count = 0, foeCount = 0;
+    PartyMon mine[6], foes[6];
+    int streak = 0;
+};
+
+// The events, and who they touch (0 the foe, 1 you, 2 both or the battle).
+struct ArcadeEvent
+{
+    const char* name;
+    int side;
+};
+constexpr ArcadeEvent kArcadeEvents[32] = { { "Foe's HP down", 0 }, { "Foe poisoned", 0 }, { "Foe paralysed", 0 }, { "Foe burned", 0 },
+    { "Foe asleep", 0 }, { "Foe frozen", 0 }, { "Foe gets a Berry", 0 }, { "Foe gets an item", 0 }, { "Foe levels up", 0 },
+    { "Your HP down", 1 }, { "You're poisoned", 1 }, { "You're paralysed", 1 }, { "You're burned", 1 }, { "You fall asleep", 1 },
+    { "You're frozen", 1 }, { "You get a Berry", 1 }, { "You get an item", 1 }, { "You level up", 1 }, { "Sunny", 2 }, { "Rain", 2 },
+    { "Sandstorm", 2 }, { "Hail", 2 }, { "Fog", 2 }, { "Trick Room", 2 }, { "Faster cursor", 2 }, { "Slower cursor", 2 },
+    { "Random cursor", 2 }, { "Swap teams", 2 }, { "Get 1 BP", 2 }, { "No battle", 2 }, { "Nothing", 2 }, { "Get 3 BP", 2 } };
+
+// GAME_BOARD_WORK: substate +0x08 (6 running, 7 and 8 stopping), the cursor +0x0D, the
+// win streak +0x28, the board's size +0x2C (4 x 4, 16), the panels' events +0x34. Its
+// arguments (GAME_BOARD_ARGS): the player's Party +0x30, the opponent's +0x34. Only the
+// single and double challenges (type +0x09 0 or 1).
+inline bool ReadArcade(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, uint32_t exit, Arcade& s)
+{
+    const uint32_t mgr = HudParty::FindApp(ram, cache, init, exec, exit, [&](uint32_t m) { return ram.Ok(ram.R32(m + 0x1C), 0x60); });
+    if (!mgr || ram.R32(mgr + 0x10) != 2 || ram.R32(mgr + 0x14) != 1) return false;
+    const uint32_t d = ram.R32(mgr + 0x1C), args = ram.R32(mgr + 0x18);
+    const int sub = (int)ram.R8(d + 0x08);
+    if (sub < 6 || sub > 8 || ram.R8(d + 0x09) > 1 || (ram.R32(d + 0x2C) & 0xFFFFFF) != (4u | 4u << 8 | 16u << 16)) return false;
+    s.stopping = sub >= 7;
+    s.cursor = (int)ram.R8(d + 0x0D);
+    if (s.cursor > 15) return false;
+    for (int i = 0; i < 16; i++)
+    {
+        s.panels[i] = (int)ram.R8(d + 0x34 + i);
+        if (s.panels[i] > 31) return false;
+    }
+    s.streak = (int)ram.R16(d + 0x28);
+    return HudParty::ReadParty(ram, ram.R32(args + 0x30), s.count, s.mine) && HudParty::ReadParty(ram, ram.R32(args + 0x34), s.foeCount, s.foes);
+}
+
+inline void DrawArcade(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Arcade& s, const HudParty::MonIconFn& icon,
+    const std::vector<HudHint>& hints)
+{
+    using namespace HudColour;
+    using HudParty::FillRound;
+    DrawBackdrop(c, sp, "backgrounds/bg_coral", 0xFFFFFFFF);
+    const float wd = ui.W / ui.s, x0 = wd / 2 - 960;
+    HudText(c, ui, f, x0 + 60, 56, 48, "BATTLE ARCADE", Ink, 0, true);
+    const std::string streak = "Win streak " + std::to_string(s.streak);
+    const float pw = HudTextWidth(ui, f, 32, streak, true) + 60;
+    HudPanel(c, ui, sp, "panels/button_white", x0 + 1860 - pw, 54, pw, 56);
+    HudText(c, ui, f, x0 + 1860 - pw / 2, 66, 32, streak, Ink, 1, true);
+    static const uint32_t sideCol[3] = { 0xFFE0505A, 0xFF3E7EE0, 0xFF5BAE5B };
+
+    // Your Pokemon on the left, the opponent's on the right.
+    for (int side = 0; side < 2; side++)
+    {
+        const int n = side ? s.foeCount : s.count;
+        const float px = side ? x0 + 1700 : x0 + 60;
+        HudText(c, ui, f, px + 80, 150, 32, side ? "Foe" : "You", sideCol[side ? 0 : 1], 1, true);
+        for (int k = 0; k < n && k < 4; k++)
+        {
+            const PartyMon& m = side ? s.foes[k] : s.mine[k];
+            HudSprite(c, ui, sp, side ? "people/chip_ring_orange" : "people/chip_ring_green", px + 10, 200 + k * 170, 140, 140);
+            HudPixelArt(c, ui, icon(m), px + 16, 206 + k * 170, 128, 128);
+        }
+    }
+
+    // The board: each panel in its side's colour, the cursor's ringed.
+    const float bx = x0 + 260, by = 140, tw = 240, th = 180, gap = 14;
+    for (int i = 0; i < 16; i++)
+    {
+        const ArcadeEvent& e = kArcadeEvents[s.panels[i]];
+        const float x = bx + (i % 4) * (tw + gap), y = by + (i / 4) * (th + gap);
+        if (i == s.cursor) FillRound(c, ui, x - 8, y - 8, tw + 16, th + 16, 30, 0xFFF5B82E);
+        FillRound(c, ui, x, y, tw, th, 24, sideCol[e.side]);
+        const std::vector<std::string> lines = HudWrap(ui, f, 32, e.name, tw - 30);
+        for (size_t k = 0; k < lines.size() && k < 3; k++)
+            HudText(c, ui, f, x + tw / 2, y + th / 2 - 25.0f * lines.size() + 50.0f * k, 32, lines[k], White, 1, true);
+    }
+
+    // What the panel under the cursor does.
+    const ArcadeEvent& e = kArcadeEvents[s.panels[s.cursor]];
+    const float my = by + 4 * (th + gap) + 10;
+    HudPanel(c, ui, sp, "panels/dialogue_box", bx, my, 4 * tw + 3 * gap, 64);
+    HudText(c, ui, f, bx + 30, my + 16, 32, s.stopping ? "Stopping on: " + std::string(e.name) : std::string("Press A to stop the cursor."), Ink);
+    DrawHintBar(c, ui, sp, f, hints);
+}
+
 // The Battle Castle's screen of your own Pokemon (overlay 83, Platinum's
 // BattleCastleSelfApp): your Pokemon with their HP and items, your Castle Points and
 // ranks, the game's message and its menus (Heal / Rental / Cancel and those under them).
