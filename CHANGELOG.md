@@ -15,8 +15,9 @@
   puts it next to you, height and weight; Forms lists the forms you have seen.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
-  (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
-  with the same box.
+  (such as the Pokémon Center's nurse) and lists of choices (such as the shop clerk's
+  BUY, SELL, SEE YA!) show their answers beside it, and signs slide in with the same box.
+  The X menu and the place's name shown when you arrive somewhere are drawn anew too.
 - New screens: phone calls in the Pokégear are drawn anew (who is calling, the ringing,
   what they say line by line and the hang-up), as are the phone's Call, Sort and Quit
   menu and the questions asked during a call. Choosing where to fly is drawn anew too:

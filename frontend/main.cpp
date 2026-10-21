@@ -5939,6 +5939,17 @@ int main(int argc, char** argv)
             static const bool worldTested = getenv("SSR_WORLDUI_SELFTEST") &&
                 fprintf(stderr, "[worldui] self-test %s\n", HudWorld::SelfTest() ? "passed" : "FAILED");
             (void)worldTested;
+            // The game's fade of the top screen (master brightness, or a brightness effect of
+            // its layers, as the widescreen world takes it) over a redrawn panel at (x, y, w, h).
+            auto worldFade = [&](float x, float y, float w, float h) {
+                const auto& tu = (nds->PowerControl9 & (1 << 15)) ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+                int mode = (tu.MasterBrightness >> 14) & 3, fade = std::min(16, tu.MasterBrightness & 0x1F);
+                if (mode != 1 && mode != 2) fade = 0;
+                if (const int effect = (tu.BlendCnt >> 6) & 3; (tu.BlendCnt & 1) && effect >= 2)
+                    if (const int evy = std::min<int>(16, tu.EVY); evy > fade) mode = effect == 2 ? 1 : 2, fade = evy;
+                if (fade)
+                    FillBlend(canvas, ui(x - 16), ui(y - 16), ui(w + 32), ui(h + 32), (uint32_t)(fade * 255 / 16) << 24 | (mode == 1 ? 0xFFFFFF : 0));
+            };
             const bool fieldView = (!strcmp(scene.name, "top") || !strcmp(scene.name, "choice")) && !scene.items.empty() && scene.items[0].screen == 0;
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop &= ~LAYER_BG3;
             const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
@@ -5951,22 +5962,67 @@ int main(int argc, char** argv)
             bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
             static HudWorld::Dialogue worldLast;
             static uint32_t worldLastAt = 0;
-            if (shown) worldLast = dlg, worldLastAt = frame;
+            // A script lets go of its box and leaves the last page on the screen (HoldMsg, before
+            // a list of choices): that page, while the game's box shows exactly what it did.
+            static uint64_t worldBoxPicture = 0;
+            const uint64_t picture = top >= 0 ? HudWorld::BoxPicture(screenImages[0]) : 0;
+            if (shown) worldLast = dlg, worldLastAt = frame, worldBoxPicture = dlg.more ? 0 : picture;
             else if (top >= 0 && slide && worldLast.sign >= 0 && frame - worldLastAt < 12)
             {
                 dlg = worldLast;
                 dlg.more = false;
                 shown = true;
             }
-            worldBoxHold = shown ? 3 : std::max(0, worldBoxHold - 1);
+            else if (top >= 0 && !slide && picture && picture == worldBoxPicture && worldLast.sign < 0)
+            {
+                dlg = worldLast;
+                shown = true;
+            }
+            else
+                worldBoxPicture = 0;
+            // The place's name sliding down at the top, when nothing else is on the game's BG3.
+            std::string placeName;
+            int placeSlide = 0;
+            const bool placeShown = may && !shown && HudWorld::OnlyTheName(screenImages[0].flags) &&
+                HudWorld::ReadMapName(ram, placeName, placeSlide);
+            if (placeShown)
+            {
+                const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
+                const float px = x0 + 6 * u, py = y0 + (6 - placeSlide) * u - placeSlide * 1.5f;
+                HudWorld::DrawMapName(canvas, ui, sprites, font, placeName, px, py);
+                worldFade(px, py, HudTextWidth(ui, font, 48, placeName) + 150, 84);
+                overlayUsed = true;
+            }
+            worldBoxHold = shown || placeShown ? 3 : std::max(0, worldBoxHold - 1);
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
             if (shown)
             {
-                const int yesNo = HudWorld::ReadYesNo(ram);
-                if (yesNo >= 0) scene.items.resize(1);
+                HudWorld::Choice choice;
+                if (HudWorld::ReadChoice(ram, choice)) scene.items.resize(1);
                 const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
                 HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
-                    HudWorld::kBoxH * u - 6, frame, yesNo);
+                    HudWorld::kBoxH * u - 6, frame, &choice);
+                worldFade(x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u, HudWorld::kBoxH * u - 6);
+                overlayUsed = true;
+            }
+            // The game's X menu, drawn where its touch-screen panel stands, which is left out;
+            // as it was last while the game closes it or opens what was chosen (its panel stays
+            // up for a few frames).
+            static HudWorld::XMenu xmLast;
+            static uint32_t xmAt = 0;
+            HudWorld::XMenu xm;
+            const bool xmView = spritesOk && cfg.redrawn && merged && hudFree && !strcmp(scene.name, "start-menu") && scene.items.size() == 2;
+            if (xmView && HudWorld::ReadXMenu(ram, xm)) xmLast = xm, xmAt = frame;
+            else if (xmView && xmAt && frame - xmAt <= 20)
+                xm = xmLast;
+            if (xm.cursor >= 0)
+            {
+                const Element& el = scene.items[1];
+                const float u = view.unit / ui.s, x = (mergedX + view.originX) / ui.s + el.dx * u, y = view.originY / ui.s + el.dy * u;
+                const float w = el.sw * el.scale * u, h = el.sh * el.scale * u;
+                HudWorld::DrawXMenu(canvas, ui, sprites, font, xm, trainerName(), x, y, w, h);
+                worldFade(x, y, w, h); // (the screen fading to what was chosen)
+                scene.items.resize(1);
                 overlayUsed = true;
             }
         }
