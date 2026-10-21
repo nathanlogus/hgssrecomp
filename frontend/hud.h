@@ -182,11 +182,15 @@ inline void Blit(Canvas& c, const Image& img, float sx, float sy, float sw, floa
     }
 }
 
-// A soft drop shadow for `img` drawn at dx, dy, dw, dh (call it before drawing the image):
-// its outline blurred and darkened, a little below. The blurred copy is made once per image
-// at a small size and scaled up when drawn, so it costs about as much as the image itself.
-inline void BlitShadow(Canvas& c, const Image& img, float dx, float dy, float dw, float dh, uint32_t tint = 0xA6000000)
+// A soft drop shadow for `img` drawn at dx, dy, dw, dh (call it before drawing the image),
+// like CSS's box-shadow: rgba(100, 100, 111, 0.2) 0 7px 29px, for a logo about 230 pixels
+// tall: a wide, faint, bluish-grey haze a little below, following the image's outline.
+// Offset and blur scale with the image's height. The blurred copy is made once per image at
+// a small size and scaled up when drawn, so it costs about as much as the image itself.
+// `tint` is the shadow's colour and opacity.
+inline void BlitShadow(Canvas& c, const Image& img, float dx, float dy, float dw, float dh, uint32_t tint = 0x3364646F)
 {
+    static constexpr float Offset = 7.0f / 230, Blur = 29.0f / 230; // of the drawn height
     static const Image* made = nullptr;
     static size_t madeSize = 0;
     static Image shadow;
@@ -196,18 +200,20 @@ inline void BlitShadow(Canvas& c, const Image& img, float dx, float dy, float dw
     {
         made = &img;
         madeSize = img.px.size();
-        const float k = std::min(1.0f, 160.0f / std::max(img.w, img.h));
+        const float k = std::min(1.0f, 192.0f / std::max(img.w, img.h));
         w = std::max(1, (int)(img.w * k));
         const int h = std::max(1, (int)(img.h * k));
-        pad = 6;
+        // CSS's blur radius is twice the Gaussian's deviation; three box blurs of radius
+        // about the deviation come close to it.
+        const float sigma = Blur * h / 2;
+        const int r = std::max(1, (int)std::lround(sigma));
+        pad = 3 * r + 1;
         const int W = w + 2 * pad, H = h + 2 * pad;
         std::vector<float> a((size_t)W * H, 0.0f), t((size_t)W * H);
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
                 a[(size_t)(y + pad) * W + x + pad] = float(img.px[(size_t)std::min(img.h - 1, (int)(y / k)) * img.w + std::min(img.w - 1, (int)(x / k))] >> 24);
-        // Two box blurs each way, close to a Gaussian.
-        const int r = 2;
-        for (int pass = 0; pass < 2; pass++)
+        for (int pass = 0; pass < 3; pass++)
         {
             for (int y = 0; y < H; y++)
                 for (int x = 0; x < W; x++)
@@ -224,13 +230,14 @@ inline void BlitShadow(Canvas& c, const Image& img, float dx, float dy, float dw
                     a[(size_t)y * W + x] = s / (2 * r + 1);
                 }
         }
+        // White, so that the tint gives the shadow its colour.
         shadow.w = W;
         shadow.h = H;
         shadow.px.resize((size_t)W * H);
-        for (size_t i = 0; i < shadow.px.size(); i++) shadow.px[i] = (uint32_t)std::min(255.0f, a[i] + 0.5f) << 24;
+        for (size_t i = 0; i < shadow.px.size(); i++) shadow.px[i] = (uint32_t)std::min(255.0f, a[i] + 0.5f) << 24 | 0xFFFFFF;
     }
-    const float scale = dw / w, off = dh * 0.035f;
-    Blit(c, shadow, 0, 0, (float)shadow.w, (float)shadow.h, dx - pad * scale + off * 0.5f, dy - pad * scale + off,
+    const float scale = dw / w, off = dh * Offset;
+    Blit(c, shadow, 0, 0, (float)shadow.w, (float)shadow.h, dx - pad * scale, dy - pad * scale + off,
         shadow.w * scale, shadow.h * scale, true, tint);
 }
 

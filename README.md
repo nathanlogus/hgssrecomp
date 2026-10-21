@@ -101,7 +101,7 @@ The APK contains your copy of the game: never share it. It is signed with a key
 kept next to it (`android/signing-key.json`); builds made later with the same
 key install over it and keep the save. Uninstalling the app deletes its save.
 
-Your own files in `assets` (songs, fonts, button pictures, the title video and
+Your own files in `assets` (songs, fonts, the title video and
 the autosave picture, see below) go into the APK too. Songs and the video can
 make it hundreds of MB larger: untick **Android: include my songs and title
 video in the APK** in the setup program (or add `--no-media` to `--android`)
@@ -311,15 +311,15 @@ Like songs, it is yours and not part of the project.
 
 ### Your own font and button pictures
 
-The menus and the HUD use the game's own letters and coloured button pictures. A font file
-(`.otf` or `.ttf`) in `assets/fonts` replaces the letters (several can be there: **Text**
-chooses one; `Name-Regular` and `Name-Bold` files are one font, the bold one used for bold
-text), and button pictures in
-`assets/buttons` replace the buttons: white glyphs named like the Nintendo Switch's
-(`icon_key_a_00.png`, with an optional shadow `icon_key_ds_a_ds_00.png`; a, b, x, y, l, r,
-zl, zr, plus, minus, up, down, left, right, stick_l, stick_r). They are drawn dark on the
-HUD's light bars. **Text** and **Button pictures** in the Display tab switch back. Like
-songs, these files are yours and are not part of the project.
+The menus and the HUD use the game's own letters. A font file (`.otf` or `.ttf`) in
+`assets/fonts` replaces them (several can be there: **Text** chooses one; `Name-Regular`
+and `Name-Bold` files are one font, the bold one used for bold text). Like songs, fonts
+are yours and are not part of the project.
+
+The button pictures are in `assets/buttons`: white glyphs named like the Nintendo
+Switch's (`icon_key_a_00.png`, with an optional shadow `icon_key_ds_a_ds_00.png`; a, b, x,
+y, l, r, zl, zr, plus, minus, up, down, left, right, stick_l, stick_r), drawn dark on the
+HUD's light bars. Replace the files to change them.
 
 ### Single-screen view
 

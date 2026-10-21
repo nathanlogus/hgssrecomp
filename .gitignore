@@ -32,11 +32,10 @@
 /android/
 /*.apk
 
-# The player's own files for the frontend (songs, fonts, button pictures, the title
+# The player's own files for the frontend (songs, fonts, the title
 # video, animations) and other pictures and models that are not ours to publish
 assets/songs/
 assets/fonts/
-assets/buttons/
 assets/animations/
 assets/models/
 assets/autosave.gif

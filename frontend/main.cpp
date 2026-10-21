@@ -1052,7 +1052,6 @@ struct Settings
     bool newSongs = true;
     bool menuSounds = true; // the game's own cursor and button sounds in the frontend's menus (gamesfx.h)
     std::string textFont = "new"; // Text: a font family of the player's (assets/fonts) by name, "new" (the first), or "game"
-    bool newButtons = true; // Button pictures: the player's (assets/buttons) instead of the set's // Music: the player's songs (songs.h) instead of the game's music, where there is one  // the game's screens redrawn in the HUD style (so far the trainer card)
     int blur = 0;         // focus blur towards the edges of the world: 0 off, 1 light, 2 strong
     bool farMap = true;   // draw the map blocks around the loaded ones into the widescreen world
     int windowH = 0;      // window height chosen in the menu; 0 = from --scale
@@ -1122,7 +1121,6 @@ struct Settings
             else if (k == "music") newSongs = v != "original";
             else if (k == "menu_sounds") menuSounds = v == "1";
             else if (k == "text_font") textFont = v;
-            else if (k == "button_pictures") newButtons = v != "classic";
             else if (k == "blur") blur = std::clamp(atoi(v.c_str()), 0, 2);
             else if (k == "far_map") farMap = v == "1";
             else if (k == "zoom") zoom = std::clamp(atoi(v.c_str()), ZoomSteps[0], ZoomSteps[ZoomCount - 1]);
@@ -1171,7 +1169,6 @@ struct Settings
         f << "music=" << (newSongs ? "new" : "original") << "\n";
         f << "menu_sounds=" << (menuSounds ? 1 : 0) << "\n";
         f << "text_font=" << textFont << "\n";
-        f << "button_pictures=" << (newButtons ? "new" : "classic") << "\n";
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
         f << "window_height=" << windowH << "\n";
@@ -2602,10 +2599,7 @@ int main(int argc, char** argv)
         }
         if (!buttonPics.empty()) fprintf(stderr, "[hud] %zu button pictures from %s\n", buttonPics.size(), dir.c_str());
     }
-    auto applyButtons = [&]() {
-        for (const auto& b : buttonPics) sprites.Replace(b.first, cfg.newButtons ? b.second : Image());
-    };
-    applyButtons();
+    for (const auto& b : buttonPics) sprites.Replace(b.first, b.second);
     SongPlayer songs;
     if (songs.Load(ReadSongFile)) fprintf(stderr, "[songs] a list of songs in %ssongs\n", g_userDir.c_str());
     GameSfx sfx;
@@ -2880,7 +2874,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_BUTTONPICS, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -3128,9 +3122,6 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_BUTTONPICS, "Button pictures", !buttonPics.empty() && cfg.newButtons ? "New" : "Classic",
-            !buttonPics.empty() ? "New: the button pictures in assets/buttons. Classic: the coloured buttons."
-                                : "Put button pictures in assets/buttons to use them in the menus and hints.")->disabled = buttonPics.empty();
         add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands and the trade screen.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
@@ -4154,10 +4145,6 @@ int main(int argc, char** argv)
                 applyFont();
                 break;
             }
-            case M_BUTTONPICS:
-                cfg.newButtons = !cfg.newButtons;
-                applyButtons();
-                break;
             case M_MUSIC:
                 cfg.newSongs = !cfg.newSongs;
                 break;
@@ -6257,7 +6244,7 @@ int main(int argc, char** argv)
                         const float lh = lw * logo.h / logo.w;
                         // Faded in with the video's own fade from white (its first second).
                         const float fade = std::clamp(((SDL_GetTicks() - titleSince) / 1000.0f - 0.2f) / 0.9f, 0.0f, 1.0f);
-                        BlitShadow(canvas, logo, lx - lw / 2, ly - lh / 2, lw, lh, (uint32_t)(0xA6 * fade) << 24);
+                        BlitShadow(canvas, logo, lx - lw / 2, ly - lh / 2, lw, lh, (uint32_t)(0x33 * fade) << 24 | 0x64646F);
                         Blit(canvas, logo, 0, 0, (float)logo.w, (float)logo.h, lx - lw / 2, ly - lh / 2, lw, lh, true,
                             (uint32_t)(255 * fade) << 24 | 0xFFFFFF);
                     }

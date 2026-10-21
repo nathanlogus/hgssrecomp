@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
+  setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a
   Pokémon Center's basement lets you into the Plaza's room, where the players of your
   party see each other, can chat with emotes and invite each other to battle or trade as
