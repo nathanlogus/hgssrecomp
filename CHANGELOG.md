@@ -8,8 +8,9 @@
   Pokémon Center's basement lets you into the Plaza's room, where the players of your
   party see each other, can chat with emotes and invite each other to battle or trade as
   anywhere else. Walk back down the entrance corridor to leave. The Plaza's games, Tap
-  Toys and parade are not there yet. The room is drawn in the single-screen view (the
-  default); in the other screen layouts it stays black around you.
+  Toys and parade are not there yet. The room moves as in the real Plaza: waving flags,
+  the scrolling news screen, the turning globe and sign, the warp pad and the minigame
+  domes. It is drawn in every screen layout, with widescreen on or off.
 - The project is now called **Johto Online**. The game is `johto-online` (`johto-online.exe`
   on Windows), the downloads are `johto-online-setup-*`, the Android app is
   `JohtoOnline.apk`, and settings are kept in `johto-online.cfg`. Your save, settings and

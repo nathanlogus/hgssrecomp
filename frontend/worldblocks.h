@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <array>
 #include <map>
 #include <string>
 #include <vector>
@@ -50,6 +51,8 @@ public:
         PlazaLoaded = false;
         PlazaModels.clear();
         PlazaPieces.clear();
+        PlazaPoses.clear();
+        PlazaTexCache.clear();
     }
 
     void Build(melonDS::NDS& nds, std::vector<uint32_t>& out)
@@ -315,8 +318,14 @@ public:
         if (PlazaPieces.empty()) return;
         EmitProjection(out);
         Colours[2] = Read32(Glb + 0x9C);
+        // Its animations run one frame for each of the game's 3D frames, as the Plaza's own
+        // program steps them; pieces of the same model move together, so each model is posed
+        // once.
+        const uint64_t clock = melonDS::Wide.FlushCount;
+        for (size_t i = 0; i < PlazaModels.size(); i++)
+            PlazaPose(PlazaModels[i], clock, PlazaPoses[i]);
         for (const PlazaPiece& p : PlazaPieces)
-            EmitPlaced(PlazaModels[p.model], p.x, 0, p.z, nullptr, out);
+            EmitPlaced(PlazaModels[p.model], p.x, 0, p.z, nullptr, out, &PlazaPoses[p.model]);
     }
 
     void Lights(melonDS::NDS& nds, float viewWidth, float zoom, std::vector<NightLight>& out)
@@ -642,6 +651,37 @@ private:
     };
     enum { OpMat, OpShape, OpNode, OpRestore, OpPosScale };
     struct Op { int kind, a, b, c; };
+    // NitroSystem animations of the Plaza's models (BTA0, BTP0, BCA0 files). A track is a
+    // constant or one value per frame (or per 2 or 4 frames, in between interpolated).
+    struct Track
+    {
+        bool constant = true;
+        int32_t value = 0;
+        const uint8_t* data = nullptr;
+        int size = 4;       // bytes per value: 2 (fx16) or 4 (fx32); a pair for scales
+        int stride = 4;
+        int shift = 0;      // log2 of the frames per value
+        int lastInterp = 0; // from this frame on, one value per frame
+    };
+    struct SrtAnim { int mat; Track scaleS, scaleT, transS, transT; }; // texture placement
+    struct PatAnim { int mat; std::vector<std::pair<int, int>> keys; };  // (frame, texture) by frame
+    struct JntAnim { int node; uint16_t flags; Track t[3], r, s[3]; };    // a node's move
+    struct Anim
+    {
+        int frames = 1;
+        bool loop = true; // else held at frame 0 (how the Plaza leaves posts and ramps when idle)
+        std::vector<SrtAnim> srt;
+        std::vector<PatAnim> pat;
+        std::vector<JntAnim> jnt;
+        const uint8_t *rot3 = nullptr, *rot5 = nullptr; // a JNT0's rotation tables
+    };
+    // A model's state at a frame: its nodes, and per material a texture and its scroll.
+    struct Pose
+    {
+        std::vector<Node> nodes;
+        std::vector<int> ext;                  // -2: the material's own
+        std::vector<std::array<int32_t, 4>> srt; // scale S, scale T, move S, move T (fx32); scale S 0: none
+    };
     struct Model
     {
         int32_t posScale = 0x1000;
@@ -649,6 +689,9 @@ private:
         std::vector<Node> nodes;
         std::vector<std::vector<uint32_t>> shapes; // display lists as commands and parameters
         std::vector<Op> ops;                       // the structure byte code, in drawing order
+        // Plaza models: their file (for textures an animation picks) and animations.
+        const uint8_t *file = nullptr, *tex0 = nullptr, *end = nullptr;
+        std::vector<Anim> anims;
     };
     struct PropPlace
     {
@@ -979,28 +1022,39 @@ private:
     bool PlazaLoaded = false;
     std::vector<Model> PlazaModels;
     std::vector<PlazaPiece> PlazaPieces;
+    std::vector<Pose> PlazaPoses;                 // per model, this frame
+    std::map<std::string, int> PlazaTexCache;     // file, texture and palette -> external texture
 
     void LoadPlaza()
     {
         PlazaLoaded = true;
         const auto files = NarcMembers("a/2/0/1"), maps = NarcMembers("a/2/0/0");
-        if (files.empty() || maps.size() < 2 || maps[0].second != PlazaMap::GridW * PlazaMap::GridH * 4 || maps[1].second < 0x188) return;
+        if (files.empty() || maps.size() < 2 || maps[0].second != PlazaMap::GridW * PlazaMap::GridH * 4 || maps[1].second < 0x1A0) return;
         const uint8_t* grid = Rom + maps[0].first;
         const uint8_t* table = Rom + maps[1].first; // the first of the Plaza's looks: object kind -> member, then the room
         std::map<uint32_t, int> loaded;
-        auto place = [&](uint32_t member, int gx, int gz) {
+        // A piece, with the animations the Plaza plays on it while nothing happens (members;
+        // one equal to the model's own means none).
+        auto place = [&](uint32_t member, int gx, int gz, std::vector<uint32_t> anims, bool loop) {
             auto it = loaded.find(member);
             if (it == loaded.end())
             {
                 Model m;
-                it = loaded.emplace(member, member < files.size() && ParsePlazaModel(files[member].first, files[member].second, m)
-                    ? (PlazaModels.push_back(std::move(m)), (int)PlazaModels.size() - 1) : -1).first;
+                bool ok = member < files.size() && ParsePlazaModel(files[member].first, files[member].second, m);
+                if (ok)
+                    for (uint32_t a : anims)
+                        if (a != member && a < files.size())
+                            ParsePlazaAnim(Rom + files[a].first, files[a].second, loop, m);
+                it = loaded.emplace(member, ok ? (PlazaModels.push_back(std::move(m)), (int)PlazaModels.size() - 1) : -1).first;
             }
             if (it->second >= 0)
                 PlazaPieces.push_back({ it->second, (gx + PlazaMap::OffX) * 0x10000, (gz + PlazaMap::OffZ) * 0x10000 });
         };
-        place(Get32(table + 0x180), 0, 0); // the room
-        place(Get32(table + 0x184), 0, 0); // its floor
+        // The room with its three looping animations (the screens' scrolling, the moving
+        // parts, the flags and the warp pad), and its floor (pokeplatinum ov70_02260B44.c;
+        // the fifth, for an event, is left out).
+        place(Get32(table + 0x180), 0, 0, { Get32(table + 0x18C), Get32(table + 0x190), Get32(table + 0x194) }, true);
+        place(Get32(table + 0x184), 0, 0, { Get32(table + 0x198) }, true);
         // Furniture: the grid's event numbers and the kind of object standing there
         // (pokeplatinum ov70_02261E10.c), leaving out the fireworks (shown during the parade).
         static const uint8_t kinds[][2] = { { 24, 0 }, { 25, 1 }, { 26, 2 }, { 27, 3 }, { 28, 4 }, { 33, 5 }, { 70, 6 },
@@ -1010,33 +1064,288 @@ private:
             {
                 const uint32_t id = Get32(grid + 4 * (gz * PlazaMap::GridW + gx)) >> 16;
                 for (const auto& k : kinds)
-                    if (k[0] == id) place(Get32(table + 4 * k[1]), gx, gz);
+                {
+                    if (k[0] != id) continue;
+                    // Up to three animations per kind (table + 0x48). Idle, the centre piece
+                    // plays all of its own and the minigame domes their first; the posts and
+                    // the ramps hold their first at frame 0. The stands only bounce when
+                    // someone walks by.
+                    const uint8_t* an = table + 0x48 + 12 * k[1];
+                    std::vector<uint32_t> anims;
+                    bool loop = true;
+                    if (k[1] == 0) anims = { Get32(an), Get32(an + 4), Get32(an + 8) };
+                    else if (k[1] >= 6 && k[1] <= 8) anims = { Get32(an) };
+                    else if (k[1] >= 10 && k[1] <= 12) { anims = { Get32(an) }; loop = false; }
+                    place(Get32(table + 4 * k[1]), gx, gz, anims, loop);
+                }
             }
-        fprintf(stderr, "[plaza] %zu models, %zu pieces\n", PlazaModels.size(), PlazaPieces.size());
+        PlazaPoses.resize(PlazaModels.size());
+        size_t anims = 0;
+        for (const Model& m : PlazaModels) anims += m.anims.size();
+        fprintf(stderr, "[plaza] %zu models, %zu pieces, %zu animations\n", PlazaModels.size(), PlazaPieces.size(), anims);
     }
 
     // A model of the Plaza with its own textures, decoded as external textures.
-    bool ParsePlazaModel(uint32_t off, uint32_t size, Model& m) const
+    bool ParsePlazaModel(uint32_t off, uint32_t size, Model& m)
     {
         const uint8_t* b = Rom + off;
         if (!ParseModel(b, size, false, m)) return false;
         const uint8_t* t = Get16(b + 0x0E) >= 2 ? b + Get32(b + 0x14) : nullptr;
         if (!t || t + 0x3C > b + size || memcmp(t, "TEX0", 4) != 0) t = nullptr;
-        const auto texs = t ? Dict(t + Get16(t + 0x0E)) : decltype(Dict(t))();
-        const auto pals = t ? Dict(t + Get16(t + 0x34)) : decltype(Dict(t))();
+        m.file = b;
+        m.tex0 = t;
+        m.end = b + size;
         for (Material& mat : m.mats)
         {
             mat.own = true;
-            for (const auto& e : texs)
-            {
-                if (e.first != (mat.tex.empty() ? mat.name : mat.tex)) continue;
-                const uint8_t* pal = nullptr;
-                for (const auto& q : pals)
-                    if (q.first == mat.pltt) pal = t + Get32(t + 0x38) + (Get16(q.second) << 3);
-                mat.ext = PlazaTexture(t, b + size, Get32(e.second), pal);
-            }
+            mat.ext = PlazaTextureByName(m, mat.tex.empty() ? mat.name : mat.tex, mat.pltt);
         }
         return true;
+    }
+
+    // A texture of a Plaza model's own by name, with a palette by name, decoded once.
+    int PlazaTextureByName(const Model& m, const std::string& tex, const std::string& pltt)
+    {
+        if (!m.tex0) return -1;
+        const std::string key = std::to_string((uintptr_t)m.file) + "/" + tex + "/" + pltt;
+        auto it = PlazaTexCache.find(key);
+        if (it != PlazaTexCache.end()) return it->second;
+        const uint8_t* t = m.tex0;
+        int ext = -1;
+        for (const auto& e : Dict(t + Get16(t + 0x0E)))
+        {
+            if (e.first != tex) continue;
+            const uint8_t* pal = nullptr;
+            for (const auto& q : Dict(t + Get16(t + 0x34)))
+                if (q.first == pltt) pal = t + Get32(t + 0x38) + (Get16(q.second) << 3);
+            ext = PlazaTexture(t, m.end, Get32(e.second), pal);
+        }
+        return PlazaTexCache[key] = ext;
+    }
+
+    // An animation file (BTA0: texture placement, BTP0: texture pattern, BCA0: nodes) for
+    // model m, its materials and nodes found by name and number.
+    void ParsePlazaAnim(const uint8_t* f, uint32_t size, bool loop, Model& m)
+    {
+        const uint8_t* end = f + size;
+        if (size < 0x20 || Get32(f + 0x10) + 0x10 > size) return;
+        const uint8_t* blk = f + Get32(f + 0x10);
+        const auto anims = Dict(blk + 8);
+        if (anims.empty()) return;
+        const uint8_t* a = blk + Get32(anims[0].second);
+        if (a + 0x14 > end) return;
+        Anim an;
+        an.loop = loop;
+        an.frames = std::max<int>(1, Get16(a + 4));
+        auto in = [&](const uint8_t* p, size_t n) { return p >= f && p + n <= end; };
+        auto matIndex = [&](const std::string& name) {
+            for (size_t i = 0; i < m.mats.size(); i++)
+                if (m.mats[i].name == name) return (int)i;
+            return -1;
+        };
+        if (!memcmp(f, "BTA0", 4) && !memcmp(a, "M\0AT", 4))
+        {
+            // Per material five tracks (scale S, T, rotation, move S, T): an info word (bit
+            // 29 constant, 28 fx16 values, 30-31 frames per value, 0-15 the last frame
+            // interpolated) and the constant or the values' place.
+            for (const auto& e : Dict(a + 8))
+            {
+                const int mi = matIndex(e.first);
+                if (mi < 0 || !in(e.second, 40)) continue;
+                auto track = [&](int k) {
+                    Track t;
+                    const uint32_t info = Get32(e.second + 8 * k), v = Get32(e.second + 8 * k + 4);
+                    t.size = t.stride = (info & 0x10000000) ? 2 : 4;
+                    t.constant = (info & 0x20000000) != 0;
+                    t.value = t.size == 2 ? (int16_t)v : (int32_t)v;
+                    t.shift = std::min(2u, info >> 30);
+                    t.lastInterp = info & 0xFFFF;
+                    t.data = a + v;
+                    if (!t.constant && !in(t.data, TrackBytes(t))) { t.constant = true; t.value = 0; }
+                    return t;
+                };
+                SrtAnim s = { mi, track(0), track(1), track(3), track(4) };
+                if (!track(2).constant || track(2).value != 0x10000000) fprintf(stderr, "[plaza] texture rotation not shown (%s)\n", e.first.c_str());
+                an.srt.push_back(s);
+            }
+        }
+        else if (!memcmp(f, "BTP0", 4) && !memcmp(a, "M\0PT", 4))
+        {
+            // Per material keys (frame, texture name, palette name), the names in two lists.
+            const int ntex = a[6], npal = a[7];
+            const uint8_t *texNames = a + Get16(a + 8), *palNames = a + Get16(a + 10);
+            if (!in(texNames, 16 * ntex) || !in(palNames, 16 * npal)) return;
+            auto name = [](const uint8_t* p) { return std::string((const char*)p, strnlen((const char*)p, 16)); };
+            for (const auto& e : Dict(a + 12))
+            {
+                const int mi = matIndex(e.first);
+                const int nkeys = Get16(e.second);
+                const uint8_t* keys = a + Get16(e.second + 6);
+                if (mi < 0 || !in(keys, 4 * nkeys)) continue;
+                PatAnim p;
+                p.mat = mi;
+                for (int k = 0; k < nkeys; k++)
+                {
+                    const uint8_t* key = keys + 4 * k;
+                    const int ext = key[2] < ntex && key[3] < npal ? PlazaTextureByName(m, name(texNames + 16 * key[2]), name(palNames + 16 * key[3])) : -1;
+                    p.keys.push_back({ Get16(key), ext });
+                }
+                an.pat.push_back(std::move(p));
+            }
+        }
+        else if (!memcmp(f, "BCA0", 4) && !memcmp(a, "J\0AC", 4))
+        {
+            // Per node: flags, then translation, rotation and scale as present. Tracks have
+            // an info word (bits 0-15 first frame, 16-28 the last frame interpolated, 29 fx16
+            // values, 30-31 frames per value) and the values' place. Rotations are numbers
+            // into two tables: bit 15 set, a "pivot" one (3 halfwords), else a 3x3 matrix
+            // packed in 5 halfwords.
+            const int nodes = Get16(a + 6);
+            an.rot3 = a + Get32(a + 0x0C);
+            an.rot5 = a + Get32(a + 0x10);
+            for (int i = 0; i < nodes; i++)
+            {
+                const uint8_t* d = a + Get16(a + 0x14 + 2 * i);
+                if (!in(d, 4)) continue;
+                JntAnim j;
+                j.flags = Get16(d);
+                j.node = d[3];
+                const uint8_t* p = d + 4;
+                auto track = [&](int valueSize, bool constant, int constSize) {
+                    Track t;
+                    t.constant = constant;
+                    if (!in(p, 8)) return t;
+                    if (constant)
+                    {
+                        t.value = (int32_t)Get32(p);
+                        p += constSize;
+                        return t;
+                    }
+                    const uint32_t info = Get32(p);
+                    t.size = (info & 0x20000000) ? 2 : 4;
+                    t.stride = t.size * valueSize;
+                    t.shift = std::min(2u, info >> 30);
+                    t.lastInterp = (info >> 16) & 0x1FFF;
+                    t.data = a + Get32(p + 4);
+                    if (!in(t.data, TrackBytes(t))) { t.constant = true; t.value = 0; }
+                    p += 8;
+                    return t;
+                };
+                const uint16_t fl = j.flags;
+                if (!(fl & 1))
+                {
+                    if (!(fl & 6))
+                        for (int k = 0; k < 3; k++) j.t[k] = track(1, (fl & (8 << k)) != 0, 4);
+                    if (!(fl & 0xC0))
+                    {
+                        j.r = track(1, (fl & 0x100) != 0, 4);
+                        if (!j.r.constant) j.r.size = j.r.stride = 2; // numbers into the tables
+                    }
+                    if (!(fl & 0x600))
+                        for (int k = 0; k < 3; k++) j.s[k] = track(2, (fl & (0x800 << k)) != 0, 8);
+                }
+                if (j.node < (int)m.nodes.size()) an.jnt.push_back(j);
+            }
+        }
+        else
+            return;
+        m.anims.push_back(std::move(an));
+    }
+
+    // The bytes of a track's values: one per frame, or per 2 or 4 frames and the last.
+    static size_t TrackBytes(const Track& t) { return (size_t)t.stride * (t.shift ? (t.lastInterp >> t.shift) + 1 : std::max(1, t.lastInterp)); }
+
+    // A track's value at a frame (rotations: the number, not interpolated).
+    static int32_t TrackValue(const Track& t, int frame, bool interpolate = true)
+    {
+        if (t.constant) return t.value;
+        auto at = [&](int i) { const uint8_t* p = t.data + (size_t)t.stride * i; return t.size == 2 ? (int32_t)(int16_t)Get16(p) : (int32_t)Get32(p); };
+        // (Every frame has a value up to the last; with fewer, the last is held after it.)
+        if (!t.shift) return at(std::min(frame, t.lastInterp - 1));
+        if (frame >= t.lastInterp) return at(t.lastInterp >> t.shift);
+        const int i = frame >> t.shift, part = frame & ((1 << t.shift) - 1);
+        if (!part || !interpolate) return at(i);
+        const int32_t v0 = at(i), v1 = at(i + 1);
+        return v0 + (int32_t)((int64_t)(v1 - v0) * part >> t.shift);
+    }
+
+    // A JNT0 rotation by its number, as rows.
+    static void Rotation(const Anim& an, uint32_t index, int32_t r[9])
+    {
+        if (index & 0x8000)
+        {
+            const uint8_t* p = an.rot3 + 6 * (index & 0x7FFF);
+            const uint16_t info = Get16(p);
+            const int32_t a = (int16_t)Get16(p + 2), b = (int16_t)Get16(p + 4);
+            const int sel = info & 0xF, neg = (info >> 4) & 0xF;
+            static const uint8_t rest[9][4] = { {4,5,7,8}, {3,5,6,8}, {3,4,6,7}, {1,2,7,8}, {0,2,6,8},
+                                                {0,1,6,7}, {1,2,4,5}, {0,2,3,5}, {0,1,3,4} };
+            for (int i = 0; i < 9; i++) r[i] = 0;
+            if (sel >= 9) { r[0] = r[4] = r[8] = 0x1000; return; }
+            r[sel] = (neg & 1) ? -0x1000 : 0x1000;
+            r[rest[sel][0]] = a;
+            r[rest[sel][1]] = b;
+            r[rest[sel][2]] = (neg & 2) ? -b : b;
+            r[rest[sel][3]] = (neg & 4) ? -a : a;
+            return;
+        }
+        // Five entries in the top 13 bits of each halfword, the sixth from their low 3 bits;
+        // the last row is the cross product of the first two.
+        const uint8_t* p = an.rot5 + 10 * index;
+        uint32_t low = 0;
+        for (int i = 0; i < 5; i++)
+        {
+            const uint16_t h = Get16(p + 2 * i);
+            r[i] = (int16_t)h >> 3;
+            low = low << 3 | (h & 7);
+        }
+        r[5] = (int32_t)(low << 17) >> 17;
+        r[6] = (r[1] * r[5] - r[2] * r[4]) >> 12;
+        r[7] = (r[2] * r[3] - r[0] * r[5]) >> 12;
+        r[8] = (r[0] * r[4] - r[1] * r[3]) >> 12;
+    }
+
+    // A Plaza model's state at the game's 3D frame `clock`.
+    static void PlazaPose(const Model& m, uint64_t clock, Pose& pose)
+    {
+        pose.nodes = m.nodes;
+        pose.ext.assign(m.mats.size(), -2);
+        pose.srt.assign(m.mats.size(), { 0, 0, 0, 0 });
+        for (const Anim& an : m.anims)
+        {
+            const int frame = an.loop ? (int)(clock % (uint64_t)an.frames) : 0;
+            for (const SrtAnim& s : an.srt)
+                pose.srt[s.mat] = { TrackValue(s.scaleS, frame), TrackValue(s.scaleT, frame), TrackValue(s.transS, frame), TrackValue(s.transT, frame) };
+            for (const PatAnim& p : an.pat)
+                for (const auto& k : p.keys)
+                    if (k.first <= frame) pose.ext[p.mat] = k.second;
+            for (const JntAnim& j : an.jnt)
+            {
+                Node& n = pose.nodes[j.node];
+                const Node& base = m.nodes[j.node];
+                const uint16_t fl = j.flags;
+                int32_t r[9] = { 0x1000, 0, 0, 0, 0x1000, 0, 0, 0, 0x1000 }, t[3] = { 0, 0, 0 };
+                if (fl & 1)
+                {
+                    n.move = n.scale = false;
+                    continue;
+                }
+                if (fl & 4) for (int k = 0; k < 3; k++) t[k] = (int32_t)base.mtx[9 + k];
+                else if (!(fl & 2)) for (int k = 0; k < 3; k++) t[k] = TrackValue(j.t[k], frame);
+                if (fl & 0x80) for (int k = 0; k < 9; k++) r[k] = (int32_t)base.mtx[k];
+                else if (!(fl & 0x40)) Rotation(an, (uint32_t)TrackValue(j.r, frame, false) & 0xFFFF, r);
+                for (int k = 0; k < 9; k++) n.mtx[k] = (uint32_t)r[k];
+                for (int k = 0; k < 3; k++) n.mtx[9 + k] = (uint32_t)t[k];
+                n.move = true;
+                if (fl & 0x400) { n.scale = base.scale; for (int k = 0; k < 3; k++) n.s[k] = base.s[k]; }
+                else if (fl & 0x200) n.scale = false;
+                else
+                {
+                    n.scale = true;
+                    for (int k = 0; k < 3; k++) n.s[k] = (uint32_t)TrackValue(j.s[k], frame);
+                }
+            }
+        }
     }
 
     // A texture of a TEX0 block (param: its TEXIMAGE_PARAM there) as an external texture.
@@ -1078,7 +1387,8 @@ private:
     }
 
     // A model at a place: camera, then translation, scale, then the model's own byte code.
-    void EmitPlaced(const Model& m, int32_t x, int32_t y, int32_t z, const uint32_t* scale, std::vector<uint32_t>& out) const
+    void EmitPlaced(const Model& m, int32_t x, int32_t y, int32_t z, const uint32_t* scale, std::vector<uint32_t>& out,
+        const Pose* pose = nullptr) const
     {
         out.push_back(0x17);
         for (int i = 0; i < 12; i++) out.push_back(Read32(Glb + 0x4C + 4 * i));
@@ -1093,13 +1403,16 @@ private:
         for (const Op& op : m.ops)
             switch (op.kind)
             {
-            case OpMat: EmitMaterial(m.mats[op.a], out); break;
+            case OpMat:
+                if (pose) EmitMaterial(m.mats[op.a], out, pose->ext[op.a], pose->srt[op.a][0] ? pose->srt[op.a].data() : nullptr);
+                else EmitMaterial(m.mats[op.a], out);
+                break;
             case OpShape: out.insert(out.end(), m.shapes[op.a].begin(), m.shapes[op.a].end()); break;
             case OpRestore: out.push_back(0x14); out.push_back(op.a); break;
             case OpNode:
             {
                 if (op.c >= 0) { out.push_back(0x14); out.push_back(op.c); }
-                const Node& n = m.nodes[op.a];
+                const Node& n = pose ? pose->nodes[op.a] : m.nodes[op.a];
                 if (n.move) { out.push_back(0x19); out.insert(out.end(), n.mtx, n.mtx + 12); }
                 if (n.scale) { out.push_back(0x1B); out.insert(out.end(), n.s, n.s + 3); }
                 if (op.b >= 0) { out.push_back(0x13); out.push_back(op.b); }
@@ -1112,10 +1425,27 @@ private:
             }
     }
 
-    void EmitMaterial(const Material& m, std::vector<uint32_t>& out) const
+    // (Plaza models: `ext` a texture an animation chose (-2: the material's own), and `srt`
+    // the scale and move of its texture, fx32, 1.0 its whole width or height.)
+    void EmitMaterial(const Material& m, std::vector<uint32_t>& out, int ext = -2, const int32_t* srt = nullptr) const
     {
         if (m.own)
         {
+            if (ext == -2) ext = m.ext;
+            uint32_t tex = ext < 0 ? 0 : (melonDS::WideState::ExternalTexParam + (uint32_t)ext) | (m.texImage & 0x000F0000);
+            if (ext >= 0 && srt)
+            {
+                // The texture matrix, applied to the texture coordinates (in 16ths of a
+                // texel) as they are given: S' = S * scale - move * width.
+                const auto& e = melonDS::Wide.ExternalTextures[ext];
+                const int32_t mtx[16] = { srt[0], 0, 0, 0, 0, srt[1], 0, 0, 0, 0, 0x1000, 0,
+                    (int32_t)(-(int64_t)srt[2] * e.W * 16), (int32_t)(-(int64_t)srt[3] * e.H * 16), 0, 0x1000 };
+                out.push_back(0x10); out.push_back(3);
+                out.push_back(0x16);
+                out.insert(out.end(), (const uint32_t*)mtx, (const uint32_t*)mtx + 16);
+                out.push_back(0x10); out.push_back(2);
+                tex |= 0x40000000; // texture coordinates through the matrix
+            }
             out.push_back(0x30); out.push_back(m.difAmb);
             out.push_back(0x31); out.push_back(m.speEmi);
             // Lit by the map's first light: the others the Plaza sets for itself are dark on
@@ -1123,7 +1453,7 @@ private:
             const uint32_t attr = (m.polyAttr & m.polyMask) | (Colours[2] & ~m.polyMask);
             out.push_back(0x29); out.push_back((attr & ~0xFu) | ((attr & 0xF) ? 1 : 0));
             // Wrapping and flipping as the material has them.
-            out.push_back(0x2A); out.push_back(m.ext < 0 ? 0 : melonDS::WideState::ExternalTexParam + (uint32_t)m.ext | (m.texImage & 0x000F0000));
+            out.push_back(0x2A); out.push_back(tex);
             out.push_back(0x2B); out.push_back(0);
             return;
         }
