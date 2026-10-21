@@ -126,11 +126,13 @@ struct PartyMon
     int moves[4] = {}, pp[4] = {}, ppMax[4] = {}, moveType[4] = {};
     int types[2] = { -1, -1 };         // -1: not known (forms with types of their own)
     int metPlace = 0, metLevel = 0;    // metPlace: a place of text bank 279
+    int metMonth = 0, metDay = 0;      // the date met (0: not known)
     int ribbons = 0;
 };
 // The Pokemon (236 bytes, the party's format) at `addr` in main RAM; false unless its
-// checksum and numbers check out.
-bool Party_ReadMon(uint32_t addr, PartyMon& mon);
+// checksum and numbers check out. `boxed`: the 136 bytes a PC box keeps, without the
+// party's part (no HP or stats; the level is worked out from the experience, as the game does).
+bool Party_ReadMon(uint32_t addr, PartyMon& mon, bool boxed = false);
 // Line `index` of the ROM's text bank `bank` (moves 750, abilities 720, items 222,
 // natures 34, types 735, places 279).
 std::string Party_Text(int bank, int index);
