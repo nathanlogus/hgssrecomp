@@ -504,9 +504,11 @@ inline void MergedCompose(const Scene& scene, const ScreenImage screens[2], int 
                     if (sy >= 0 && sy < 192)
                     {
                         const int left = (int)v.originX, right = (int)(v.originX + 256 * v.unit);
-                        if (LayerClass(top.flags[sy * 256]) != LAYER_3D)
+                        // (Not what the piece leaves out: the 3D and anything it drops.)
+                        const uint8_t keep = (uint8_t)~(LAYER_3D | scene.items[0].drop);
+                        if (LayerClass(top.flags[sy * 256]) & keep)
                             std::fill(dst, dst + std::min(left, outW), 0xFF000000 | top.pixels[sy * 256]);
-                        if (LayerClass(top.flags[sy * 256 + 255]) != LAYER_3D && right < outW)
+                        if ((LayerClass(top.flags[sy * 256 + 255]) & keep) && right < outW)
                             std::fill(dst + std::max(right, 0), dst + outW, 0xFF000000 | top.pixels[sy * 256 + 255]);
                     }
                 }

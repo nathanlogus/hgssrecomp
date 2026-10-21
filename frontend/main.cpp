@@ -1330,6 +1330,10 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // The Wi-Fi Plaza as a map of the overworld (plazamap.h): data only, before the
+    // consoles (both of --lockstep's) are made.
+    const bool plazaMap = PlazaMap::Patch(rom);
+
     std::vector<uint8_t> sav = ReadFile(opt.save);
     fprintf(stderr, "ROM %s: %zu bytes; save %s: %zu bytes\n", opt.rom.c_str(), rom.size(), opt.save.c_str(), sav.size());
     if (!opt.party.empty() && opt.lockstep)
@@ -1735,6 +1739,9 @@ int main(int argc, char** argv)
     // Whether an application driven from the bottom screen is starting, running or ending
     // (worked out each frame before the scene is chosen).
     bool appBottomNow = false;
+    // On the Wi-Fi Plaza (plazamap.h), whose room only the widescreen renderer draws: it is
+    // used there at any width and with the widescreen setting off.
+    bool onPlaza = false;
     // Chooses what the single merged view shows this frame.
     auto pickScene = [&](bool cursorInUse, float viewWidth, const ScreenImage* screens) {
         Scene sc;
@@ -2445,7 +2452,7 @@ int main(int argc, char** argv)
             }
         }
         // The overworld is drawn across the whole wide view by the widescreen 3D renderer.
-        sc.wide = viewWidth >= 300 && (fieldActive() || menuReturn > 0) && !sc.items.empty() && sc.items[0].screen == 0 &&
+        sc.wide = (viewWidth >= 300 || onPlaza) && (fieldActive() || menuReturn > 0) && !sc.items.empty() && sc.items[0].screen == 0 &&
             sc.items[0].sw == 256 && sc.items[0].sh == 192 && sc.items[0].dx == 0 && sc.items[0].scale == 1.0f;
         return sc;
     };
@@ -2464,6 +2471,7 @@ int main(int argc, char** argv)
     std::vector<NightFly> fireflies;
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
+    worldBlocks.Plaza = plazaMap;
     // The HUD: its sprites and the game's own font.
     Sprites sprites;
     RomFont font;
@@ -2664,6 +2672,7 @@ int main(int argc, char** argv)
     bool emoteWheel = false;
     melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
         if (cfg.farMap) worldBlocks.Build(*nds, commands);
+        worldBlocks.EmitPlaza(*nds, commands);
         worldBlocks.EmitTrainers(*nds, remoteDraw, commands);
         FlushView& fv = flushViews[melonDS::Wide.FlushCount & 3];
         fv = FlushView();
@@ -4649,7 +4658,8 @@ int main(int argc, char** argv)
                 ww = ww * cfg.wideLines / wh;
                 wh = cfg.wideLines;
             }
-            const bool wantWide = merged && cfg.wide && !opt.noWide && !opt.lockstep && view.width >= 300 &&
+            onPlaza = worldBlocks.OnPlaza(*nds);
+            const bool wantWide = merged && ((cfg.wide && view.width >= 300) || onPlaza) && !opt.noWide && !opt.lockstep &&
                 (fieldActive() || menuReturn > 0 || scene.edgeFill);
             melonDS::Wide.Owner = wantWide ? &nds->GPU.GPU3D : nullptr;
             melonDS::Wide.Between = cfg.fpsUnlimited && !opt.headless;
@@ -5298,6 +5308,9 @@ int main(int argc, char** argv)
             const bool writing = saveWriting();
             fieldHeldBySave = writing && fieldActive();
             Scene picked = pickScene(frame < cursorShownUntil, view.width, screenImages);
+            // The Wi-Fi Plaza's room is only in the widescreen world: the game's own picture
+            // shows its backdrop around the player there, which must not cover the room.
+            if (picked.wide && onPlaza) picked.items[0].drop |= LAYER_BACKDROP;
             // An application's own layout stays while it fades out: the game is still ending it
             // (and its picture is still what is on the screens) when only a general layout
             // would be chosen, until the overworld runs again or a moment has passed.

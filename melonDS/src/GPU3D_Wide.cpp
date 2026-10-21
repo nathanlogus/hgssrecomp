@@ -931,7 +931,9 @@ struct WideAccess
             if (!poly || poly->Degenerate || poly->IsShadowMask || poly->IsShadow || poly->Type != 0) continue;
             if (poly->NumVertices < 3) continue;
             Texture* tex = texturing && ((poly->TexParam >> 26) & 0x7) ? findTexture(poly->TexParam, poly->TexPalette) : nullptr;
-            if (!tex && texturing && (poly->TexParam & 0xFFFFF000) == Wide.ExternalTexParam)
+            // (Its wrapping and flipping are applied when sampling; colour 0 and the
+            // coordinate bits mean nothing to a texture the frontend has decoded.)
+            if (!tex && texturing && (poly->TexParam & 0x1FF0F000) == Wide.ExternalTexParam)
                 tex = findExternal(poly->TexParam & 0xFFF);
             WideVertex v[10];
             for (u32 i = 0; i < poly->NumVertices; i++)

@@ -1563,6 +1563,7 @@ std::string Party_PlaceName(int map)
     static std::map<int, std::string> names;
     auto it = names.find(map);
     if (it != names.end()) return it->second;
+    if (map == 516) return names[map] = "Wi-Fi Plaza"; // its place is "Mystery Zone" (see plazamap.h)
     return names[map] = NdsMessage(RomData, RomSize, 279, R16(MapHeaders + 24 * map + 0x12) & 0xFF);
 }
 

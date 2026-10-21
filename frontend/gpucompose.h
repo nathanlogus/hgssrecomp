@@ -219,7 +219,7 @@ private:
             bool any = false;
             for (int y = 0; y < 192; y++)
             {
-                bool ext = LayerClass(top.flags[y * 256 + sx]) != LAYER_3D;
+                bool ext = LayerClass(top.flags[y * 256 + sx]) & (uint8_t)~(LAYER_3D | scene.items[0].drop);
                 Edge[y] = ext ? (0xFF000000 | top.pixels[y * 256 + sx]) : 0;
                 any |= ext;
             }

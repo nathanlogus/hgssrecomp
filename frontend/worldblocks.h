@@ -26,6 +26,7 @@
 #include "GPU3D_Wide.h"
 #include "nightfx.h"
 #include "hud.h"
+#include "plazamap.h"
 
 class WorldBlocks
 {
@@ -46,6 +47,9 @@ public:
         ZoneObjects.clear();
         SpriteTex.clear();
         melonDS::Wide.ExternalTextures.clear();
+        PlazaLoaded = false;
+        PlazaModels.clear();
+        PlazaPieces.clear();
     }
 
     void Build(melonDS::NDS& nds, std::vector<uint32_t>& out)
@@ -289,6 +293,30 @@ public:
             drawn++;
         }
         if (!drawn) out.resize(start);
+    }
+
+    // The Wi-Fi Plaza (plazamap.h): on its map, the room, its floor and its furniture, from
+    // the Plaza's own models and textures in the ROM (set 0 of a/2/0/1), placed as the
+    // Plaza program places them on its grid.
+    bool Plaza = false; // the ROM was set up for it
+    bool OnPlaza(melonDS::NDS& nds)
+    {
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        const uint32_t fs = Read32(FieldSystemPtr);
+        if (!Plaza || !InRam(fs) || Read32(fs + 0x70) != 0) return false;
+        const uint32_t location = Read32(fs + 0x20);
+        return InRam(location) && Read32(location) == (uint32_t)PlazaMap::MapId;
+    }
+    void EmitPlaza(melonDS::NDS& nds, std::vector<uint32_t>& out)
+    {
+        if (!OnPlaza(nds)) return;
+        if (!PlazaLoaded) LoadPlaza();
+        if (PlazaPieces.empty()) return;
+        EmitProjection(out);
+        Colours[2] = Read32(Glb + 0x9C);
+        for (const PlazaPiece& p : PlazaPieces)
+            EmitPlaced(PlazaModels[p.model], p.x, 0, p.z, nullptr, out);
     }
 
     void Lights(melonDS::NDS& nds, float viewWidth, float zoom, std::vector<NightLight>& out)
@@ -603,6 +631,8 @@ private:
         uint32_t difAmb = 0, speEmi = 0, polyAttr = 0, polyMask = 0, texImage = 0;
         uint16_t plttBase = 0;
         bool bound = false; // texImage and plttBase already hold the video memory places
+        bool own = false;   // a model with textures of its own (ext) and its own colours
+        int ext = -1;       // its texture as an external texture (Wide.ExternalTextures)
     };
     struct Node
     {
@@ -940,6 +970,113 @@ private:
         return !TexParams.empty();
     }
 
+    // The Plaza's pieces: models (from a/2/0/1) and where each stands (world units, fx32).
+    struct PlazaPiece
+    {
+        int model;
+        int32_t x, z;
+    };
+    bool PlazaLoaded = false;
+    std::vector<Model> PlazaModels;
+    std::vector<PlazaPiece> PlazaPieces;
+
+    void LoadPlaza()
+    {
+        PlazaLoaded = true;
+        const auto files = NarcMembers("a/2/0/1"), maps = NarcMembers("a/2/0/0");
+        if (files.empty() || maps.size() < 2 || maps[0].second != PlazaMap::GridW * PlazaMap::GridH * 4 || maps[1].second < 0x188) return;
+        const uint8_t* grid = Rom + maps[0].first;
+        const uint8_t* table = Rom + maps[1].first; // the first of the Plaza's looks: object kind -> member, then the room
+        std::map<uint32_t, int> loaded;
+        auto place = [&](uint32_t member, int gx, int gz) {
+            auto it = loaded.find(member);
+            if (it == loaded.end())
+            {
+                Model m;
+                it = loaded.emplace(member, member < files.size() && ParsePlazaModel(files[member].first, files[member].second, m)
+                    ? (PlazaModels.push_back(std::move(m)), (int)PlazaModels.size() - 1) : -1).first;
+            }
+            if (it->second >= 0)
+                PlazaPieces.push_back({ it->second, (gx + PlazaMap::OffX) * 0x10000, (gz + PlazaMap::OffZ) * 0x10000 });
+        };
+        place(Get32(table + 0x180), 0, 0); // the room
+        place(Get32(table + 0x184), 0, 0); // its floor
+        // Furniture: the grid's event numbers and the kind of object standing there
+        // (pokeplatinum ov70_02261E10.c), leaving out the fireworks (shown during the parade).
+        static const uint8_t kinds[][2] = { { 24, 0 }, { 25, 1 }, { 26, 2 }, { 27, 3 }, { 28, 4 }, { 33, 5 }, { 70, 6 },
+            { 71, 7 }, { 72, 8 }, { 76, 9 }, { 73, 10 }, { 74, 10 }, { 75, 10 }, { 77, 11 }, { 78, 12 }, { 98, 17 } };
+        for (int gz = 0; gz < PlazaMap::GridH; gz++)
+            for (int gx = 0; gx < PlazaMap::GridW; gx++)
+            {
+                const uint32_t id = Get32(grid + 4 * (gz * PlazaMap::GridW + gx)) >> 16;
+                for (const auto& k : kinds)
+                    if (k[0] == id) place(Get32(table + 4 * k[1]), gx, gz);
+            }
+        fprintf(stderr, "[plaza] %zu models, %zu pieces\n", PlazaModels.size(), PlazaPieces.size());
+    }
+
+    // A model of the Plaza with its own textures, decoded as external textures.
+    bool ParsePlazaModel(uint32_t off, uint32_t size, Model& m) const
+    {
+        const uint8_t* b = Rom + off;
+        if (!ParseModel(b, size, false, m)) return false;
+        const uint8_t* t = Get16(b + 0x0E) >= 2 ? b + Get32(b + 0x14) : nullptr;
+        if (!t || t + 0x3C > b + size || memcmp(t, "TEX0", 4) != 0) t = nullptr;
+        const auto texs = t ? Dict(t + Get16(t + 0x0E)) : decltype(Dict(t))();
+        const auto pals = t ? Dict(t + Get16(t + 0x34)) : decltype(Dict(t))();
+        for (Material& mat : m.mats)
+        {
+            mat.own = true;
+            for (const auto& e : texs)
+            {
+                if (e.first != (mat.tex.empty() ? mat.name : mat.tex)) continue;
+                const uint8_t* pal = nullptr;
+                for (const auto& q : pals)
+                    if (q.first == mat.pltt) pal = t + Get32(t + 0x38) + (Get16(q.second) << 3);
+                mat.ext = PlazaTexture(t, b + size, Get32(e.second), pal);
+            }
+        }
+        return true;
+    }
+
+    // A texture of a TEX0 block (param: its TEXIMAGE_PARAM there) as an external texture.
+    static int PlazaTexture(const uint8_t* t, const uint8_t* end, uint32_t param, const uint8_t* pal)
+    {
+        const int w = 8 << ((param >> 20) & 7), h = 8 << ((param >> 23) & 7), fmt = (param >> 26) & 7;
+        static const int bits[8] = { 0, 8, 2, 4, 8, 0, 8, 16 };
+        const uint8_t* pix = t + Get32(t + 0x14) + ((param & 0xFFFF) << 3);
+        const int colours = fmt == 1 ? 32 : fmt == 6 ? 8 : 1 << bits[fmt];
+        if (!bits[fmt] || pix + w * h * bits[fmt] / 8 > end || (fmt != 7 && (!pal || pal + 2 * colours > end)))
+            return -1;
+        const bool clear0 = param & (1 << 29);
+        auto colour = [&](uint16_t c, uint32_t a) {
+            uint32_t r = (c << 1) & 0x3E, g = (c >> 4) & 0x3E, bl = (c >> 9) & 0x3E;
+            if (r) r++;
+            if (g) g++;
+            if (bl) bl++;
+            return 0x80000000 | r | (g << 8) | (bl << 16) | (a << 24);
+        };
+        melonDS::WideState::ExternalTexture tex;
+        tex.W = w;
+        tex.H = h;
+        tex.Texels.resize((size_t)w * h);
+        for (int i = 0; i < w * h; i++)
+        {
+            uint32_t v;
+            if (fmt == 7) { const uint16_t c = Get16(pix + 2 * i); v = colour(c, c & 0x8000 ? 31 : 0); }
+            else if (fmt == 1) { const uint8_t c = pix[i]; v = colour(Get16(pal + 2 * (c & 31)), (c >> 5) * 4 + (c >> 5) / 2); }
+            else if (fmt == 6) { const uint8_t c = pix[i]; v = colour(Get16(pal + 2 * (c & 7)), c >> 3); }
+            else
+            {
+                const int k = bits[fmt], c = (pix[i * k / 8] >> (i * k % 8)) & ((1 << k) - 1);
+                v = colour(Get16(pal + 2 * c), clear0 && c == 0 ? 0 : 31);
+            }
+            tex.Texels[i] = v;
+        }
+        melonDS::Wide.ExternalTextures.push_back(std::move(tex));
+        return (int)melonDS::Wide.ExternalTextures.size() - 1;
+    }
+
     // A model at a place: camera, then translation, scale, then the model's own byte code.
     void EmitPlaced(const Model& m, int32_t x, int32_t y, int32_t z, const uint32_t* scale, std::vector<uint32_t>& out) const
     {
@@ -977,6 +1114,19 @@ private:
 
     void EmitMaterial(const Material& m, std::vector<uint32_t>& out) const
     {
+        if (m.own)
+        {
+            out.push_back(0x30); out.push_back(m.difAmb);
+            out.push_back(0x31); out.push_back(m.speEmi);
+            // Lit by the map's first light: the others the Plaza sets for itself are dark on
+            // the overworld.
+            const uint32_t attr = (m.polyAttr & m.polyMask) | (Colours[2] & ~m.polyMask);
+            out.push_back(0x29); out.push_back((attr & ~0xFu) | ((attr & 0xF) ? 1 : 0));
+            // Wrapping and flipping as the material has them.
+            out.push_back(0x2A); out.push_back(m.ext < 0 ? 0 : melonDS::WideState::ExternalTexParam + (uint32_t)m.ext | (m.texImage & 0x000F0000));
+            out.push_back(0x2B); out.push_back(0);
+            return;
+        }
         // The game lights its map with its own (time of day) colours, not the model's.
         out.push_back(0x30); out.push_back(Colours[0] | (m.difAmb & 0x8000));
         out.push_back(0x31); out.push_back(Colours[1]);
