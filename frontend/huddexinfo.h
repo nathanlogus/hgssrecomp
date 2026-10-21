@@ -272,7 +272,16 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
             float ox = ax + (aw - cell * (x2 - x1)) / 2 - x1 * cell, oy = ay + (ah - cell * (y2 - y1)) / 2 - y1 * cell;
             if (map)
             {
-                HudRegionMap(c, ui, *map, v.region ? 22 : 0, v.region ? 47 : 26, ax, ay, aw, ah, cell, ox, oy);
+                // Zoomed to fill the panel, centred on the places marked (as far as the map
+                // goes), gliding to the next ones.
+                float fx1 = 99, fy1 = 99, fx2 = -1, fy2 = -1;
+                for (const View::Cell& k : v.cells)
+                    if (k.place && (v.cursor == 0 || v.cursor == k.place))
+                        fx1 = std::min(fx1, (float)k.x), fy1 = std::min(fy1, (float)k.y), fx2 = std::max(fx2, (float)k.x), fy2 = std::max(fy2, (float)k.y);
+                if (fx2 < 0) fx1 = fx2 = v.region ? 34 : 12, fy1 = fy2 = 8;
+                static float pan[2] = { -1, -1 };
+                HudRegionMap(c, ui, *map, v.region ? 22 : 0, v.region ? 47 : 26, ax, ay, aw, ah, (fx1 + fx2) / 2, (fy1 + fy2) / 2 + 2, 99, pan,
+                    cell, ox, oy);
                 oy += 2 * cell;
             }
             for (int pass = map ? 1 : 0; pass < 2; pass++)
@@ -280,6 +289,9 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
                 {
                     const bool on = k.place && (v.cursor == 0 || v.cursor == k.place);
                     if (on != (pass == 1)) continue;
+                    // Only those in the panel.
+                    if (map && (ox + k.x * cell < ax || ox + (k.x + 1) * cell > ax + aw || oy + k.y * cell < ay || oy + (k.y + 1) * cell > ay + ah))
+                        continue;
                     const float g = cell * 0.08f;
                     HudParty::FillRound(c, ui, ox + k.x * cell + g, oy + k.y * cell + g, cell - 2 * g, cell - 2 * g, cell * 0.2f,
                         on ? (map ? 0xC8F08030 : 0xFFF08030) : 0xFFF2DCA0);
