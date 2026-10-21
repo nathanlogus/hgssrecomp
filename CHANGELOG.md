@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Online: choose your look (Profile, Look) from any of the game's people who walk all
+  four ways, browsing them with the d-pad and seeing them walk before you confirm (left
+  and right on Look change it straight away). The others see you walking around with that
+  look, and everyone's chip, friends list row, invite card and message shows their face
+  instead of their initials. Your own trainer stays as the game draws it on your screen.
+- The start screen's save card shows your chosen look.
+
 - New screens: when a Pokémon evolves, an egg hatches or a Pokémon is traded, the
   messages appear in the new message box while the game's own animation plays: "What? …
   is evolving!" (with a hint that B stops it), the moves it wants to learn and the
