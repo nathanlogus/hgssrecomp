@@ -280,67 +280,67 @@ inline void DrawVoltorb(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     }
     else
     {
-    // The board: 5 x 5 cards, the totals of each row at its right and of each column below.
-    // The lines joining the cards, in their row's and column's colours.
-    for (int k = 0; k < 5; k++)
-        for (int j = 0; j < 5; j++)
-        {
-            FillBlend(c, ui(bx + j * pitch + cs), ui(by + k * pitch + cs / 2 - 5), ui(pitch - cs), ui(10), kLineColour[k]);
-            FillBlend(c, ui(bx + k * pitch + cs / 2 - 5), ui(by + j * pitch + cs), ui(10), ui(pitch - cs), kLineColour[k]);
-        }
-    for (int i = 0; i < 25; i++)
-    {
-        const float x = bx + (i % 5) * pitch, y = by + (i / 5) * pitch;
-        const bool up = v.flipped[i] || (v.reveal && i / 5 < v.revealRows && v.type[i]);
-        const bool here = v.cursor && v.focus == i;
-        if (up)
-        {
-            // Turned over: its number, or a Voltorb; at the end those not turned in the game are dimmer.
-            const bool missed = !v.flipped[i];
-            FillRound(c, ui, x, y, cs, cs, 18, missed ? 0xFFE6E2D6 : v.type[i] == 4 ? 0xFFFFE3DC : 0xFFFFFBEA);
-            if (v.type[i] == 4)
+        // The board: 5 x 5 cards, the totals of each row at its right and of each column below.
+        // The lines joining the cards, in their row's and column's colours.
+        for (int k = 0; k < 5; k++)
+            for (int j = 0; j < 5; j++)
             {
-                voltorbAt(x + 14, y + 14, cs - 28, cs - 28);
+                FillBlend(c, ui(bx + j * pitch + cs), ui(by + k * pitch + cs / 2 - 5), ui(pitch - cs), ui(10), kLineColour[k]);
+                FillBlend(c, ui(bx + k * pitch + cs / 2 - 5), ui(by + j * pitch + cs), ui(10), ui(pitch - cs), kLineColour[k]);
+            }
+        for (int i = 0; i < 25; i++)
+        {
+            const float x = bx + (i % 5) * pitch, y = by + (i / 5) * pitch;
+            const bool up = v.flipped[i] || (v.reveal && i / 5 < v.revealRows && v.type[i]);
+            const bool here = v.cursor && v.focus == i;
+            if (up)
+            {
+                // Turned over: its number, or a Voltorb; at the end those not turned in the game are dimmer.
+                const bool missed = !v.flipped[i];
+                FillRound(c, ui, x, y, cs, cs, 18, missed ? 0xFFE6E2D6 : v.type[i] == 4 ? 0xFFFFE3DC : 0xFFFFFBEA);
+                if (v.type[i] == 4)
+                {
+                    voltorbAt(x + 14, y + 14, cs - 28, cs - 28);
+                }
+                else
+                    HudText(c, ui, f, x + cs / 2, y + 24, 80, std::to_string(v.type[i]), missed ? Muted : Ink, 1, true);
             }
             else
-                HudText(c, ui, f, x + cs / 2, y + 24, 80, std::to_string(v.type[i]), missed ? Muted : Ink, 1, true);
+            {
+                FillRound(c, ui, x, y, cs, cs, 18, 0xFF2F8F66);
+                FillRound(c, ui, x + 10, y + 10, cs - 20, cs - 20, 12, 0xFF3FA978);
+                // The memo's marks in the corners, as the game puts them: Voltorb, 1 / 2, 3.
+                const float mx[4] = { x + 8, x + cs - 46, x + 8, x + cs - 46 }, my[4] = { y + 8, y + 8, y + cs - 46, y + cs - 46 };
+                for (int m = 0; m < 4; m++)
+                    if (v.memo[i] >> m & 1)
+                    {
+                        FillRound(c, ui, mx[m], my[m], 38, 38, 10, 0xFFFFFFFF);
+                        if (m == 0) voltorbAt(mx[m] + 3, my[m] + 3, 32, 32);
+                        else if (m) HudText(c, ui, f, mx[m] + 19, my[m] + 3, 32, std::to_string(m), Ink, 1, true);
+                    }
+            }
+            if (here)
+            {
+                const uint32_t ring = v.memoOpen ? 0xFFFFC23A : 0xFFE84A3A;
+                FillBlend(c, ui(x - 8), ui(y - 8), ui(cs + 16), ui(8), ring);
+                FillBlend(c, ui(x - 8), ui(y + cs), ui(cs + 16), ui(8), ring);
+                FillBlend(c, ui(x - 8), ui(y - 8), ui(8), ui(cs + 16), ring);
+                FillBlend(c, ui(x + cs), ui(y - 8), ui(8), ui(cs + 16), ring);
+            }
         }
-        else
-        {
-            FillRound(c, ui, x, y, cs, cs, 18, 0xFF2F8F66);
-            FillRound(c, ui, x + 10, y + 10, cs - 20, cs - 20, 12, 0xFF3FA978);
-            // The memo's marks in the corners, as the game puts them: Voltorb, 1 / 2, 3.
-            const float mx[4] = { x + 8, x + cs - 46, x + 8, x + cs - 46 }, my[4] = { y + 8, y + 8, y + cs - 46, y + cs - 46 };
-            for (int m = 0; m < 4; m++)
-                if (v.memo[i] >> m & 1)
-                {
-                    FillRound(c, ui, mx[m], my[m], 38, 38, 10, 0xFFFFFFFF);
-                    if (m == 0) voltorbAt(mx[m] + 3, my[m] + 3, 32, 32);
-                    else if (m) HudText(c, ui, f, mx[m] + 19, my[m] + 3, 32, std::to_string(m), Ink, 1, true);
-                }
-        }
-        if (here)
-        {
-            const uint32_t ring = v.memoOpen ? 0xFFFFC23A : 0xFFE84A3A;
-            FillBlend(c, ui(x - 8), ui(y - 8), ui(cs + 16), ui(8), ring);
-            FillBlend(c, ui(x - 8), ui(y + cs), ui(cs + 16), ui(8), ring);
-            FillBlend(c, ui(x - 8), ui(y - 8), ui(8), ui(cs + 16), ring);
-            FillBlend(c, ui(x + cs), ui(y - 8), ui(8), ui(cs + 16), ring);
-        }
-    }
-    // The totals: the points hidden in the line above, and its Voltorbs below.
-    for (int a = 0; a < 2; a++)
-        for (int k = 0; k < 5; k++)
-        {
-            const float x = a ? bx + 5 * pitch : bx + k * pitch, y = a ? by + k * pitch : by + 5 * pitch;
-            FillRound(c, ui, x, y, cs, cs, 18, kLineColour[k]);
-            FillRound(c, ui, x + 6, y + cs / 2, cs - 12, cs / 2 - 6, 12, 0x40FFFFFF);
-            char pts[8];
-            snprintf(pts, sizeof pts, "%02d", v.totals ? v.points[a][k] : 0);
-            HudText(c, ui, f, x + cs / 2, y + 6, 48, pts, White, 1, true);
-            voltorbAt(x + 12, y + cs / 2 + 6, 44, 44);
-            HudText(c, ui, f, x + cs - 34, y + cs / 2 + 6, 48, std::to_string(v.totals ? v.voltorbs[a][k] : 0), White, 1, true);
-        }
+        // The totals: the points hidden in the line above, and its Voltorbs below.
+        for (int a = 0; a < 2; a++)
+            for (int k = 0; k < 5; k++)
+            {
+                const float x = a ? bx + 5 * pitch : bx + k * pitch, y = a ? by + k * pitch : by + 5 * pitch;
+                FillRound(c, ui, x, y, cs, cs, 18, kLineColour[k]);
+                FillRound(c, ui, x + 6, y + cs / 2, cs - 12, cs / 2 - 6, 12, 0x40FFFFFF);
+                char pts[8];
+                snprintf(pts, sizeof pts, "%02d", v.totals ? v.points[a][k] : 0);
+                HudText(c, ui, f, x + cs / 2, y + 6, 48, pts, White, 1, true);
+                voltorbAt(x + 12, y + cs / 2 + 6, 44, 44);
+                HudText(c, ui, f, x + cs - 34, y + cs / 2 + 6, 48, std::to_string(v.totals ? v.voltorbs[a][k] : 0), White, 1, true);
+            }
     }
 
     // The right: the level and the coins, the memo, Quit and the game's messages.
@@ -357,7 +357,7 @@ inline void DrawVoltorb(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     amount(244, "This game", v.payout);
 
     const bool menuUp = !v.menu.empty() || v.yesNo >= 0;
-    if (!menuUp)
+    if (!menuUp && !v.Lesson())
     {
         // The memo: its button, and while it is open the four marks for the card under the
         // cursor (lit when the card has it) with Back when the memo has the cursor.
