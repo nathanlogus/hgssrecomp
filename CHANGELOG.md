@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- New screens: what people say in the overworld appears in a new message box, the text
+  coming in as the game writes it, with the arrow when there is more; yes/no questions
+  (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
+  with the same box.
+- New screens: phone calls in the Pokégear are drawn anew (who is calling, the ringing,
+  what they say line by line and the hang-up), as are the phone's Call, Sort and Quit
+  menu and the questions asked during a call. Choosing where to fly is drawn anew too:
+  the region's map with the towns you can fly to ringed, and the "Fly" question beside it.
+  The game's Options menu is drawn anew as well.
+- NEW SCREENS: buying and selling in shops. At a Poké Mart or the Goldenrod Department
+  Store the items for sale are shown in pages with their prices, the item you are on with
+  its description and how many you have, how many to buy with the total, "Is that OK?"
+  and the clerk's answers, and your money. Selling opens the bag in the same style, with
+  what the shop pays, how many to sell and your money. The Pokéathlon Dome's shops and
+  the clerk's questions before and after are still the game's own.
 - New screens, battles: the HP boxes, the message box and the stats after a level up are
   drawn in the new style too (widescreen view). The HP and EXP bars run down and fill as
   the game's do, the boxes slide in and out with the game's, and the messages appear
@@ -11,10 +26,13 @@
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a
   Pokémon Center's basement lets you into the Plaza's room, where the players of your
   party see each other, can chat with emotes and invite each other to battle or trade as
-  anywhere else. Walk back down the entrance corridor to leave. The Plaza's games, Tap
-  Toys and parade are not there yet. The room moves as in the real Plaza: waving flags,
-  the scrolling news screen, the turning globe and sign, the warp pad and the minigame
-  domes. It is drawn in every screen layout, with widescreen on or off.
+  anywhere else. The whole room is open to walk in, the Plaza's own music plays, and the
+  receptionist no longer talks about Nintendo Wi-Fi Connection. Walk back down the
+  entrance corridor to leave. As in the original game, the menu can't be opened in the
+  Plaza, so you can't save there (the receptionist saves on the way in). The room moves
+  as in the real Plaza: waving flags, the scrolling news screen, the turning globe and
+  sign, the warp pad and the minigame domes. It is drawn in every screen layout, with
+  widescreen on or off. The Plaza's games, Tap Toys and parade are not there yet.
 - The project is now called **Johto Online**. The game is `johto-online` (`johto-online.exe`
   on Windows), the downloads are `johto-online-setup-*`, the Android app is
   `JohtoOnline.apk`, and settings are kept in `johto-online.cfg`. Your save, settings and

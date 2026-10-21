@@ -61,7 +61,10 @@
 #include "hudtrade.h"
 #include "huddex.h"
 #include "hudgear.h"
+#include "hudoptions.h"
 #include "hudpcbox.h"
+#include "hudworld.h"
+#include "hudshop.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -2606,6 +2609,42 @@ int main(int argc, char** argv)
             put(glyph, HudColour::Ink & 0xFFFFFF, 1.0f, true);
             buttonPics.push_back({ n[0], pic });
         }
+        // "Any direction" (buttons/button_dpad): the four direction buttons at half size, in a
+        // cross, as the set has no picture of the whole pad.
+        auto pic = [&](const char* name) -> const Image* {
+            for (const auto& b : buttonPics)
+                if (b.first == name) return &b.second;
+            return nullptr;
+        };
+        const Image *up = pic("buttons/button_dpad_up"), *down = pic("buttons/button_dpad_down"),
+                    *left = pic("buttons/button_dpad_left"), *right = pic("buttons/button_dpad_right");
+        if (up && down && left && right && up->w == down->w && up->w == left->w && up->w == right->w &&
+            up->h == down->h && up->h == left->h && up->h == right->h)
+        {
+            Image cross;
+            cross.w = up->w;
+            cross.h = up->h;
+            cross.px.assign((size_t)cross.w * cross.h, 0);
+            const struct { const Image* img; int x, y; } parts[] = {
+                { up, cross.w / 4, 0 }, { down, cross.w / 4, cross.h / 2 }, { left, 0, cross.h / 4 }, { right, cross.w / 2, cross.h / 4 } };
+            for (const auto& p : parts)
+                for (int y = 0; y < p.img->h / 2; y++)
+                    for (int x = 0; x < p.img->w / 2; x++)
+                    {
+                        // The average of the 2 x 2 pixels, premultiplied so that edges stay clean.
+                        float a = 0, r = 0, g = 0, b = 0;
+                        for (int k = 0; k < 4; k++)
+                        {
+                            const uint32_t s = p.img->px[(size_t)(2 * y + k / 2) * p.img->w + 2 * x + k % 2];
+                            const float sa = (s >> 24) / 4.0f;
+                            a += sa, r += (s >> 16 & 0xFF) * sa, g += (s >> 8 & 0xFF) * sa, b += (s & 0xFF) * sa;
+                        }
+                        if (a < 0.5f) continue;
+                        uint32_t& o = cross.px[(size_t)(p.y + y) * cross.w + p.x + x];
+                        o = BlendOver(o, (uint32_t)(a + 0.5f) << 24 | (uint32_t)(r / a) << 16 | (uint32_t)(g / a) << 8 | (uint32_t)(b / a));
+                    }
+            buttonPics.push_back({ "buttons/button_dpad", cross });
+        }
         if (!buttonPics.empty()) fprintf(stderr, "[hud] %zu button pictures from %s\n", buttonPics.size(), dir.c_str());
     }
     for (const auto& b : buttonPics) sprites.Replace(b.first, b.second);
@@ -3131,7 +3170,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands and the trade screen.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, what people say, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -4373,6 +4412,9 @@ int main(int argc, char** argv)
                 case H_SAVE:
                     // As at the counter, a save first: a link that breaks restarts the game from it.
                     if (hmap == 2) go(H_ROOM);
+                    // None in the Wi-Fi Plaza: the game has no menu there (a "Mystery Zone");
+                    // a broken link restarts from the receptionist's save on the way in.
+                    else if (hmap == PlazaMap::MapId) go(H_WARP);
                     else if (frame - hand.start > 60 * 60) callOff("Not going to the Union Room: the game could not be saved", true);
                     else if (gameSave.Busy()) hand.saveSeen = true;
                     else if (hand.saveSeen && gameSave.wrote) go(H_WARP);
@@ -5862,6 +5904,46 @@ int main(int argc, char** argv)
             }
             v.read8 = nullptr;
         }
+        // The overworld's message box redrawn (hudworld.h), with a script's yes/no question,
+        // while the single-screen view shows the overworld and nothing but the box is on the
+        // game's BG3. The game's box (BG3) and the question's buttons from the touch screen are
+        // left out of the picture then; the box for two frames after (its tiles go a frame later).
+        {
+            static int worldBoxHold = 0;
+            static const bool worldTested = getenv("SSR_WORLDUI_SELFTEST") &&
+                fprintf(stderr, "[worldui] self-test %s\n", HudWorld::SelfTest() ? "passed" : "FAILED");
+            (void)worldTested;
+            const bool fieldView = (!strcmp(scene.name, "top") || !strcmp(scene.name, "choice")) && !scene.items.empty() && scene.items[0].screen == 0;
+            if (worldBoxHold > 0 && fieldView) scene.items[0].drop &= ~LAYER_BG3;
+            const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+            const bool may = spritesOk && cfg.redrawn && merged && hudFree && fieldView;
+            // A sign slides in and out: drawn as low as the game's is. It slides away with its
+            // last page (the game lets go of it first): that page, while it is on the screen.
+            const int top = may ? HudWorld::BoxTop(screenImages[0].flags) : -1;
+            int slide = std::max(0, top - HudWorld::kBoxY - 1);
+            HudWorld::Dialogue dlg;
+            bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
+            static HudWorld::Dialogue worldLast;
+            static uint32_t worldLastAt = 0;
+            if (shown) worldLast = dlg, worldLastAt = frame;
+            else if (top >= 0 && slide && worldLast.sign >= 0 && frame - worldLastAt < 12)
+            {
+                dlg = worldLast;
+                dlg.more = false;
+                shown = true;
+            }
+            worldBoxHold = shown ? 3 : std::max(0, worldBoxHold - 1);
+            if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
+            if (shown)
+            {
+                const int yesNo = HudWorld::ReadYesNo(ram);
+                if (yesNo >= 0) scene.items.resize(1);
+                const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
+                HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
+                    HudWorld::kBoxH * u - 6, frame, yesNo);
+                overlayUsed = true;
+            }
+        }
         if (menu.open && spritesOk)
         {
             // The buttons as they are labelled on the controller (see PadButtonFor).
@@ -5986,17 +6068,43 @@ int main(int argc, char** argv)
                     {
                         const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         std::vector<HudHint> hints = { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Pocket" }, { { "buttons/button_dpad" }, "Choose" },
-                            { { accept }, bs.giving ? "Give" : "Select" }, { { back }, "Close bag" } };
+                            { { accept }, bs.giving ? "Give" : bs.selling ? "Sell" : "Select" }, { { back }, "Close bag" } };
                         if (bs.menu) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
                         if (bs.quantity) hints = { { { "buttons/button_dpad" }, "How many" }, { { accept }, "Trash" }, { { back }, "Cancel" } };
                         if (!bs.message.empty()) hints = { { { accept }, "Next" } };
                         if (bs.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "No" } };
+                        if (bs.picking) hints = { { { "buttons/button_dpad" }, "How many" }, { { accept }, "Sell" }, { { back }, "Cancel" } };
+                        if (bs.selling) bs.money = HudShop::SellingMoney(readRam);
                         HudBag::Draw(canvas, ui, sprites, font, romArt, bagTexts, bs, hints);
                         overlayUsed = true;
                     }
                     break;
                 }
         bagShown = bagNow;
+        // Buying at a Poké Mart redrawn (hudshop.h) from the moment the shop opens until it
+        // closes; the clerk's questions around it stay the game's own. For up to two frames
+        // that do not check out (the shop half way through closing) the last picture stays.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen)
+        {
+            static uint32_t shopYesNo = 0, shopGood = 0;
+            static HudShop::State shopLast;
+            HudShop::State ss;
+            bool shopNow = false;
+            if (HudShop::Read(readRam, ss, shopYesNo) && HudShop::Shown(ss))
+                shopNow = true, shopLast = ss, shopGood = frame;
+            else if (shopGood && frame - shopGood <= 2)
+                shopNow = true, ss = shopLast;
+            if (shopNow)
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, ss.cursor == 8 ? "Leave" : "Select" }, { { b }, "Leave" } };
+                if (ss.step == 5 || ss.step == 7) hints = { { { "buttons/button_dpad" }, "How many" }, { { a }, "Buy" }, { { b }, "Cancel" } };
+                else if (ss.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "No" } };
+                else if (ss.step >= 10 && ss.step <= 15) hints = { { { a }, "Next" } };
+                HudShop::Draw(canvas, ui, sprites, font, romArt, bagTexts, ss, hints);
+                overlayUsed = true;
+            }
+        }
         // The Pokégear redrawn (hudgear.h): its phone and map tabs, read from the game's
         // memory each frame; calls, menus and the other tabs are the game's own picture.
         static uint32_t gearManager = 0;
@@ -6017,7 +6125,7 @@ int main(int argc, char** argv)
             // the game's own does not flash up between them.
             static HudGear::State gearLast;
             static int gearHeld = 0;
-            if (HudGear::ReadState(readRam, app, gearManager, gs, step, between) && HudGear::Shown(gs, step, gearShown))
+            if (HudGear::ReadState(readRam, app, bagTexts, gearManager, gs, step, between) && HudGear::Shown(gs, step, gearShown))
             {
                 gearNow = true;
                 gearLast = gs;
@@ -6043,12 +6151,68 @@ int main(int argc, char** argv)
                 const int y = year - (month < 3);
                 env.weekday = (y + y / 4 - y / 100 + y / 400 + t[(month + 11) % 12] + day) % 7;
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
-                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env,
-                    { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Select" }, { { back }, gs.inTabs ? "Close" : "Back" } });
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Select" }, { { back }, gs.inTabs ? "Close" : "Back" } };
+                if (!gs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
+                else if (gs.call.on) hints = gs.call.waiting ? std::vector<HudHint>{ { { accept }, "Next" } } : std::vector<HudHint>{};
+                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env, hints);
                 overlayUsed = true;
             }
         }
         gearShown = gearNow;
+        // Choosing where to fly, and the Town Map (hudgear.h too): the same map.
+        static uint32_t flyManager = 0;
+        static bool flyShown = false;
+        bool flyNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("TownMap"))
+        {
+            auto app = [](const char* name) -> const RcApp* {
+                for (unsigned i = 0; i < rc_num_apps; i++)
+                    if (!strcmp(rc_apps[i].name, name)) return &rc_apps[i];
+                return nullptr;
+            };
+            HudGear::State fs;
+            int step = -1;
+            if (HudGear::ReadFly(readRam, app, flyManager, fs, step) && HudGear::Shown(fs, step, flyShown))
+            {
+                flyNow = true;
+                HudGear::Env env;
+                env.me.name = onlineName();
+                env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                env.me.map = partyMap;
+                env.rd = readRam;
+                const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" } };
+                if (fs.mode == 1) hints.push_back({ { accept }, "Fly here" });
+                hints.push_back({ { back }, "Close" });
+                if (!fs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
+                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, fs, env, hints);
+                overlayUsed = true;
+            }
+        }
+        flyShown = flyNow;
+        // The game's Options menu redrawn (hudoptions.h); while it leaves (step 3, 4) only if
+        // it was shown before.
+        static bool optionsShown = false;
+        bool optionsNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("OptionsMenu"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "OptionsMenu"))
+                {
+                    static uint32_t optionsAt = 0;
+                    HudOptions::State os;
+                    if (HudOptions::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, optionsAt, bagTexts, os) &&
+                        (os.step <= 2 || optionsShown))
+                    {
+                        optionsNow = true;
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudOptions::Draw(canvas, ui, sprites, font, os,
+                            os.row == 6 ? std::vector<HudHint>{ { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Quit" } }
+                                        : std::vector<HudHint>{ { { "buttons/button_dpad" }, "Change" }, { { back }, "Quit" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        optionsShown = optionsNow;
         // The Union Room's trade screen redrawn (hudtrade.h), mirroring the game's own; for
         // up to three frames that do not check out the last picture stays, as with the bag.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("WirelessTradeSelectMon"))
