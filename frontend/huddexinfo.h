@@ -258,14 +258,15 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
             HudPanel(c, ui, sp, k == v.time ? "panels/button_yellow" : "panels/button_white", bx, py + 90, bw, 56);
             HudText(c, ui, f, bx + bw / 2, py + 102, 32, times[k], Ink, 1);
         }
-        const float ax = px + 30, ay = py + 170, aw = mw - 60, ah = ph - 200;
-        FillBlend(c, ui(ax), ui(ay), ui(aw), ui(ah), 0xFFE6F5DA);
+        // The region's picture: the Pokégear's map, all of it known, whose cells these are
+        // without its 2 rows on top (as the fly points'). It fills the card below the times
+        // of day to the card's inner edges (2 in, its corners 22 round).
+        const Image* map = art.RegionMap(63, {});
+        const float ax = map ? px + 2 : px + 30, ay = py + 170, aw = map ? mw - 4 : mw - 60, ah = map ? ph - 172 : ph - 200;
+        if (!map) FillBlend(c, ui(ax), ui(ay), ui(aw), ui(ah), 0xFFE6F5DA);
         int x1 = 99, y1 = 99, x2 = 0, y2 = 0;
         for (const View::Cell& k : v.cells)
             x1 = std::min(x1, k.x), y1 = std::min(y1, k.y), x2 = std::max(x2, k.x + 1), y2 = std::max(y2, k.y + 1);
-        // The region's picture: the Pokégear's map, all of it known, whose cells these are
-        // without its 2 rows on top (as the fly points').
-        const Image* map = art.RegionMap(63, {});
         if (map || (x2 > x1 && y2 > y1))
         {
             float cell = std::min((aw - 60) / (x2 - x1), (ah - 60) / (y2 - y1));
@@ -280,7 +281,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
                         fx1 = std::min(fx1, (float)k.x), fy1 = std::min(fy1, (float)k.y), fx2 = std::max(fx2, (float)k.x), fy2 = std::max(fy2, (float)k.y);
                 if (fx2 < 0) fx1 = fx2 = v.region ? 34 : 12, fy1 = fy2 = 8;
                 static float pan[2] = { -1, -1 };
-                HudRegionMap(c, ui, *map, v.region ? 22 : 0, v.region ? 47 : 26, ax, ay, aw, ah, (fx1 + fx2) / 2, (fy1 + fy2) / 2 + 2, 99, pan,
+                HudRegionMap(c, ui, *map, v.region ? 22 : 0, v.region ? 47 : 26, ax, ay, aw, ah, (fx1 + fx2) / 2, (fy1 + fy2) / 2 + 2, 99, 20, pan,
                     cell, ox, oy);
                 oy += 2 * cell;
             }
