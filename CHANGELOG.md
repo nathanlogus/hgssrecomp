@@ -11,7 +11,12 @@
   menu and the questions asked during a call. Choosing where to fly is drawn anew too:
   the region's map with the towns you can fly to ringed, and the "Fly" question beside it.
   The game's Options menu is drawn anew as well.
-
+- NEW SCREENS: buying and selling in shops. At a Poké Mart or the Goldenrod Department
+  Store the items for sale are shown in pages with their prices, the item you are on with
+  its description and how many you have, how many to buy with the total, "Is that OK?"
+  and the clerk's answers, and your money. Selling opens the bag in the same style, with
+  what the shop pays, how many to sell and your money. The Pokéathlon Dome's shops and
+  the clerk's questions before and after are still the game's own.
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a

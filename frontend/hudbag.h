@@ -15,6 +15,8 @@ struct State
 {
     int procState = 0;                       // BagAppState
     bool giving = false;                     // opened to choose an item for a Pokemon to hold
+    bool selling = false;                    // opened by a Poke Mart's clerk, to sell items
+    int64_t money = -1;                      // when selling, the player's money (set by the caller), or -1
     int pocket = 0;                          // the pocket shown (POCKET_ITEMS...)
     int cursor = 0;                          // BagAppCursorPos: 0-7 pockets, 8-13 items, 14/15 pages, 16 cancel
     int scroll = 0;                          // the first item of the page (pages of 6)
@@ -28,6 +30,10 @@ struct State
     // How many to trash, while it is chosen: the number, and the most.
     bool quantity = false;
     int qty = 0, qtyMax = 0;
+    // Selling: the price paid for one, and whether the number is being chosen (else it is shown).
+    int sellPrice = 0;
+    bool picking = false;
+    int soldItem = 0; // just sold: the item
     // The message about the item (trashing it, or why it cannot be used), and the yes/no
     // under it: its cursor, -1 when there is none.
     std::string message;
@@ -123,6 +129,49 @@ bool ReadMenu(Read rd, uint32_t view, uint32_t app, uint32_t& actionsCache, int 
     return true;
 }
 
+// Selling (BagAppMainTask_*Sell* in bag_app_main.c): how many while it is chosen (18, or 35
+// then 19 or 20) and until the sale is done (21-24), each at unitSellPrice (+0x684); the
+// clerk's words (formattedStrbuf +0x5E4) from 17 on, and the yes/no of 22 (as trashing's).
+template <class Read>
+bool ReadSelling(Read rd, uint32_t view, uint32_t app, State& st, int next, int count)
+{
+    auto rd8 = [&](uint32_t a) { return (int)(rd(a) & 0xFF); };
+    auto rd16 = [&](uint32_t a) { return (int)(rd(a) & 0xFFFF); };
+    const int ps = st.procState;
+    const bool inQuantity = ps == 18 || (ps == 35 && (next == 19 || next == 20));
+    // (Answered No, the price is cleared a few frames before the list takes the input again:
+    // the list then.)
+    const bool inSale = (ps >= 17 && ps <= 19) || (ps >= 21 && ps <= 24 && (ps != 22 || rd(app + 0x684))) || inQuantity;
+    if (!inSale) return true;
+    // Once sold (23, 24) the items are gone from the pocket: the slot may be empty then.
+    const bool sold = ps == 23 || ps == 24;
+    const int slot = st.scroll + st.cursor - 8;
+    if (st.cursor < 8 || st.cursor > 13 || (slot >= count && !sold)) return false;
+    // (While the number is chosen the string holds the total instead: the question is drawn.)
+    if (!inQuantity &&
+        (!HudScreens::GameString([&](uint32_t a) { return rd16(a); }, rd(app + 0x5E4), st.message) || st.message.empty()))
+        return false;
+    if (ps == 22)
+    {
+        const uint32_t yn = rd(app + 0x804);
+        st.yesNo = rd8(yn + 0x75);
+        if (!InRam(yn) || rd8(yn + 0x70) != 25 || rd8(yn + 0x71) != 6 || st.yesNo > 1) st.yesNo = -1;
+    }
+    // A sale's numbers, unless the item cannot be sold (24 straight from choosing it: no price).
+    st.sellPrice = (int)rd(app + 0x684);
+    st.qty = (int16_t)rd16(app + 0x680);
+    if (st.sellPrice <= 0) return true;
+    if (st.sellPrice > 999999 || st.qty < 1 || st.qty > 99 || (!sold && st.qty > st.items[slot].second)) return false;
+    st.qtyMax = sold ? 0 : std::min(99, st.items[slot].second);
+    // The item sold (BagView itemId), which must be the one chosen until it is sold.
+    const int id = rd16(view + 0x66);
+    if (id < 1 || id > 536 || (!sold && id != st.items[slot].first)) return false;
+    if (sold) st.soldItem = id;
+    st.quantity = true;
+    st.picking = inQuantity;
+    return true;
+}
+
 // Reads the bag's state through its OverlayManager: args is the BagView, data the
 // BagAppData (whose bagView, at 0x234, must point back at it). False when anything is out
 // of the ranges the game keeps it in. `actions`: where sContextMenuFuncs was found (FindMenuActions).
@@ -136,9 +185,11 @@ bool ReadState(Read rd, uint32_t man, State& st, uint32_t& actions)
     st.procState = (int)rd(man + 0x14);
     st.pocket = rd8(view + 0x64);
     st.cursor = (int)rd(app + 0x644);
-    // Only the bag opened from the menu or to give a Pokemon an item (not selling or the berry pots).
+    // Only the bag opened from the menu, to give a Pokemon an item or to sell at a shop (not
+    // the berry pots).
     st.giving = rd8(view + 0x65) == 1;
-    if (st.procState < 0 || st.procState > 37 || st.pocket >= 8 || rd8(view + 0x65) > 1 || st.cursor < 0 || st.cursor > 20)
+    st.selling = rd8(view + 0x65) == 2;
+    if (st.procState < 0 || st.procState > 37 || st.pocket >= 8 || rd8(view + 0x65) > 2 || st.cursor < 0 || st.cursor > 20)
         return false;
     int pockets = 0;
     for (int i = 0; i < 8; i++)
@@ -175,6 +226,7 @@ bool ReadState(Read rd, uint32_t man, State& st, uint32_t& actions)
     // +0x5E4), with the yes/no of 9 (its YesNoPrompt +0x804, placed by BagApp_CreateYesNoPrompt
     // at 25, 6; the cursor at +0x75).
     const int next = (int)rd(app + 0x944);
+    if (st.selling) return ReadSelling(rd, view, app, st, next, count);
     const bool inMenu = st.procState == 4 || (st.procState == 35 && (next == 28 || next == 29));
     const bool inQuantity = st.procState == 5 || (st.procState == 35 && (next == 6 || next == 7));
     const bool inMessage = (st.procState >= 8 && st.procState <= 12) || st.procState == 15;
@@ -223,7 +275,17 @@ inline bool Shown(const State& st, bool before)
     case 14: // choosing an item to give a Pokemon
     case 15: // why it cannot be held
     case 30: // turning a page
-    case 31: return true;
+    case 31:
+    case 16: // selling: the list
+    case 17: // how many to sell, the number, the price asked, yes or no, sold
+    case 18:
+    case 19:
+    case 20:
+    case 21:
+    case 22:
+    case 23:
+    case 24:
+    case 34: return true; // an item chosen to sell
     case 6:  // asking whether to trash them
     case 7:  // not trashing after all
     case 27: // opening the item's menu
@@ -284,7 +346,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     const int count = (int)st.items.size();
 
     // The pockets: the one shown on an orange ring, the cursor beside the one under it.
-    HudText(c, ui, f, x0 + 60, 66, 48, "BAG", Ink, 0, true);
+    HudText(c, ui, f, x0 + 60, 66, 48, st.selling ? "SELL" : "BAG", Ink, 0, true);
     HudSprite(c, ui, sp, "buttons/button_l", x0 + 250, 73, 52, 38);
     float px = x0 + 330;
     for (int i = 0; i < 8; i++)
@@ -298,9 +360,20 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     }
     HudSprite(c, ui, sp, "buttons/button_r", px + 4, 73, 52, 38);
     const std::string pocketLabel = std::string(kPocketName[st.pocket]) + " \xC2\xB7 " + std::to_string(count) + (count == 1 ? " kind" : " kinds");
+    float right = x0 + 1860;
+    if (st.selling && st.money >= 0)
+    {
+        // Selling: the money, beside the pocket's name.
+        const std::string money = "$" + HudScreens::Thousands((uint32_t)st.money);
+        const float mw = HudTextWidth(ui, f, 32, money, true) + HudTextWidth(ui, f, 32, "Money") + 80;
+        HudPanel(c, ui, sp, "panels/button_white", right - mw, 64, mw, 56);
+        HudText(c, ui, f, right - mw + 28, 76, 32, "Money", Muted);
+        HudText(c, ui, f, right - 28, 76, 32, money, Ink, 2, true);
+        right -= mw + 24;
+    }
     const float pw = HudTextWidth(ui, f, 32, pocketLabel) + 56;
-    HudPanel(c, ui, sp, "panels/button_white", x0 + 1860 - pw, 64, pw, 56);
-    HudText(c, ui, f, x0 + 1860 - pw / 2, 76, 32, pocketLabel, Ink, 1);
+    HudPanel(c, ui, sp, "panels/button_white", right - pw, 64, pw, 56);
+    HudText(c, ui, f, right - pw / 2, 76, 32, pocketLabel, Ink, 1);
 
     // The page: two columns of three, as the game lays them out (its d-pad moves across the
     // columns), then the page arrows and the button that closes the bag.
@@ -345,7 +418,11 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     // the cursor is on its disc, as the game prints it).
     const float cx = x0 + 1080, cw = 780, cy = 170, ch = 690;
     HudPanel(c, ui, sp, "panels/card", cx, cy, cw, ch);
-    const int item = sel >= 0 ? st.items[sel].first : 0;
+    // (Just sold, the item may have left the pocket: the one sold, as many as are left.)
+    const int item = st.soldItem ? st.soldItem : sel >= 0 ? st.items[sel].first : 0;
+    int have = 0;
+    for (const auto& it : st.items)
+        if (it.first == item) have = it.second;
     const int shownPocket = st.cursor < 8 ? st.cursor : st.pocket;
     HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cw / 2 - 90, cy + 36, 180, 180);
     HudPixelArt(c, ui, art.ItemIcon(item ? item : kPocketItem[shownPocket]), cx + cw / 2 - 64, cy + 62, 128, 128);
@@ -355,9 +432,10 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         const int move = art.TmMove(item);
         title = tx.Get(kItemName, item);
         if (move) title += " " + tx.Get(kMoveName, move);
-        sub = "\xC3\x97" + std::to_string(st.items[sel].second);
-        const int price = art.ItemPrice(item);
-        if (price > 0) sub += " \xC2\xB7 $" + HudScreens::Thousands((uint32_t)price) + " each";
+        sub = "\xC3\x97" + std::to_string(have);
+        // (A shop pays half the price.)
+        const int price = st.selling ? art.ItemPrice(item) / 2 : art.ItemPrice(item);
+        if (price > 0) sub += (st.selling ? " \xC2\xB7 sells for $" : " \xC2\xB7 $") + HudScreens::Thousands((uint32_t)price) + " each";
         desc = tx.Get(kItemDesc, item);
     }
     else
@@ -372,6 +450,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     // description's place, with its yes/no under it.
     const bool below = st.menu || st.quantity || st.yesNo >= 0;
     if (!st.message.empty()) desc = st.message;
+    if (st.picking && item) desc = tx.Get(kItemName, item) + "? How many will you sell?"; // (bank 10, line 77)
     if (!desc.empty())
     {
         std::vector<std::string> lines = HudWrap(ui, f, 32, desc, cw - 72 - 60);
@@ -397,6 +476,29 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
             const float w = top ? bw2 : bw3, x = cx + 36 + (top ? b : b - 2) * (w + 16), y = top ? by0 : by0 + 76;
             const int t = st.menuText[b];
             button(x, y, w, t < 0 ? "" : TitleCase(tx.Get(kBagMsg, t)), b == st.menuSel, t < 0, t == 1 ? Danger : Ink);
+        }
+    }
+    else if (st.quantity && st.selling)
+    {
+        // How many to sell (with the arrows while it is chosen: up and down by one, left
+        // and right by ten), the most, and what the shop pays.
+        const float qw = 300, qx = cx + 36;
+        HudPanel(c, ui, sp, st.picking ? "panels/button_yellow" : "panels/button_white", qx, by0, qw, 60);
+        if (st.picking)
+        {
+            HudSprite(c, ui, sp, "icons/icon_arrow_down", qx + 18, by0 + 10, 40, 40);
+            HudSprite(c, ui, sp, "icons/icon_arrow_up", qx + qw - 58, by0 + 10, 40, 40);
+        }
+        HudText(c, ui, f, qx + qw / 2, by0 + 8, 40, "\xC3\x97" + std::to_string(st.qty), Ink, 1, true);
+        if (st.qtyMax) HudText(c, ui, f, qx + qw + 20, by0 + 14, 32, "/ " + std::to_string(st.qtyMax), Muted);
+        const std::string total = "$" + HudScreens::Thousands((uint32_t)(st.qty * st.sellPrice));
+        HudText(c, ui, f, cx + cw - 36, by0 + 8, 40, total, Ink, 2, true);
+        HudText(c, ui, f, cx + cw - 36 - HudTextWidth(ui, f, 40, total, true) - 16, by0 + 14, 32, "You get", Muted, 2);
+        if (st.yesNo >= 0)
+        {
+            const float bw = (cw - 72 - 16) / 2;
+            button(cx + 36, by0 + 76, bw, "Yes", st.yesNo == 0, false, Ink);
+            button(cx + 36 + bw + 16, by0 + 76, bw, "No", st.yesNo == 1, false, Ink);
         }
     }
     else if (st.quantity)

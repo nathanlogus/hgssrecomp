@@ -62,6 +62,7 @@
 #include "hudoptions.h"
 #include "hudpcbox.h"
 #include "hudworld.h"
+#include "hudshop.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -3160,7 +3161,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands and the trade screen.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, what people say, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -5993,17 +5994,43 @@ int main(int argc, char** argv)
                     {
                         const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         std::vector<HudHint> hints = { { { PadGlyph(PAD_LB), PadGlyph(PAD_RB) }, "Pocket" }, { { "buttons/button_dpad" }, "Choose" },
-                            { { accept }, bs.giving ? "Give" : "Select" }, { { back }, "Close bag" } };
+                            { { accept }, bs.giving ? "Give" : bs.selling ? "Sell" : "Select" }, { { back }, "Close bag" } };
                         if (bs.menu) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
                         if (bs.quantity) hints = { { { "buttons/button_dpad" }, "How many" }, { { accept }, "Trash" }, { { back }, "Cancel" } };
                         if (!bs.message.empty()) hints = { { { accept }, "Next" } };
                         if (bs.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "No" } };
+                        if (bs.picking) hints = { { { "buttons/button_dpad" }, "How many" }, { { accept }, "Sell" }, { { back }, "Cancel" } };
+                        if (bs.selling) bs.money = HudShop::SellingMoney(readRam);
                         HudBag::Draw(canvas, ui, sprites, font, romArt, bagTexts, bs, hints);
                         overlayUsed = true;
                     }
                     break;
                 }
         bagShown = bagNow;
+        // Buying at a Poké Mart redrawn (hudshop.h) from the moment the shop opens until it
+        // closes; the clerk's questions around it stay the game's own. For up to two frames
+        // that do not check out (the shop half way through closing) the last picture stays.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen)
+        {
+            static uint32_t shopYesNo = 0, shopGood = 0;
+            static HudShop::State shopLast;
+            HudShop::State ss;
+            bool shopNow = false;
+            if (HudShop::Read(readRam, ss, shopYesNo) && HudShop::Shown(ss))
+                shopNow = true, shopLast = ss, shopGood = frame;
+            else if (shopGood && frame - shopGood <= 2)
+                shopNow = true, ss = shopLast;
+            if (shopNow)
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, ss.cursor == 8 ? "Leave" : "Select" }, { { b }, "Leave" } };
+                if (ss.step == 5 || ss.step == 7) hints = { { { "buttons/button_dpad" }, "How many" }, { { a }, "Buy" }, { { b }, "Cancel" } };
+                else if (ss.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "No" } };
+                else if (ss.step >= 10 && ss.step <= 15) hints = { { { a }, "Next" } };
+                HudShop::Draw(canvas, ui, sprites, font, romArt, bagTexts, ss, hints);
+                overlayUsed = true;
+            }
+        }
         // The Pokégear redrawn (hudgear.h): its phone and map tabs, read from the game's
         // memory each frame; calls, menus and the other tabs are the game's own picture.
         static uint32_t gearManager = 0;
