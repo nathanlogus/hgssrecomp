@@ -34,7 +34,7 @@ Messages, both ways: u16 length (little-endian), then a kind letter and its cont
     Y id id ...        this player's friends (ids): answered with y
     G id               invite that friend to this party
     Z player kind      a friend request to a player here (1 ask, 2 yes, 3 no)
-    O ... | W emote | T battle   where the trainer is, emotes, a battle's state: passed on
+    O ... | W emote | T battle   where the trainer is (and their look), emotes, a battle's state: passed on
     B beacon | b | C parent commtype | A child aid | R child | D data | L   (the game's link)
   from the server:
     I player | F (full) | K code (the party's code, after H or J)

@@ -1078,6 +1078,8 @@ struct Settings
     int hostMax = 4;        // players a hosted session allows
     bool autoHost = true;   // host a session by itself once the player is in the world
     int onlinePartner = 0;  // the Pokemon shown with this player (species, 0 none)
+    int onlineLook = -1;    // how the others see this player: a member of the ROM's overworld sprites (-1: their own trainer)
+    std::string friendLooks; // friends' looks: "id:look," ... (apart from `friends`, which older versions read)
     bool showPing = true;
     bool onlineToasts = true;
     bool startScreen = true; // the frontend's own start screen before the game
@@ -1109,6 +1111,8 @@ struct Settings
             else if (k == "friends") friends = v;
             else if (k == "player_id") playerId = v.size() == 16 ? v : "";
             else if (k == "online_partner") onlinePartner = std::clamp(atoi(v.c_str()), 0, 493);
+            else if (k == "online_look") onlineLook = std::max(-1, atoi(v.c_str()));
+            else if (k == "friend_looks") friendLooks = v;
             else if (k == "show_ping") showPing = v == "1";
             else if (k == "online_toasts") onlineToasts = v == "1";
             else if (k == "start_screen") startScreen = v == "1";
@@ -1161,6 +1165,8 @@ struct Settings
         f << "host_max=" << hostMax << "\n";
         f << "auto_host=" << (autoHost ? 1 : 0) << "\n";
         f << "online_partner=" << onlinePartner << "\n";
+        f << "online_look=" << onlineLook << "\n";
+        f << "friend_looks=" << friendLooks << "\n";
         f << "friends=" << friends << "\n";
         f << "player_id=" << playerId << "\n";
         f << "show_ping=" << (showPing ? 1 : 0) << "\n";
@@ -2488,6 +2494,40 @@ int main(int argc, char** argv)
     std::vector<NightFly> fireflies;
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
+    // Looks (online): frames and faces of the ROM's overworld people, made once each.
+    if (cfg.onlineLook >= 0 && !worldBlocks.IsLook(cfg.onlineLook)) cfg.onlineLook = -1; // (chosen with another ROM)
+    std::map<int, Image> lookArt, lookFaces;
+    const HudOnline::LookArtFn lookImage = [&](int member, int facing, int frame) -> const Image* {
+        const int key = member << 4 | (facing & 3) << 2 | (frame & 3);
+        auto it = lookArt.find(key);
+        if (it == lookArt.end())
+        {
+            Image img;
+            worldBlocks.MemberImage(member, facing, frame, img);
+            it = lookArt.emplace(key, std::move(img)).first;
+        }
+        return it->second.px.empty() ? nullptr : &it->second;
+    };
+    // (Other players' looks are checked against the ROM's before use.)
+    auto lookFace = [&](int member) -> const Image* {
+        if (!worldBlocks.IsLook(member)) return nullptr;
+        auto it = lookFaces.find(member);
+        if (it == lookFaces.end())
+        {
+            const Image* s = lookImage(member, 1, 0);
+            it = lookFaces.emplace(member, s ? FaceCrop(*s) : Image()).first;
+        }
+        return it->second.px.empty() ? nullptr : &it->second;
+    };
+    HudOnline::FaceOf = [&](const PartyPeer& p) { return lookFace(p.look); };
+    // This player's look: the one chosen, or their own trainer (the boy or the girl).
+    auto myLook = [&](int gender) { return cfg.onlineLook >= 0 ? cfg.onlineLook : worldBlocks.MemberByStem(gender ? "heroine" : "hero"); };
+    // Chooses a look; their own trainer (the boy or the girl, as the save has it) is no choice.
+    auto setLook = [&](int member) {
+        const int gender = Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender;
+        cfg.onlineLook = member == worldBlocks.MemberByStem(gender ? "heroine" : "hero") ? -1 : member;
+        Party_SetLook(myLook(gender));
+    };
     battleUiHud.SetRom(rom.data(), rom.size());
     worldBlocks.Plaza = plazaMap;
     // The HUD: its sprites and the game's own font.
@@ -2931,7 +2971,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_VSYNC, M_LOOK,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -2941,7 +2981,8 @@ int main(int argc, char** argv)
         { "STATES", "menu/menu_states" } };
     menu.tab = T_DISPLAY;
     // Screens of the online HUD over (or instead of) the pause menu.
-    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE };
+    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE, SCR_LOOK };
+    int lookSel = 0; // the look chosen on SCR_LOOK (an index of worldBlocks.Looks())
     int screen = SCR_NONE;
     Menu sessionMenu;
     sessionMenu.open = true;
@@ -2952,6 +2993,7 @@ int main(int argc, char** argv)
         std::string id, name; // (no id: one remembered by an older version, by name only)
         int colour = 0;
         long long seen = 0;
+        int look = -1;        // as last seen (PartyPeer::look)
     };
     std::map<std::string, Friend> friends; // by id (or name)
     {
@@ -2965,13 +3007,22 @@ int main(int argc, char** argv)
             if (v.size() == 4 && v[0].size() == 16 && !v[1].empty()) friends[v[0]] = { v[0], v[1], atoi(v[2].c_str()) & 3, atoll(v[3].c_str()) };
             else if (v.size() == 3 && !v[0].empty()) friends[v[0]] = { "", v[0], atoi(v[1].c_str()) & 3, atoll(v[2].c_str()) };
         }
+        std::istringstream ls(cfg.friendLooks);
+        while (std::getline(ls, e, ','))
+        {
+            const size_t colon = e.find(':');
+            auto fr = colon == std::string::npos ? friends.end() : friends.find(e.substr(0, colon));
+            if (fr != friends.end()) fr->second.look = atoi(e.c_str() + colon + 1);
+        }
     }
     auto saveFriends = [&]() {
         cfg.friends.clear();
+        cfg.friendLooks.clear();
         std::vector<std::string> ids;
         for (const auto& [key, fr] : friends)
         {
             cfg.friends += (fr.id.empty() ? "" : fr.id + ":") + fr.name + ":" + std::to_string(fr.colour) + ":" + std::to_string(fr.seen) + ",";
+            if (fr.look >= 0) cfg.friendLooks += key + ":" + std::to_string(fr.look) + ",";
             if (!fr.id.empty()) ids.push_back(fr.id);
         }
         Party_SetFriends(ids);
@@ -2986,7 +3037,8 @@ int main(int argc, char** argv)
         auto old = friends.find(name);
         if (old != friends.end() && old->second.id.empty()) friends.erase(old);
         if (!friends.count(p.uid)) fprintf(stderr, "[party] %s is now a friend\n", name.c_str());
-        friends[p.uid] = { p.uid, name, p.colour, (long long)time(nullptr) };
+        const int look = p.look >= 0 ? p.look : friends.count(p.uid) ? friends[p.uid].look : -1;
+        friends[p.uid] = { p.uid, name, p.colour, (long long)time(nullptr), look };
         saveFriends();
     };
     Menu friendsMenu;
@@ -3223,6 +3275,10 @@ int main(int argc, char** argv)
         add(T_PROFILE, M_NICK, "Nickname", onlineName(), "The name the other players see. Up to 10 letters; your trainer's name unless you change it.");
         add(T_PROFILE, M_PARTNER, "Partner", cfg.onlinePartner ? Party_SpeciesName(cfg.onlinePartner) : "None",
             "The Pok\xC3\xA9mon shown with you on your card and to the others: one from your party.");
+        const std::vector<int>& looks = worldBlocks.Looks();
+        const long lookAt = std::find(looks.begin(), looks.end(), cfg.onlineLook) - looks.begin();
+        add(T_PROFILE, M_LOOK, "Look", cfg.onlineLook < 0 ? "Your trainer" : "Look " + std::to_string(lookAt + 1),
+            "How the others see you walking around, and the face in your chip: any of the game's people who walk all four ways.");
         add(T_PROFILE, M_COLOUR, "Colour", cfg.onlineColour < 0 ? "Automatic" : HudOnline::ColourName(cfg.onlineColour),
             "Your colour: your chip, and your name in messages. Automatic gives each player in a session a different one.");
 
@@ -3305,6 +3361,7 @@ int main(int argc, char** argv)
                 HudOnline::FriendRow r;
                 r.who.name = fr.name;
                 r.who.colour = fr.colour;
+                r.who.look = fr.look;
                 const long long days = (now - fr.seen) / 86400;
                 r.info = days <= 0 ? "Last seen today" : days == 1 ? "Last seen yesterday" : "Last seen " + std::to_string(days) + " days ago";
                 if (fr.id.empty()) r.info += " \xC2\xB7 add them again to see when they are online";
@@ -4001,6 +4058,23 @@ int main(int argc, char** argv)
             else if (hit == M_LEAVE && dir == 0) screen = SCR_SUMMARY;
             else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
         }
+        else if (screen == SCR_LOOK && !toggleMenu)
+        {
+            const int n = (int)worldBlocks.Looks().size(), was = lookSel;
+            if (nav.left) lookSel = (lookSel + n - 1) % n;
+            if (nav.right) lookSel = (lookSel + 1) % n;
+            if (nav.up && lookSel >= HudOnline::LookColumns) lookSel -= HudOnline::LookColumns;
+            if (nav.down) lookSel = std::min(n - 1, lookSel + HudOnline::LookColumns);
+            if (lookSel != was) uiSound(GameSfx::Cursor);
+            if (nav.accept)
+            {
+                setLook(worldBlocks.Looks()[lookSel]);
+                screen = SCR_NONE;
+                buildMenu();
+                uiSound(GameSfx::Confirm);
+            }
+            else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
+        }
         else if (screen == SCR_SUMMARY && !toggleMenu)
         {
             if (nav.accept)
@@ -4272,8 +4346,24 @@ int main(int argc, char** argv)
             case M_NICK:
                 startEdit(E_NAME);
                 break;
+            case M_LOOK:
+            {
+                const std::vector<int>& looks = worldBlocks.Looks();
+                const auto it = std::find(looks.begin(), looks.end(), myLook(Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender));
+                lookSel = it == looks.end() ? 0 : (int)(it - looks.begin());
+                if (looks.empty()) break;
+                if (dir == 0)
+                {
+                    screen = SCR_LOOK;
+                    break;
+                }
+                // Left and right: the next or previous look at once, the card showing its face.
+                lookSel = (lookSel + (dir < 0 ? (int)looks.size() - 1 : 1)) % (int)looks.size();
+                setLook(looks[lookSel]);
+                break;
+            }
             case M_COLOUR:
-                cfg.onlineColour = (cfg.onlineColour + 1 + (dir < 0 ? 4 : 1)) % 5 - 1; // Automatic, then the four colours
+                cfg.onlineColour =(cfg.onlineColour + 1 + (dir < 0 ? 4 : 1)) % 5 - 1; // Automatic, then the four colours
                 Party_SetProfile(onlineName(), cfg.onlineColour);
                 break;
             case M_PARTNER:
@@ -5135,7 +5225,10 @@ int main(int argc, char** argv)
                     }
                     // Walking: standing, a step, standing, the other step, 4 frames each.
                     r.step = gap > 0x800 ? r.step + 1 : 0;
-                    remoteDraw.push_back({ w.sprite, w.facing, r.step ? (r.step / 4 + 1) % 4 : 0, (int32_t)r.x, (int32_t)r.y, (int32_t)r.z });
+                    // Their look while they walk as the boy or the girl (sprites 0 and 97): on a
+                    // bike, surfing and so on they keep the game's own sprite.
+                    const int look = (w.sprite == 0 || w.sprite == 97) && worldBlocks.IsLook(peers[i].look) ? peers[i].look : -1;
+                    remoteDraw.push_back({ w.sprite, w.facing, r.step ? (r.step / 4 + 1) % 4 : 0, (int32_t)r.x, (int32_t)r.y, (int32_t)r.z, look });
                 }
             }
             if (frame % 60 == 0) romArt.SetRam(nds->MainRAM, nds->MainRAMMask + 1);
@@ -5176,6 +5269,7 @@ int main(int argc, char** argv)
                 say("Your session is " + announcedCode + (lan.empty() ? ": share the code to play together"
                     : ": friends join with it on server " + lan), "icons/icon_wifi", 480);
             }
+            if (frame % 60 == 0) Party_SetLook(myLook(Party_MyCard().gender));
             if (trainerArt.px.empty() && frame % 60 == 0 && fieldActive())
                 worldBlocks.SpriteImage(*nds, Party_MyCard().gender ? 97 : 0, 1, trainerArt); // the boy or the girl, facing south
             // Friends in the session: seen now (every few seconds while together), with their
@@ -5199,6 +5293,7 @@ int main(int argc, char** argv)
                     t.nameColour = HudOnline::TextColourOf(who.colour);
                     t.chip = HudOnline::Initials(who.name);
                     t.chipRing = HudOnline::RingOf(who.colour);
+                    if (const Image* face = lookFace(who.look)) t.face = *face;
                 }
                 switch (pe.kind)
                 {
@@ -5261,6 +5356,8 @@ int main(int argc, char** argv)
                     t.nameColour = HudOnline::TextColourOf(colour);
                     t.chip = HudOnline::Initials(t.name);
                     t.chipRing = HudOnline::RingOf(colour);
+                    const int look = fr != friends.end() ? fr->second.look : -1;
+                    if (const Image* face = lookFace(look)) t.face = *face;
                     if (screen != SCR_NONE || menu.open || startOpen || pstate != PS_FIELD)
                     {
                         t.text = " invited you to their session: see Friends";
@@ -5270,6 +5367,7 @@ int main(int argc, char** argv)
                     inviteWho = PartyPeer();
                     inviteWho.name = t.name;
                     inviteWho.colour = colour;
+                    inviteWho.look = look;
                     inviteCode = pe.text;
                     inviteFrom = -1;
                     inviteKind = PI_SESSION;
@@ -5684,7 +5782,8 @@ int main(int argc, char** argv)
                 Image img;
                 if (!dsPlace((t.x - 0x10000) / 4096.0, t.y / 4096.0, (t.z + 0x6000) / 4096.0, lx, ly) ||
                     !dsPlace((t.x + 0x10000) / 4096.0, t.y / 4096.0, (t.z + 0x6000) / 4096.0, rx, ry) ||
-                    !worldBlocks.SpriteImage(*nds, (uint16_t)t.sprite, t.facing, img, t.frame))
+                    !(t.member >= 0 ? worldBlocks.MemberImage(t.member, t.facing, t.frame, img)
+                        : worldBlocks.SpriteImage(*nds, (uint16_t)t.sprite, t.facing, img, t.frame)))
                     continue;
                 const float size = rx - lx;
                 Blit(canvas, img, 0, 0, (float)img.w, (float)img.h, lx, ly - size, size, size, false);
@@ -6209,6 +6308,7 @@ int main(int argc, char** argv)
                 me.name = onlineName();
                 me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
                 me.partner = cfg.onlinePartner;
+                me.look = myLook(Party_MyCard().known ? Party_MyCard().gender : Party_SaveCard().gender);
                 HudOnline::TrainerCardPreview(canvas, ui, sprites, font, side, me, Party_DexCount(), Party_MyBadges(), sessionStats, monIcon);
             }
             else
@@ -6919,6 +7019,14 @@ int main(int argc, char** argv)
                     left / 20, left,
                     { { { accept }, "Choose" }, { { back }, "Not now" } });
             }
+            else if (screen == SCR_LOOK)
+            {
+                PartyPeer me;
+                me.name = onlineName();
+                me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                HudOnline::LookChooser(canvas, ui, sprites, font, worldBlocks.Looks(), lookSel, me, (uint32_t)frame, lookImage,
+                    { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Confirm" }, { { back }, "Back" } });
+            }
             else if (screen == SCR_SUMMARY)
                 HudOnline::Summary(canvas, ui, sprites, font, { { { accept }, "Leave" }, { { back }, "Stay" } }, sessionStats, monIcon);
             else if (screen == SCR_EDIT)
@@ -6970,7 +7078,7 @@ int main(int argc, char** argv)
                 if (!saveArt && saveCard.known)
                 {
                     saveArt = true;
-                    worldBlocks.RomSpriteImage(saveCard.gender ? "heroine" : "hero", 1, saveTrainer);
+                    worldBlocks.MemberImage(myLook(saveCard.gender), 1, 0, saveTrainer); // their look, else the boy or the girl
                 }
                 auto drawSave = [&](float y) {
                     if (!saveCard.known) return;

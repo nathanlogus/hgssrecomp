@@ -54,11 +54,24 @@ inline const char* SignalOf(int rtt, bool lost)
     return rtt < 80 ? "bars/signal_good" : rtt < 200 ? "bars/signal_fair" : "bars/signal_poor";
 }
 
-// A player's chip: their initials in a ring of their colour, `size` design pixels.
+// A player's face (FaceCrop of their look, PartyPeer::look), or null when not known: set by
+// main.cpp, which has the ROM's sprites.
+inline std::function<const Image*(const PartyPeer&)> FaceOf;
+
+// A player's face in a ring (`ring`, design pixels), or their initials (`px` tall) when
+// their face is not known.
+inline void Avatar(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const std::string& ring, float x, float y, float size,
+    const PartyPeer& p, float px = 32, uint32_t ink = HudColour::Ink, bool bold = false)
+{
+    HudSprite(c, ui, sp, ring, x, y, size, size);
+    if (const Image* face = FaceOf ? FaceOf(p) : nullptr) DrawRingFace(c, *face, ui(x), ui(y), ui(size));
+    else HudText(c, ui, f, x + size / 2, y + size / 2 - px / 2, px, Initials(p.name), ink, 1, bold);
+}
+
+// A player's chip: their face in a ring of their colour, `size` design pixels.
 inline void Chip(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x, float y, float size, const PartyPeer& p)
 {
-    HudSprite(c, ui, sp, RingOf(p.colour), x, y, size, size);
-    HudText(c, ui, f, x + size / 2, y + size / 2 - 16, 32, Initials(p.name), HudColour::Ink, 1);
+    Avatar(c, ui, sp, f, RingOf(p.colour), x, y, size, p);
 }
 
 // The navy session badge: ONLINE, players, signal bars and the round trip.
@@ -482,8 +495,8 @@ inline void FriendsPanel(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f,
         const bool sel = k == m.selected;
         HudPanel(c, ui, sp, sel ? "panels/row_selected" : r.dim ? "panels/row_disabled" : "panels/row", x + 24, ry, w - 48, 90);
         if (sel) HudSprite(c, ui, sp, "cursor/cursor", x + 36, ry + 25, 36, 40);
-        HudSprite(c, ui, sp, r.dim ? "people/chip_ring_grey" : RingOf(r.who.colour), x + 84, ry + 9, 72, 72);
-        HudText(c, ui, f, x + 120, ry + 29, 32, Initials(r.who.name), r.dim ? HudColour::Muted : HudColour::Ink, 1);
+        Avatar(c, ui, sp, f, r.dim ? "people/chip_ring_grey" : RingOf(r.who.colour), x + 84, ry + 9, 72, r.who, 32,
+            r.dim ? HudColour::Muted : HudColour::Ink);
         HudText(c, ui, f, x + 176, ry + 10, 32, r.who.name, r.dim ? HudColour::Muted : HudColour::Ink);
         HudText(c, ui, f, x + 176, ry + 46, 32, r.info, HudColour::Muted);
         if (!r.action.empty())
@@ -517,8 +530,7 @@ inline void InviteCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
     const std::vector<int> rows = m.Rows();
     const float h = 24 + 90 + 16 + rows.size() * 64.0f + 70;
     HudPanel(c, ui, sp, "panels/dialogue_box", x, y, w, h);
-    HudSprite(c, ui, sp, RingOf(from.colour), x + 26, y + 26, 76, 76);
-    HudText(c, ui, f, x + 64, y + 48, 32, Initials(from.name), HudColour::Ink, 1);
+    Avatar(c, ui, sp, f, RingOf(from.colour), x + 26, y + 26, 76, from);
     HudText(c, ui, f, x + 120, y + 26, 48, from.name + (invite == PI_SESSION ? " invites you!" : invite == PI_TRADE ? " wants to trade!" : " wants to battle!"),
         HudColour::Ink);
     HudText(c, ui, f, x + 120, y + 76, 32, invite == PI_SESSION ? "To play in their session" : invite == PI_TRADE ? "In the Union Room" : "In the Colosseum",
@@ -600,6 +612,54 @@ inline void SpectatorCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
     }
 }
 
+// A look's frame (member of the overworld sprites, facing 0-3, frame 0-3 of the walk), or null.
+using LookArtFn = std::function<const Image*(int member, int facing, int frame)>;
+constexpr int LookColumns = 8, LookRows = 4;
+
+// Choosing a look: the looks in a grid (standing, facing you), the chosen one walking each
+// way and its face as the others see it in their chips. `clock` counts frames.
+inline void LookChooser(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const std::vector<int>& looks, int sel,
+    const PartyPeer& me, uint32_t clock, const LookArtFn& art, const std::vector<HudHint>& hints)
+{
+    FillBlend(c, 0, 0, (float)c.w, (float)c.h, 0x80000000);
+    const float cell = 104, gw = LookColumns * cell, pw = 420;
+    const float w = 24 + pw + 24 + gw + 24, h = 66 + 24 + LookRows * cell + 24 + 56;
+    const float x = ui.W / ui.s / 2 - w / 2, y = 110;
+    const int count = (int)looks.size();
+    TitledCard(c, ui, sp, f, x, y, w, h, "YOUR LOOK", count ? "Look " + std::to_string(sel + 1) + " of " + std::to_string(count) : "");
+    if (!count) return;
+    const int member = looks[std::clamp(sel, 0, count - 1)];
+    // The chosen look walking: north, south, west and east, a step every 8 frames.
+    const float px = x + 24, py = y + 66 + 24;
+    FillBlend(c, ui(px), ui(py), ui(pw), ui(LookRows * cell), 0xFFFDF6E4);
+    const int order[4] = { 1, 2, 0, 3 };
+    for (int k = 0; k < 4; k++)
+        if (const Image* img = art(member, order[k], (int)(clock / 8 % 4)))
+            HudPixelArt(c, ui, img, px + 12 + k * 100, py + 30, 96, 96);
+    // Its face, as the others see it.
+    PartyPeer shown = me;
+    shown.look = member;
+    Avatar(c, ui, sp, f, RingOf(me.colour), px + pw / 2 - 90, py + 170, 180, shown);
+    // The grid, scrolled by rows to keep the chosen one in view.
+    const int rows = (count + LookColumns - 1) / LookColumns;
+    const int first = std::clamp(sel / LookColumns - LookRows / 2 + 1, 0, std::max(0, rows - LookRows));
+    const float gx = px + pw + 24;
+    for (int r = 0; r < LookRows; r++)
+        for (int col = 0; col < LookColumns; col++)
+        {
+            const int i = (first + r) * LookColumns + col;
+            if (i >= count) break;
+            const float cx = gx + col * cell, cy = py + r * cell;
+            HudPanel(c, ui, sp, i == sel ? "panels/row_selected" : "panels/row", cx + 4, cy + 4, cell - 8, cell - 8);
+            if (const Image* img = art(looks[i], 1, 0)) HudPixelArt(c, ui, img, cx + 4, cy, 96, 96);
+        }
+    HudText(c, ui, f, gx, py + LookRows * cell + 20, 32,
+        rows > LookRows ? "Rows " + std::to_string(first + 1) + "-" + std::to_string(first + LookRows) + " of " + std::to_string(rows) : "",
+        HudColour::Muted);
+    HudText(c, ui, f, px, py + LookRows * cell + 20, 32, "What the others see", HudColour::Muted);
+    DrawHintBar(c, ui, sp, f, hints);
+}
+
 // The Profile tab's preview of what the others see (15-menu-profile's trainer card).
 inline void TrainerCardPreview(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const HudRect& r, const PartyPeer& me, int dex,
     int badges, const SessionStats& st, const IconFn& icon)
@@ -609,8 +669,7 @@ inline void TrainerCardPreview(Canvas& c, const Ui& ui, Sprites& sp, const RomFo
     HudPanel(c, ui, sp, "panels/card_header_teal", x, y, w, h, 0xFFFFFFFF);
     HudText(c, ui, f, x + w / 2, y + 13, 32, "TRAINER CARD \xC2\xB7 PREVIEW", HudColour::White, 1);
     const float d = 170, cx = x + w / 2;
-    HudSprite(c, ui, sp, RingOf(me.colour), cx - d / 2, y + 90, d, d);
-    HudText(c, ui, f, cx, y + 90 + d / 2 - 32, 64, Initials(me.name), HudColour::Ink, 1, true);
+    Avatar(c, ui, sp, f, RingOf(me.colour), cx - d / 2, y + 90, d, me, 64, HudColour::Ink, true);
     if (me.partner && icon) HudPixelArt(c, ui, icon(me.partner), cx + d / 2 - 30, y + 90 + d - 80, 96, 96);
     const float pw = HudTextWidth(ui, f, 32, me.name) + 48;
     DrawSprite(c, sp.Get(PillOf(me.colour)), ui(cx - pw / 2), ui(y + 90 + d + 6), ui(pw), ui(48), ui.s);

@@ -128,6 +128,7 @@ bool PendingJoin[4] = {};
 std::deque<PartyEvent> Events;
 std::string MyName = "Trainer";
 int MyPartner = 0; // species shown with this player (0 none)
+int MyLook = -1;   // this player's look (Party_SetLook)
 int MyColour = 0, MyState = 0, MyMap = -1, SentState = -1, SentMap = -2;
 // Friends: this player's id, their friends' ids, and which of those the server last said
 // were online.
@@ -465,9 +466,10 @@ void Message(char kind, const u8* p, size_t n)
             if (n >= 7) q.rtt = p[5] | p[6] << 8;
         }
         break;
-    case 'O': // where a player's trainer is: player, flags, matrix, map (u16), x, y, z (s32), facing, sprite (u16)
+    case 'O': // where a player's trainer is: player, flags, matrix, map (u16), x, y, z (s32), facing, sprite (u16), look + 1 (u16)
         if (n >= 20 && p[0] < 4 && p[0] != Me)
         {
+            if (n >= 23) Peers[p[0]].look = (int)RomGet16(p + 21) - 1; // (checked against the ROM's looks before use)
             PartyWalker& w = Peers[p[0]].walk;
             w.shown = p[1] & 1;
             w.matrix = RomGet16(p + 2);
@@ -1183,6 +1185,13 @@ void SendWalk(u32 now, int state, bool send)
     // every second, for anyone who joins meanwhile).
     if (state != PS_FIELD && state != PS_LINK)
     {
+        // The look is chosen in the menu: the others see it within the second.
+        if (SentWalk.size() == 22)
+        {
+            SentWalk[20] = (u8)(MyLook + 1);
+            SentWalk[21] = (u8)((MyLook + 1) >> 8);
+            Peers[Me & 3].look = MyLook;
+        }
         if (send && !SentWalk.empty() && now - LastWalkSent >= 1000)
         {
             Send('O', SentWalk);
@@ -1204,6 +1213,9 @@ void SendWalk(u32 now, int state, bool send)
     b.push_back((u8)(R32(obj + 0x28) & 3));
     b.push_back((u8)sprite);
     b.push_back((u8)(sprite >> 8));
+    b.push_back((u8)(MyLook + 1));
+    b.push_back((u8)((MyLook + 1) >> 8));
+    Peers[Me & 3].look = MyLook;
     PartyWalker& w = Peers[Me & 3].walk;
     w.shown = shown;
     w.matrix = (int)matrix;
@@ -1571,6 +1583,11 @@ void Party_SetPartner(int species)
 {
     MyPartner = species;
     if (Link == PartyLink::Online) SendHello();
+}
+
+void Party_SetLook(int member)
+{
+    MyLook = member;
 }
 
 int Party_DexCount()

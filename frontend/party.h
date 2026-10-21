@@ -56,6 +56,7 @@ struct PartyPeer
     int rtt = -1;          // their round trip to the server, ms
     uint32_t sinceMs = 0;  // when they joined (Ms clock)
     std::string uid;       // their player id (empty: not sent, an older game)
+    int look = -1;         // their look: a member of the ROM's overworld sprites (-1: not known)
     PartyWalker walk;
     PartyBattle battle;
 };
@@ -151,6 +152,9 @@ uint32_t Party_SessionSeconds();
 int Party_DexCount();                // Pokemon caught in the Pokedex (-1 not known yet)
 std::vector<int> Party_MySpecies();  // the species in this player's party
 void Party_SetPartner(int species);  // the Pokemon shown with this player
+// This player's look (a member of the overworld sprite archive, -1 none), sent with where
+// their trainer is: the others draw them walking with it and show its face in their chips.
+void Party_SetLook(int member);
 void Party_SendEmote(int emote);     // shows an emote over this player's trainer to the others
 void Party_SendInvite(int player, int invite); // a PartyInvite to one player
 uint32_t Party_Now();                // the clock of PartyWalker::at (ms)
