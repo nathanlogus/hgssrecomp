@@ -63,6 +63,7 @@
 #include "huddexinfo.h"
 #include "hudgear.h"
 #include "hudoptions.h"
+#include "hudnaming.h"
 #include "hudpcbox.h"
 #include "hudworld.h"
 #include "hudshop.h"
@@ -6329,6 +6330,9 @@ int main(int argc, char** argv)
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Select" }, { { back }, gs.inTabs ? "Close" : "Back" } };
                 if (!gs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
                 else if (gs.call.on) hints = gs.call.waiting ? std::vector<HudHint>{ { { accept }, "Next" } } : std::vector<HudHint>{};
+                else if (gs.app == HudGear::APP_RADIO && !gs.inTabs)
+                    hints = { { { "buttons/button_dpad" }, "Tune" }, { { accept }, "Next station" }, { { back }, "Back" } };
+                else if (gs.moving >= 0) hints = { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Put here" }, { { back }, "Cancel" } };
                 HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env, hints);
                 overlayUsed = true;
             }
@@ -6388,6 +6392,29 @@ int main(int argc, char** argv)
                     break;
                 }
         optionsShown = optionsNow;
+        // The naming screen's keyboard redrawn (hudnaming.h): while typing (steps 1, 2), and
+        // while it fades out only if it was shown before.
+        static bool namingShown = false;
+        bool namingNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("NamingScreen"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "NamingScreen"))
+                {
+                    static uint32_t namingAt = 0;
+                    HudNaming::State ns;
+                    if (HudNaming::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, namingAt, ns) &&
+                        (ns.step == 1 || ns.step == 2 || (ns.step == 3 && namingShown)))
+                    {
+                        namingNow = true;
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudNaming::Draw(canvas, ui, sprites, font, ns.type == 1 ? romArt.PokemonIcon(ns.species, ns.form) : nullptr, ns,
+                            { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Type" }, { { back }, "Delete" },
+                                { { PadGlyph(PAD_BACK) }, "Next page" }, { { PadGlyph(PAD_START) }, "To OK" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        namingShown = namingNow;
         // The Union Room's trade screen redrawn (hudtrade.h), mirroring the game's own; for
         // up to three frames that do not check out the last picture stays, as with the bag.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("WirelessTradeSelectMon"))
