@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- New screens: when a Pokémon evolves, an egg hatches or a Pokémon is traded, the
+  messages appear in the new message box while the game's own animation plays: "What? …
+  is evolving!" (with a hint that B stops it), the moves it wants to learn and the
+  questions about them, whether to give the hatched Pokémon a nickname (its answers beside
+  the box), and the trade's "… will be sent to …" and "Take good care of …!".
 - New screens: choosing your rental Pokémon at the Battle Frontier's Battle Factory. All
   six Pokémon on offer are shown at once, with everything about the one you are on (types,
   ability, nature, held item and moves), the team you have picked so far, the Summary,

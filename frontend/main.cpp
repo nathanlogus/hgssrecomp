@@ -71,6 +71,7 @@
 #include "hudpcbox.h"
 #include "hudworld.h"
 #include "hudshop.h"
+#include "hudevents.h"
 #include "hudfrontier.h"
 #include "hudminigames.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -3179,6 +3180,7 @@ int main(int argc, char** argv)
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
         add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex with its pages and its search, the Unown Report, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, evolving, hatching and trading, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -6079,6 +6081,68 @@ int main(int argc, char** argv)
                 HudWorld::DrawXMenu(canvas, ui, sprites, font, xm, trainerName(), x, y, w, h);
                 worldFade(x, y, w, h); // (the screen fading to what was chosen)
                 scene.items.resize(1);
+                overlayUsed = true;
+            }
+        }
+        // The messages of an evolution and of an egg hatching redrawn (hudevents.h), while
+        // the piece of the view that shows the box's screen has nothing but the box on the
+        // box's background. That background is left out of it then (and for two frames after,
+        // as its tiles go a frame later); the question's buttons on the other screen too.
+        {
+            static HudEvents::Message eventMsg;
+            static uint32_t evoTask = 0, hatchAt = 0, tradeAt = 0, eventOwner = 0;
+            static int eventHold = 0, eventItem = -1;
+            static uint8_t eventLayer = 0;
+            HudEvents::Box box;
+            bool read = false;
+            if (spritesOk && cfg.redrawn && merged && hudFree)
+            {
+                const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                const RcApp *hatch = nullptr, *trade = nullptr;
+                for (unsigned i = 0; i < rc_num_apps; i++)
+                    if (!strcmp(rc_apps[i].name, "HatchEgg")) hatch = &rc_apps[i];
+                    else if (!strcmp(rc_apps[i].name, "TradeSequence")) trade = &rc_apps[i];
+                const uint32_t owner = hatch && appRunning("HatchEgg") ? 1 : trade && appRunning("TradeSequence") ? 3 : 2;
+                if (owner != eventOwner) eventMsg = {}, eventOwner = owner;
+                read = owner == 1   ? HudEvents::ReadHatch(ram, hatchAt, hatch->initAddr, hatch->execAddr, hatch->exitAddr, eventMsg, box)
+                    : owner == 3 ? HudEvents::ReadTrade(ram, tradeAt, trade->initAddr, trade->execAddr, trade->exitAddr, eventMsg, box)
+                                 : HudEvents::ReadEvolution(ram, rom, evoTask, eventMsg, box);
+            }
+            // The screen that shows the box's background, and the piece of the view that shows that screen.
+            const int boxScreen = (box.bg < 4) == (topUnit == 0) ? 0 : 1;
+            const uint8_t layer = (uint8_t)(LAYER_BG0 << (box.bg & 3));
+            const int top = read ? HudEvents::BoxTop(screenImages[boxScreen].flags, layer) : -1;
+            int item = -1;
+            for (int i = 0; i < (int)scene.items.size() && top >= 0 && item < 0; i++)
+            {
+                const Element& el = scene.items[i];
+                if (el.screen == boxScreen && el.sx <= HudWorld::kBoxX && el.sy <= HudWorld::kBoxY && el.sx + el.sw >= HudWorld::kBoxX + HudWorld::kBoxW &&
+                    el.sy + el.sh >= HudWorld::kBoxY + HudWorld::kBoxH)
+                    item = i;
+            }
+            // The view while the box's screen fills it alone, kept for the questions: their
+            // buttons are on the other screen, which the view would bring in beside it.
+            static Element eventFull;
+            static bool eventFullOk = false;
+            if (!read) eventFullOk = false;
+            else if (item == 0 && scene.items.size() == 1) eventFull = scene.items[0], eventFullOk = true;
+            // (While the scene fades, the game's box fades with it and shows instead.)
+            const bool lit = top >= 0 && HudEvents::BoxLit(screenImages[boxScreen].pixels);
+            if (top >= 0 && !lit) eventHold = 0;
+            if (eventHold > 0 && eventItem < (int)scene.items.size() && !(item >= 0 && top <= HudWorld::kBoxY + 2 && lit))
+                scene.items[eventItem].drop |= eventLayer;
+            eventHold = std::max(0, eventHold - 1);
+            if (item >= 0 && top <= HudWorld::kBoxY + 2 && lit)
+            {
+                eventHold = 3, eventItem = item, eventLayer = layer;
+                if (box.yesNo >= 0 && eventFullOk) scene.items = { eventFull }, eventItem = 0;
+                else box.yesNo = -1; // (the game's buttons show beside it)
+                scene.items[eventItem].drop |= layer;
+                const Element el = scene.items[eventItem];
+                const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
+                const float bx = el.dx + (HudWorld::kBoxX - el.sx) * el.scale, by = el.dy + (HudWorld::kBoxY - el.sy) * el.scale;
+                HudEvents::Draw(canvas, ui, sprites, font, box, x0 + bx * u, y0 + by * u, HudWorld::kBoxW * el.scale * u,
+                    HudWorld::kBoxH * el.scale * u - 6, frame, PadGlyph(cfg.byLabel ? PAD_B : PAD_A));
                 overlayUsed = true;
             }
         }

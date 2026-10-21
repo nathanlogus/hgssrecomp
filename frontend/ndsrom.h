@@ -116,8 +116,9 @@ inline std::string NdsText(const uint16_t* codes, size_t n)
 }
 
 // Line `index` of the text bank `bank` (a member of the message archive, a/0/2/7 in
-// HeartGold and SoulSilver), decrypted.
-inline std::string NdsMessage(const uint8_t* rom, size_t romSize, int bank, int index)
+// HeartGold and SoulSilver), decrypted. A placeholder for a name (a control code of kind
+// 0x01xx) becomes `arg`.
+inline std::string NdsMessage(const uint8_t* rom, size_t romSize, int bank, int index, const std::string& arg = "")
 {
     const auto files = NdsNarcFiles(rom, romSize, "a/0/2/7");
     if (bank < 0 || bank >= (int)files.size() || index < 0) return "";
@@ -138,5 +139,14 @@ inline std::string NdsMessage(const uint8_t* rom, size_t romSize, int bank, int 
         codes[c] = (uint16_t)(RomGet16(b + off + 2 * c) ^ k);
         k = (uint16_t)(k + 18749);
     }
-    return NdsText(codes.data(), codes.size());
+    std::string s;
+    for (uint32_t c = 0; c < len && codes[c] != 0xFFFF; c++)
+        if (codes[c] == 0xFFFE && c + 2 < len)
+        {
+            if (codes[c + 1] >> 8 == 1) s += arg;
+            c += 2 + codes[c + 2];
+        }
+        else
+            s += NdsCharToUtf8(codes[c]);
+    return s;
 }
