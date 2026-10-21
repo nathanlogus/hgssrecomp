@@ -27,9 +27,10 @@ struct Dialogue
 {
     std::vector<std::string> lines; // the page as the game shows it now (one or two lines)
     bool more = false;              // waiting for a button before the next page
+    int sign = -1;                  // the kind of sign it is on (0 and 1 point the way), -1 none
     std::string Key() const
     {
-        std::string k = more ? "+" : "-";
+        std::string k = (more ? "+" : "-") + std::to_string(sign);
         for (const std::string& l : lines) k += l + "\n";
         return k;
     }
@@ -114,16 +115,31 @@ inline uint32_t ScriptEnv(const Ram& r, uint32_t fs)
     return last;
 }
 
-// The message box of the overworld's script, read from the game's memory.
+// The message box of the overworld's script, read from the game's memory: the script's
+// own window, or else a sign's (FieldSystem +0x68, a Signpost: its window at +0, its kind
+// +0x12, shown while bit 7 of +0x13 is set; kinds 0 and 1 have a picture of the way at the
+// left, src/field/signpost.c). Signs print the same message into theirs.
 inline bool ReadDialogue(const Ram& r, Dialogue& d)
 {
     const uint32_t fs = r.R32(kFieldSystem);
     if (!r.Ptr(fs) || !(r.R32(fs + 0xD0) >> 16 & 0x40)) return false; // FieldSystem.textbox_open
     const uint32_t env = ScriptEnv(r, fs);
-    if (!env || r.R8(env + 8) != 1) return false;
-    // Its window (+0x14) where DialogBox_AddWindowToLayer3 puts it.
-    const uint32_t win = env + 0x14, pixels = r.R32(win + 0x0C);
-    if (r.R8(win + 4) != 3 || r.R8(win + 5) != 2 || r.R8(win + 6) != 19 || r.R8(win + 7) != 27 || r.R8(win + 8) != 4 || !r.Ptr(pixels))
+    if (!env) return false;
+    uint32_t win = env + 0x14;
+    int left = 2, width = 27;
+    d.sign = -1;
+    if (r.R8(env + 8) != 1)
+    {
+        const uint32_t sign = r.R32(fs + 0x68);
+        if (!r.Ptr(sign) || !(r.R8(sign + 0x13) & 0x80)) return false;
+        win = sign;
+        d.sign = (int)r.R8(sign + 0x12);
+        if (d.sign <= 1) left = 9, width = 20;
+    }
+    // The window where DialogBox_AddWindowToLayer3(WithXOffset) puts it.
+    const uint32_t pixels = r.R32(win + 0x0C);
+    if (r.R8(win + 4) != 3 || (int)r.R8(win + 5) != left || r.R8(win + 6) != 19 || (int)r.R8(win + 7) != width || r.R8(win + 8) != 4 ||
+        !r.Ptr(pixels))
         return false;
     // The message (stringBuffer0, +0x48: a String, its codes from +8).
     const uint32_t s = r.R32(env + 0x48);
@@ -155,21 +171,33 @@ inline bool ReadDialogue(const Ram& r, Dialogue& d)
         for (int l = 0; l < 2; l++)
         {
             const bool text = l < (int)d.lines.size() && d.lines[l].find_first_not_of(' ') != std::string::npos;
-            if (text != LineInk(r, pixels, 27, l)) return false;
+            if (text != LineInk(r, pixels, width, l)) return false;
         }
     return true;
 }
 
-// Whether the top screen's BG3 shows nothing but the message box (no menu or other window
-// beside it), from the renderer's per-pixel layer flags.
-inline bool OnlyTheBox(const uint8_t* flags)
+// The top row of the message box on the top screen's BG3, or -1 unless BG3 shows the box and
+// nothing else (no menu or other window beside it), from the renderer's per-pixel layer flags.
+// The box is still in memory once the game has stopped showing it (a sign slid away), and
+// must not be drawn then. A sign slides in and out: its top is lower then.
+inline int BoxTop(const uint8_t* flags)
 {
-    if (!flags) return false;
+    if (!flags) return -1;
+    int inBox = 0, top = -1;
     for (int y = 0; y < 192; y++)
         for (int x = 0; x < 256; x++)
-            if (LayerClass(flags[y * 256 + x]) == LAYER_BG3 && (x < kBoxX || x >= kBoxX + kBoxW || y < kBoxY || y >= kBoxY + kBoxH))
-                return false;
-    return true;
+            if (LayerClass(flags[y * 256 + x]) == LAYER_BG3)
+            {
+                if (x < kBoxX || x >= kBoxX + kBoxW || y < kBoxY || y >= kBoxY + kBoxH) return -1;
+                if (top < 0) top = y;
+                inBox++;
+            }
+    return inBox > 16 * 8 ? top : -1;
+}
+inline bool OnlyTheBox(const uint8_t* flags)
+{
+    const int top = BoxTop(flags);
+    return top >= 0 && top <= kBoxY + 2;
 }
 
 // A script's yes/no question (ScrCmd_GetMenuChoice): the touch screen's buttons
@@ -205,7 +233,14 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const D
 {
     HudPanel(c, ui, sp, "panels/dialogue_box", x, y, w, h);
     const float pitch = 78, ty = y + (h - pitch * 2) / 2 + 2;
-    for (size_t i = 0; i < d.lines.size(); i++) HudText(c, ui, f, x + 48, ty + pitch * i, 64, d.lines[i], HudColour::Ink);
+    float tx = x + 48;
+    if (d.sign == 0 || d.sign == 1)
+    {
+        // A sign pointing the way: a map at its left, as the game's has the way's picture.
+        HudSprite(c, ui, sp, "icons/icon_map", x + 44, y + h / 2 - 40, 80, 80, 0xFF4FA36B);
+        tx += 110;
+    }
+    for (size_t i = 0; i < d.lines.size(); i++) HudText(c, ui, f, tx, ty + pitch * i, 64, d.lines[i], HudColour::Ink);
     if (d.more)
     {
         const int phase = frame / 8 % 4;
