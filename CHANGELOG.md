@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New screens: when a Pokémon evolves or an egg hatches, the messages appear in the new
+  message box while the game's own animation plays: "What? … is evolving!" (with a hint
+  that B stops it), the moves it wants to learn and the questions about them, and the
+  question whether to give the hatched Pokémon a nickname, with its answers beside the box.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
