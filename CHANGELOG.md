@@ -28,7 +28,13 @@
   ability, nature, held item and moves), the team you have picked so far, the Summary,
   Rent and Cancel buttons and the "Are these Pokémon OK?" question. The Battle Hall's
   board of types is drawn anew too (before, the single screen hid it): each type with its
-  rank, your Pokémon and the question before a battle.
+  rank, your Pokémon and the question before a battle. So is the Battle Castle's screen of
+  your Pokémon (before, the single screen hid much of it): their HP and items, your Castle
+  Points and ranks, the Heal and Rental menus, and the Berries to rent with their prices.
+  The Battle Factory's swap after a win (your team and theirs, everything about each
+  Pokémon) and choosing which Pokémon to enter in a Frontier challenge are drawn anew too.
+- The Battle Arcade's game board can be stopped with A (before, only by touching the
+  screen), and with the new screens it is drawn anew: every panel says what it does.
 - The Battle Frontier's scratch-off cards can be played with a controller: the d-pad
   chooses a card, a panel or NEXT CARD and A touches it; on a panel A scratches it clean.
 - New screens: Voltorb Flip's Game Info lessons (How to Play, Hint!, About Memos) are drawn

@@ -3235,7 +3235,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex with its pages and its search, the Unown Report, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, evolving, hatching and trading, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex with its pages and its search, the Unown Report, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, the Battle Castle's screen, the Factory's swaps, choosing who enters a Frontier challenge, the Battle Arcade's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, evolving, hatching and trading, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -5117,6 +5117,23 @@ int main(int argc, char** argv)
                 }
         if (!scratchRead) scratchPad = HudMinigames::ScratchPad();
 
+        // The Battle Arcade's game board stops only at a touch of its button (a circle at
+        // 128, 96 on the bottom screen): A touches it, so it can be played with a controller.
+        {
+            static bool arcadeA = false;
+            static int arcadeTouch = 0;
+            const bool aNow = (keys >> KEY_A) & 1;
+            if (!uiOpen && appRunning("BattleArcadeGameBoard"))
+            {
+                if (aNow && !arcadeA) arcadeTouch = 4;
+                keys &= ~(1u << KEY_A);
+                if (arcadeTouch > 0) touching = true, touchX = 128, touchY = 96, arcadeTouch--;
+            }
+            else
+                arcadeTouch = 0;
+            arcadeA = aNow;
+        }
+
         if (uiOpen && bootMode == BOOT_NONE && !gameSave.Busy())
         {
             // The buttons are the menu's (scripted test input and the keyboard too); an autosave
@@ -6438,7 +6455,16 @@ int main(int argc, char** argv)
         {
             static uint32_t factoryAt = 0;
             HudFrontier::Factory fv;
-            if (HudFrontier::ReadFactory({ nds->MainRAM, nds->MainRAMMask + 1 }, factoryAt, fv))
+            HudFrontier::Swap sv;
+            if (HudFrontier::ReadSwap({ nds->MainRAM, nds->MainRAMMask + 1 }, factoryAt, sv))
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
+                HudFrontier::DrawSwap(canvas, ui, sprites, font, sv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                overlayUsed = true;
+            }
+            else if (HudFrontier::ReadFactory({ nds->MainRAM, nds->MainRAMMask + 1 }, factoryAt, fv))
             {
                 const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" } };
@@ -6464,6 +6490,58 @@ int main(int argc, char** argv)
                 overlayUsed = true;
             }
         }
+        // The Battle Castle's screen of your Pokemon redrawn (hudfrontier.h).
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && sectionActive("OVY_83"))
+        {
+            static uint32_t castleAt = 0;
+            HudFrontier::Castle cv;
+            if (HudFrontier::ReadCastle({ nds->MainRAM, nds->MainRAMMask + 1 }, castleAt, cv))
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
+                HudFrontier::DrawCastle(canvas, ui, sprites, font, cv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); },
+                    [&](int item) { return romArt.ItemIcon(item); }, hints);
+                overlayUsed = true;
+            }
+        }
+        // The Battle Arcade's game board redrawn (hudfrontier.h).
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("BattleArcadeGameBoard"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "BattleArcadeGameBoard"))
+                {
+                    static uint32_t arcadeAt = 0;
+                    HudFrontier::Arcade av;
+                    if (HudFrontier::ReadArcade({ nds->MainRAM, nds->MainRAMMask + 1 }, arcadeAt, rc_apps[i].initAddr, rc_apps[i].execAddr,
+                            rc_apps[i].exitAddr, av))
+                    {
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B);
+                        std::vector<HudHint> hints;
+                        if (!av.stopping) hints.push_back({ { a }, "Stop" });
+                        HudFrontier::DrawArcade(canvas, ui, sprites, font, av,
+                            [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        // Choosing the Pokemon to enter in a Frontier challenge redrawn (hudfrontier.h).
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("PartyMenu"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "PartyMenu"))
+                {
+                    static uint32_t entryAt = 0;
+                    HudFrontier::Entry ev;
+                    if (HudFrontier::ReadEntry({ nds->MainRAM, nds->MainRAMMask + 1 }, entryAt, rc_apps[i].initAddr, rc_apps[i].execAddr,
+                            rc_apps[i].exitAddr, ev))
+                    {
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
+                        HudFrontier::DrawEntry(canvas, ui, sprites, font, ev,
+                            [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                        overlayUsed = true;
+                    }
+                    break;
+                }
         // Voltorb Flip redrawn (hudminigames.h); the game keeps its own controls.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("VoltorbFlip"))
             for (unsigned i = 0; i < rc_num_apps; i++)
