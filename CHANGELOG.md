@@ -6,6 +6,7 @@
   what they say line by line and the hang-up), as are the phone's Call, Sort and Quit
   menu and the questions asked during a call. Choosing where to fly is drawn anew too:
   the region's map with the towns you can fly to ringed, and the "Fly" question beside it.
+  The game's Options menu is drawn anew as well.
 
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.

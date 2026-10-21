@@ -59,6 +59,7 @@
 #include "hudtrade.h"
 #include "huddex.h"
 #include "hudgear.h"
+#include "hudoptions.h"
 #include "hudpcbox.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
@@ -6008,6 +6009,29 @@ int main(int argc, char** argv)
             }
         }
         flyShown = flyNow;
+        // The game's Options menu redrawn (hudoptions.h); while it leaves (step 3, 4) only if
+        // it was shown before.
+        static bool optionsShown = false;
+        bool optionsNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("OptionsMenu"))
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "OptionsMenu"))
+                {
+                    static uint32_t optionsAt = 0;
+                    HudOptions::State os;
+                    if (HudOptions::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, optionsAt, bagTexts, os) &&
+                        (os.step <= 2 || optionsShown))
+                    {
+                        optionsNow = true;
+                        const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        HudOptions::Draw(canvas, ui, sprites, font, os,
+                            os.row == 6 ? std::vector<HudHint>{ { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Quit" } }
+                                        : std::vector<HudHint>{ { { "buttons/button_dpad" }, "Change" }, { { back }, "Quit" } });
+                        overlayUsed = true;
+                    }
+                    break;
+                }
+        optionsShown = optionsNow;
         // The Union Room's trade screen redrawn (hudtrade.h), mirroring the game's own; for
         // up to three frames that do not check out the last picture stays, as with the bag.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("WirelessTradeSelectMon"))
