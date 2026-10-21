@@ -2599,6 +2599,42 @@ int main(int argc, char** argv)
             put(glyph, HudColour::Ink & 0xFFFFFF, 1.0f, true);
             buttonPics.push_back({ n[0], pic });
         }
+        // "Any direction" (buttons/button_dpad): the four direction buttons at half size, in a
+        // cross, as the set has no picture of the whole pad.
+        auto pic = [&](const char* name) -> const Image* {
+            for (const auto& b : buttonPics)
+                if (b.first == name) return &b.second;
+            return nullptr;
+        };
+        const Image *up = pic("buttons/button_dpad_up"), *down = pic("buttons/button_dpad_down"),
+                    *left = pic("buttons/button_dpad_left"), *right = pic("buttons/button_dpad_right");
+        if (up && down && left && right && up->w == down->w && up->w == left->w && up->w == right->w &&
+            up->h == down->h && up->h == left->h && up->h == right->h)
+        {
+            Image cross;
+            cross.w = up->w;
+            cross.h = up->h;
+            cross.px.assign((size_t)cross.w * cross.h, 0);
+            const struct { const Image* img; int x, y; } parts[] = {
+                { up, cross.w / 4, 0 }, { down, cross.w / 4, cross.h / 2 }, { left, 0, cross.h / 4 }, { right, cross.w / 2, cross.h / 4 } };
+            for (const auto& p : parts)
+                for (int y = 0; y < p.img->h / 2; y++)
+                    for (int x = 0; x < p.img->w / 2; x++)
+                    {
+                        // The average of the 2 x 2 pixels, premultiplied so that edges stay clean.
+                        float a = 0, r = 0, g = 0, b = 0;
+                        for (int k = 0; k < 4; k++)
+                        {
+                            const uint32_t s = p.img->px[(size_t)(2 * y + k / 2) * p.img->w + 2 * x + k % 2];
+                            const float sa = (s >> 24) / 4.0f;
+                            a += sa, r += (s >> 16 & 0xFF) * sa, g += (s >> 8 & 0xFF) * sa, b += (s & 0xFF) * sa;
+                        }
+                        if (a < 0.5f) continue;
+                        uint32_t& o = cross.px[(size_t)(p.y + y) * cross.w + p.x + x];
+                        o = BlendOver(o, (uint32_t)(a + 0.5f) << 24 | (uint32_t)(r / a) << 16 | (uint32_t)(g / a) << 8 | (uint32_t)(b / a));
+                    }
+            buttonPics.push_back({ "buttons/button_dpad", cross });
+        }
         if (!buttonPics.empty()) fprintf(stderr, "[hud] %zu button pictures from %s\n", buttonPics.size(), dir.c_str());
     }
     for (const auto& b : buttonPics) sprites.Replace(b.first, b.second);
