@@ -56,6 +56,7 @@
 #include "hudbattle.h"
 #include "hudbattleui.h"
 #include "hudbattlebag.h"
+#include "hudbattleparty.h"
 #include "hudbag.h"
 #include "hudparty.h"
 #include "hudtrade.h"
@@ -5902,6 +5903,38 @@ int main(int argc, char** argv)
                     { { back }, st.screen == 0 ? "Close bag" : "Back" } };
                 HudBattleBag::Draw(canvas, ui, sprites, font, romArt, battleTexts, st, hints);
                 overlayUsed = true;
+            }
+            else
+            {
+                // The party of a battle (hudbattleparty.h), drawn as the party and summary
+                // outside battles.
+                static HudBattleParty::Reader battlePartyReader;
+                battlePartyReader.vram = v;
+                battlePartyReader.words = &battleUiHud.Words();
+                HudBattleParty::State ps;
+                if (battlePartyReader.Read(nds->MainRAM, nds->MainRAMMask, frame, ps))
+                {
+                    const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                    const HudParty::MonIconFn icon = [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); };
+                    if (ps.screen == 2)
+                    {
+                        HudParty::SummaryScreen sv;
+                        sv.mon = ps.list.mons[ps.chosen];
+                        sv.page = 1;
+                        sv.slot = ps.chosen;
+                        sv.count = ps.list.count;
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Back" } };
+                        HudParty::DrawSummary(canvas, ui, sprites, font, sv, icon, hints);
+                    }
+                    else
+                    {
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Back" } };
+                        if (!ps.list.message.empty()) hints = { { { accept }, "Next" } };
+                        HudParty::DrawParty(canvas, ui, sprites, font, ps.list, icon, hints);
+                    }
+                    overlayUsed = true;
+                }
+                battlePartyReader.vram.read8 = nullptr;
             }
             v.read8 = nullptr;
         }
