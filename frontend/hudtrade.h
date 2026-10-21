@@ -61,8 +61,9 @@ inline bool Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint3
         return false;
     v.cursor = (int)ram.R32(w + 0x94);
     v.theirs = (int)ram.R32(w + 0x98);
+    // The other's cursor is on one of their Pokemon or on their Cancel (12).
     if (v.cursor < 0 || v.cursor > 12 || (v.cursor < 12 && v.cursor % 6 >= v.count[v.cursor / 6]) ||
-        v.theirs < 6 || v.theirs >= 6 + v.count[1])
+        v.theirs < 6 || (v.theirs >= 6 + v.count[1] && v.theirs != 12))
         return false;
 
     // The step, by its function in overlay 65.
@@ -84,7 +85,7 @@ inline bool Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint3
     {
         // Those of its messages without anything put into them.
         const int id = (int)ram.R32(w + 0x74);
-        if (id != 0x18 && id != 0x22 && id != 0x25 && id != 0x26) return false;
+        if (id != 0x18 && id != 0x1D && id != 0x22 && id != 0x25 && id != 0x26) return false;
         v.step = View::Notice;
         v.message = Party_Text(183, id);
         for (char& ch : v.message)
@@ -96,7 +97,7 @@ inline bool Read(const HudParty::Ram& ram, uint32_t& cache, uint32_t init, uint3
     }
     // The cursor stays on the other's Pokemon only to look at it; a trade is one of this
     // player's for one of theirs.
-    if ((v.step == View::Offered || v.step == View::Confirm) && v.cursor >= 6) return false;
+    if ((v.step == View::Offered || v.step == View::Confirm) && (v.cursor >= 6 || v.theirs == 12)) return false;
     // The other player is ahead: chose to trade while this one still looks, or said yes.
     if (v.step == View::Browse || v.step == View::Menu) v.ready = (s0 == 2) != (s1 == 2) && (s0 == 0 || s1 == 0);
     if (v.step == View::Confirm) v.ready = (s0 == 3) != (s1 == 3) && (s0 == 0 || s1 == 0);
@@ -235,8 +236,9 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const V
     Offer(c, ui, sp, f, x0 + 710, 150, 500, 285, HudOnline::TextColourOf(myColour), myLabel, mine, icon);
     HudSprite(c, ui, sp, "icons/icon_arrow_up", x0 + 916, 456, 40, 40);
     HudSprite(c, ui, sp, "icons/icon_arrow_down", x0 + 964, 456, 40, 40);
-    Offer(c, ui, sp, f, x0 + 710, 515, 500, 285, HudOnline::TextColourOf(theirColour), offered || v.ready ? v.partner + " offers" : v.partner + " is looking at",
-        &v.mons[1][v.theirs - 6], icon);
+    const PartyMon* theirMon = v.theirs < 12 ? &v.mons[1][v.theirs - 6] : nullptr;
+    Offer(c, ui, sp, f, x0 + 710, 515, 500, 285, HudOnline::TextColourOf(theirColour),
+        !theirMon ? v.partner + " is on Cancel" : offered || v.ready ? v.partner + " offers" : v.partner + " is looking at", theirMon, icon);
 
     // Along the bottom: whether the other is ready, what the game says, and its menu or yes/no.
     const float by = 860, bh = 110;
