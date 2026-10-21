@@ -270,6 +270,16 @@ inline void DrawList(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Rom
     const View::Place& p = v.places[v.pos];
     const float cx = x0 + 1100, cy = 160, cw = 760, ch = 820;
     HudPanel(c, ui, sp, "panels/card", cx, cy, cw, ch);
+    if (v.results && !p.number)
+    {
+        // The search's own place: what it found, and the way back to it.
+        HudSprite(c, ui, sp, "people/chip_ring_red", cx + cw / 2 - 125, cy + 60, 250, 250);
+        HudSprite(c, ui, sp, "icons/icon_search", cx + cw / 2 - 60, cy + 125, 120, 120);
+        HudText(c, ui, f, cx + cw / 2, cy + 360, 48, "Search results", Ink, 1, true);
+        HudText(c, ui, f, cx + cw / 2, cy + 430, 32, std::to_string(v.found) + " Pok\xC3\xA9mon found", Muted, 1);
+        DrawHintBar(c, ui, sp, f, hints);
+        return;
+    }
     HudSprite(c, ui, sp, "people/chip_ring_green", cx + 30, cy + 30, 250, 250);
     if (p.species)
         if (const Image* ic = art.PokemonIcon(p.species))
