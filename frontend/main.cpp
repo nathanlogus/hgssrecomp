@@ -54,6 +54,7 @@
 #include "hudtoast.h"
 #include "hudscreens.h"
 #include "hudbattle.h"
+#include "hudbattleui.h"
 #include "hudbag.h"
 #include "hudparty.h"
 #include "hudtrade.h"
@@ -2459,6 +2460,12 @@ int main(int argc, char** argv)
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
     BattleWide battleWide;
+    // The battle's HP boxes, message box and level-up stats redrawn (hudbattleui.h), while
+    // the wide battle picture is built without the game's boxes (battleUiWide).
+    HudBattleUi::Reader battleUiReader;
+    HudBattleUi::State battleUi;
+    HudBattleUi::Hud battleUiHud;
+    bool battleUiWide = false;
     VoidFill voidFill;
     // The map blocks around the loaded ones, drawn into the widescreen world when a frame's
     // 3D is flushed (inside the emulated frame, with that frame's camera).
@@ -2468,6 +2475,7 @@ int main(int argc, char** argv)
     std::vector<NightFly> fireflies;
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
+    battleUiHud.SetRom(rom.data(), rom.size());
     worldBlocks.Plaza = plazaMap;
     // The HUD: its sprites and the game's own font.
     Sprites sprites;
@@ -4671,6 +4679,7 @@ int main(int argc, char** argv)
         bool composingBetween = false;
         auto takeWideImage = [&]() {
             wideImage = WideImage();
+            battleUiWide = false;
             // A battle on a wide view: the screen widened (battlewide.h) instead of the bars.
             if (scene.edgeFill && cfg.wide && !opt.noWide)
             {
@@ -4685,8 +4694,12 @@ int main(int argc, char** argv)
                 const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
                 const ScreenImage topImage = { nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(),
                     static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D()).LayerFlags[tu] };
+                // With the new screens the HP boxes are drawn anew (hudbattleui.h).
+                battleWide.HideBoxes = cfg.redrawn && spritesOk && merged && HudBattleUi::Battle({ nds->MainRAM, nds->MainRAMMask }) != 0;
+                battleUiWide = false;
                 if (vw >= 300 && battleWide.Build(*nds, topImage, (int)std::ceil((vw - 256) / 2), &world, vw, wideImage))
                 {
+                    battleUiWide = battleWide.HideBoxes;
                     scene.wide = true;
                     return;
                 }
@@ -5768,6 +5781,7 @@ int main(int argc, char** argv)
         // The battle's commands and moves redrawn over the strip under the field (hudbattle.h);
         // also while one set slides out and the other in, as long as the game's memory says
         // which is up. Otherwise the strip stays as it is.
+        bool battleHudDrawn = false;
         if (spritesOk && cfg.redrawn && merged && hudFree &&
             (!strcmp(scene.name, "battle-cmd") || !strcmp(scene.name, "battle-moves") || !strcmp(scene.name, "battle-strip") ||
                 !strcmp(scene.name, "battle-pick")))
@@ -5786,7 +5800,44 @@ int main(int argc, char** argv)
                 if (bs.moves || bs.kind == HudBattle::Target || (bs.kind == HudBattle::Commands && bs.cancel)) hints.push_back({ { back }, "Back" });
                 battleHud.Draw(canvas, ui, sprites, font, battleMoves, romArt, bs, sel, hints, (view.originY + 137 * view.unit) / ui.s);
                 overlayUsed = true;
+                battleHudDrawn = true;
             }
+        }
+        // The HP boxes, the message box and the level-up stats redrawn (hudbattleui.h), where
+        // the battle's wide picture was built without the game's boxes.
+        // (Read every frame: the HP bars' animation is followed from one frame to the next.)
+        const int tu = (nds->PowerControl9 & (1 << 15)) ? 0 : 1;
+        const auto& unit = tu == 0 ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+        HudBattleUi::Vram battleVram;
+        for (int b = 0; b < 4; b++) battleVram.bgCnt[b] = unit.BGCnt[b];
+        battleVram.charOffset = tu == 0 ? ((unit.DispCnt >> 24) & 7) * 0x10000 : 0;
+        battleVram.read8 = [&](uint32_t a) { return tu == 0 ? nds->GPU.ReadVRAM_ABG<u8>(a) : nds->GPU.ReadVRAM_BBG<u8>(a); };
+        if (cfg.redrawn && spritesOk && battleUiReader.Read(nds->MainRAM, nds->MainRAMMask, battleVram, battleUi) && battleUiWide && merged &&
+            hudFree && !strncmp(scene.name, "battle", 6))
+        {
+            // The game's fade, as it applies to the message box's layer (BG1): the master
+            // brightness, or a brightness effect on the layer; or as the box looks.
+            HudBattleUi::Fade fade;
+            fade.mode = (unit.MasterBrightness >> 14) & 3;
+            fade.f = std::min(16, unit.MasterBrightness & 0x1F);
+            if (fade.mode != 1 && fade.mode != 2) fade.mode = 0;
+            if (!fade.mode && (unit.BlendCnt & 2) && ((unit.BlendCnt >> 6) & 3) >= 2)
+            {
+                fade.mode = ((unit.BlendCnt >> 6) & 3) == 2 ? 1 : 2;
+                fade.f = std::min<int>(16, unit.EVY);
+            }
+            auto& soft = static_cast<GPU2D::SoftRenderer&>(nds->GPU.GetRenderer2D());
+            const uint32_t* topPixels = nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get();
+            const bool msgShown = HudBattleUi::MessageShown(battleUi.msg, soft.LayerFlags[tu]);
+            if (msgShown) HudBattleUi::FadeFromScreen(battleUi.msg, topPixels, fade);
+            // The HP boxes as the game's own look (hidden, faded).
+            HudBattleUi::Look(battleUi, topPixels, soft.LayerFlags[tu], soft.ObjPrio[tu]);
+            // (The band of the touch screen's menus has the message box's place then.)
+            const bool band = !battleHudDrawn && msgShown;
+            const float half = view.width / 2 * view.unit;
+            battleUiHud.Draw(canvas, ui, sprites, font, battleUi, view.originX + 128 * view.unit - half, view.originX + 128 * view.unit + half,
+                view.originY, view.unit, (view.originY + 137 * view.unit) / ui.s, band, fade);
+            overlayUsed = true;
         }
         if (menu.open && spritesOk)
         {
