@@ -1,13 +1,11 @@
-# Generated from your own game build: never commit (it is the game's code).
+# Never commit the game or anything made from it (see AGENTS.md).
+
+# The game's code, recompiled from your own ROM
 /gen/
-# Build output
-/build/
-/build-*/
-# The Android build: downloaded NDK and SDL2, the signing key, and the APK, which
-# contains the game (tools/android/skeleton.apk does not, and is kept).
-/android/
-/*.apk
-# Game files, saves and save states
+/gen.new/
+
+# Game files: ROMs, saves, save states, resume points and build output made from them
+/ROMS/
 *.nds
 *.sav
 *.sav.state
@@ -18,25 +16,37 @@
 *.st
 *.sbin
 *.nef
-# Per-user settings and test output
+*.fw
+/ssrecomp.rom
+# ROM hack patches (made from the game) and the patched ROM
+/definitive/
+
+# Build output
+/build/
+/build-*/
+/bin/
+/dist/
+# The Android build: downloaded NDK and SDL2, the signing key, and the APK, which
+# contains the game (tools/android/skeleton.apk does not, and is kept).
+/android/
+/*.apk
+
+# The player's own files for the frontend (songs, fonts, button pictures, the title
+# video, animations) and other pictures and models that are not ours to publish
+assets/songs/
+assets/fonts/
+assets/buttons/
+assets/animations/
+assets/models/
+assets/autosave.gif
+assets/gamefreak_logo.png
+
+# Per-user settings, logs and test output
 ssrecomp.cfg
 /build.log
 /game.log
 /test/
 __pycache__/
-/ssrecomp.rom
-/gen.new/
-/dist/
-/bin/
 .DS_Store
-# ROM hack patches (made from the game) and the patched ROM
-/definitive/
-
-# The player's own songs and pictures for the frontend: not part of the project.
-assets/songs/
-assets/autosave.gif
-assets/fonts/
-assets/buttons/
-# Claude Code's worktrees for parallel work.
+# Claude Code's settings and worktrees
 .claude/
-assets/animations/
