@@ -68,9 +68,9 @@ struct Window
         const uint32_t tile = m.r16(a + 10) & 0x7FFF;
         w = tw * 8;
         h = th * 8;
-        if (!Mem::In(m.r32(a)) || !Mem::In(m.r32(a + 12)) || bg > 3 || tw == 0 || th == 0 || tw > 32 || th > 24 || !v.read8 || (v.bgCnt[bg] & 0x80))
+        if (!Mem::In(m.r32(a)) || !Mem::In(m.r32(a + 12)) || bg > 7 || tw == 0 || th == 0 || tw > 32 || th > 24 || !v.read8 || (v.bgCnt[bg & 3] & 0x80))
             return false;
-        const uint32_t base = v.charOffset + ((v.bgCnt[bg] >> 2) & 0xF) * 0x4000 + tile * 32;
+        const uint32_t base = v.charOffset + ((v.bgCnt[bg & 3] >> 2) & 0xF) * 0x4000 + tile * 32;
         px.resize((size_t)w * h);
         for (int ty = 0; ty < th; ty++)
             for (int tx = 0; tx < tw; tx++)

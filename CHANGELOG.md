@@ -48,7 +48,9 @@
   drawn in the new style too (widescreen view). The HP and EXP bars run down and fill as
   the game's do, the boxes slide in and out with the game's, and the messages appear
   letter by letter in the menus' font. The bag in battles is drawn anew as well: its
-  pockets, their items and the item you pick with its description and Use.
+  pockets, their items and the item you pick with its description and Use. So is the
+  party in battles, as the party outside them: choosing who to send out, Shift, and the
+  summary; and the Pokédex page after a catch, as the Pokédex's card for the Pokémon.
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a
