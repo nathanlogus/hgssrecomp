@@ -5943,7 +5943,7 @@ int main(int argc, char** argv)
             // the game's own does not flash up between them.
             static HudGear::State gearLast;
             static int gearHeld = 0;
-            if (HudGear::ReadState(readRam, app, gearManager, gs, step, between) && HudGear::Shown(gs, step, gearShown))
+            if (HudGear::ReadState(readRam, app, bagTexts, gearManager, gs, step, between) && HudGear::Shown(gs, step, gearShown))
             {
                 gearNow = true;
                 gearLast = gs;
@@ -5969,12 +5969,45 @@ int main(int argc, char** argv)
                 const int y = year - (month < 3);
                 env.weekday = (y + y / 4 - y / 100 + y / 400 + t[(month + 11) % 12] + day) % 7;
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
-                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env,
-                    { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Select" }, { { back }, gs.inTabs ? "Close" : "Back" } });
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Select" }, { { back }, gs.inTabs ? "Close" : "Back" } };
+                if (!gs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
+                else if (gs.call.on) hints = gs.call.waiting ? std::vector<HudHint>{ { { accept }, "Next" } } : std::vector<HudHint>{};
+                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env, hints);
                 overlayUsed = true;
             }
         }
         gearShown = gearNow;
+        // Choosing where to fly, and the Town Map (hudgear.h too): the same map.
+        static uint32_t flyManager = 0;
+        static bool flyShown = false;
+        bool flyNow = false;
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("TownMap"))
+        {
+            auto app = [](const char* name) -> const RcApp* {
+                for (unsigned i = 0; i < rc_num_apps; i++)
+                    if (!strcmp(rc_apps[i].name, name)) return &rc_apps[i];
+                return nullptr;
+            };
+            HudGear::State fs;
+            int step = -1;
+            if (HudGear::ReadFly(readRam, app, flyManager, fs, step) && HudGear::Shown(fs, step, flyShown))
+            {
+                flyNow = true;
+                HudGear::Env env;
+                env.me.name = onlineName();
+                env.me.colour = cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me());
+                env.me.map = partyMap;
+                env.rd = readRam;
+                const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" } };
+                if (fs.mode == 1) hints.push_back({ { accept }, "Fly here" });
+                hints.push_back({ { back }, "Close" });
+                if (!fs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
+                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, fs, env, hints);
+                overlayUsed = true;
+            }
+        }
+        flyShown = flyNow;
         // The Union Room's trade screen redrawn (hudtrade.h), mirroring the game's own; for
         // up to three frames that do not check out the last picture stays, as with the bag.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("WirelessTradeSelectMon"))

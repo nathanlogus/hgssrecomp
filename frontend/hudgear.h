@@ -20,8 +20,27 @@ struct Place
     int map = 0, x = 0, y = 0, w = 1, h = 1;
 };
 
+// A menu of the game's buttons on the touch screen (TouchscreenListMenu): its items' text
+// and the one under the cursor (or chosen). No items: none shown.
+struct Menu
+{
+    std::vector<std::string> items;
+    int cursor = 0;
+};
+
+// A phone call (PokegearPhoneCallContext): who, how far it is, and the lines its text box
+// shows; `waiting` while the game waits for a button before going on.
+struct Call
+{
+    bool on = false, incoming = false, waiting = false;
+    int caller = 0;
+    enum { Ringing, Talking, Ended } phase = Ringing;
+    std::vector<std::string> lines;
+};
+
 struct State
 {
+    int mode = 0;         // 0 the Pokégear, 1 the map to choose where to fly, 2 the Town Map
     int app = 0;          // the tab running (APP_MAP or APP_PHONE)
     int cards = 0;        // the cards registered: 1 map, 2 radio
     bool inTabs = false;  // the cursor is on the tab buttons
@@ -35,7 +54,126 @@ struct State
     // The cursor's cell, the player's, and the place under the cursor: its map (-1: none) and
     // its line of text bank 273.
     int curX = 0, curY = 0, meX = 0, meY = 0, selMap = -1, selText = 0;
+    // Flying: the towns one can fly to now (Place::map names them), and the one under the
+    // cursor (its map, -1 none).
+    std::vector<Place> fly;
+    int flyHere = -1;
+    Menu menu;
+    Call call;
 };
+
+// A TouchscreenListMenu at `m` (src/touchscreen_list_menu.c): its items (ListMenuItem, a
+// String and a value each, +0x10), how many (+0x18), the cursor (+0x24) and, once one is
+// chosen and flashing (+0x25), that one (+0x2A). Destroying it clears it, so a menu gone
+// does not check out.
+template <class Read>
+bool ReadMenu(Read rd, uint32_t m, Menu& out)
+{
+    using HudBag::InRam;
+    out = Menu();
+    if (!InRam(m) || !InRam(rd(m))) return false;
+    const uint32_t items = rd(m + 0x10);
+    const int n = rd(m + 0x18) & 0xFF, cur = rd(m + 0x24) & 0xFF, chosen = rd(m + 0x2A) & 0xFF;
+    if (!InRam(items) || n < 1 || n > 7 || cur >= n || chosen >= n) return false;
+    for (int i = 0; i < n; i++)
+    {
+        std::string s;
+        if (!HudScreens::GameString([&](uint32_t a) { return rd(a) & 0xFFFF; }, rd(items + 8 * i), s)) return false;
+        out.items.push_back(s);
+    }
+    out.cursor = (rd(m + 0x25) & 0xFF) == 1 ? chosen : cur;
+    return true;
+}
+
+// The lines a text box shows once the first `n` codes of a message are printed
+// (src/render_text.c): a new line at 0xE000; at 0x25BC the printer waits for a button and
+// starts a fresh page, at 0x25BD it waits and scrolls one line up. While it waits at one,
+// the page before it stays (`waiting`). The last `keep` lines are shown, as the box holds.
+inline std::vector<std::string> PrintedLines(const std::vector<uint16_t>& codes, size_t n, size_t keep, bool& waiting)
+{
+    std::vector<std::vector<uint16_t>> lines(1);
+    int pending = 0;
+    for (size_t i = 0; i < n && i < codes.size() && codes[i] != 0xFFFF; i++)
+    {
+        const uint16_t c = codes[i];
+        if (c == 0xFFFE) // a text command: the command, how many arguments, those
+        {
+            i += 2 + (i + 2 < codes.size() ? codes[i + 2] : 0);
+            continue;
+        }
+        if (pending == 1) lines.assign(1, {});
+        if (pending == 2) lines.emplace_back();
+        pending = 0;
+        if (c == 0xE000) lines.emplace_back();
+        else if (c == 0x25BC) pending = 1;
+        else if (c == 0x25BD) pending = 2;
+        else lines.back().push_back(c);
+    }
+    waiting = pending != 0;
+    std::vector<std::string> out;
+    for (size_t i = lines.size() > keep ? lines.size() - keep : 0; i < lines.size(); i++) out.push_back(NdsText(lines[i].data(), lines[i].size()));
+    return out;
+}
+
+// The call going on in the phone (PokegearPhoneAppData `own`, at its step `step`): while it
+// is being set up (3, 5) the contact being called (+0xC8); then its context (+0xC4): the
+// caller (+0xA0), the call's step (+0x88: 0 ringing, 1 talking, 2 waiting to hang up, 3 and
+// 255-256 hanging up, 257-258 out of range) and the message being printed (+0x54) by a
+// text printer (src/text.c) into its window (+0x0C). The printer is not kept anywhere the
+// frontend can find, so it is looked for in memory (a TextPrinter: the next code to print,
+// then the window, and +0x27 active) each time the message changes; the one furthest
+// behind is the new one, older ones freed keep their last place. None: printed at once.
+// The ringing and hanging up are short messages of bank 271 (30-32 and 33-35), printed one
+// after another as +0x90 counts.
+template <class Read>
+bool ReadCall(Read rd, uint32_t own, int step, HudBag::Texts& tx, Call& call)
+{
+    using HudBag::InRam;
+    call = Call();
+    call.on = true;
+    call.incoming = (rd(own + 0xCB) & 0xFF) != 0;
+    call.caller = rd(own + 0xC8) & 0xFF;
+    if (step != 6) return call.caller < 75;
+    const uint32_t ctx = rd(own + 0xC4);
+    if (!InRam(ctx) || rd(ctx + 4) != own) return false;
+    call.caller = rd(ctx + 0xA0) & 0xFF;
+    const int main = (int)rd(ctx + 0x88), tone = (int)rd(ctx + 0x90);
+    if (call.caller >= 75) return false;
+    // Each of them holds the ones before it too.
+    auto said = [&](int first, int count) { call.lines = { tx.Get(271, first + std::min(std::max(count, 1), 3) - 1) }; };
+    if (main == 0) return said(30, tone), true;
+    if (main == 3 || main == 256 || main == 255)
+    {
+        call.phase = Call::Ended;
+        return said(main == 255 ? 30 : 33, tone), true;
+    }
+    if (main != 1 && main != 2 && main != 257 && main != 258) return false;
+    call.phase = main <= 2 ? Call::Talking : Call::Ended;
+    const uint32_t str = rd(ctx + 0x54), win = rd(ctx + 0x0C);
+    if (!InRam(str) || rd(str + 4) != 0xB6F8D2ECu) return false;
+    const uint32_t len = rd(str) >> 16;
+    if (len > 1081) return false;
+    std::vector<uint16_t> codes(len);
+    uint32_t hash = len * 31 + (uint32_t)main * 7 + rd(ctx + 0x8C);
+    for (uint32_t i = 0; i < len; i++) hash = hash * 33 + (codes[i] = (uint16_t)(rd(str + 8 + 2 * i) & 0xFFFF));
+    static uint32_t lastHash = 0, printer = 0;
+    const uint32_t from = str + 8, to = from + 2 * len;
+    auto looks = [&](uint32_t a) {
+        const uint32_t at = rd(a);
+        return rd(a + 4) == win && at >= from && at <= to && !(at & 1) && (rd(a + 0x24) >> 24) == 1;
+    };
+    if (hash != lastHash)
+    {
+        lastHash = hash;
+        printer = 0;
+        for (uint32_t a = 0x02000000; a < 0x02400000; a += 4)
+            if (looks(a) && (!printer || rd(a) < rd(printer))) printer = a;
+    }
+    const size_t n = printer && looks(printer) ? (rd(printer) - from) / 2 : len;
+    call.lines = PrintedLines(codes, n, 2, call.waiting);
+    call.waiting = call.waiting || main == 2 || main == 258;
+    return true;
+}
 
 // The phone contacts' text banks (sPhoneMessageGmm): line 0 is the contact's name.
 constexpr uint16_t kContactBank[75] = { 664, 716, 666, 662, 663, 643, 661, 660, 641, 665, 675, 712, 680, 684, 711, 642, 706, 644,
@@ -49,8 +187,11 @@ constexpr uint16_t kContactBank[75] = { 664, 716, 666, 662, 663, 643, 661, 660, 
 // `step`: the tab's own step (its OverlayManager's state). False when anything is out of
 // the ranges the game keeps it in; then `between` says whether the Pokégear is only
 // changing tabs (one tab ending or the next starting), when the last picture can stay.
+template <class Read>
+bool ReadMap(Read rd, uint32_t own, State& st);
+
 template <class Read, class App>
-bool ReadState(Read rd, App app, uint32_t& cache, State& st, int& step, bool& between)
+bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, int& step, bool& between)
 {
     between = false;
     using HudBag::InRam;
@@ -104,10 +245,13 @@ bool ReadState(Read rd, App app, uint32_t& cache, State& st, int& step, bool& be
     if (!InRam(own) || step < 0 || step > 13) return false;
     if (st.app == APP_PHONE)
     {
-        // PokegearPhoneAppData: not a call the game started (isIncomingCall), and its list
-        // (PhoneContactListUI at 0xE0, a slot of 12 bytes per contact from 0xC) in step
-        // with its contacts (each slot's list node holds the contact at +1).
-        if (rd(own + 0x0C) != data || rd8(own + 0xCB) != 0) return false;
+        // PokegearPhoneAppData: its list (PhoneContactListUI at 0xE0, a slot of 12 bytes
+        // per contact from 0xC) in step with its contacts (each slot's list node holds the
+        // contact at +1); a call (calling or called, steps 3, 5, 6) or the menu of a contact
+        // or of sorting (7, 8: +0x504, gone a frame before the step moves on).
+        if (rd(own + 0x0C) != data) return false;
+        if ((step == 3 || step == 5 || step == 6) && !ReadCall(rd, own, step, tx, st.call)) return false;
+        if (step == 6 || step == 7 || step == 8) ReadMenu(rd, rd(own + 0x504), st.menu);
         const uint32_t ui = own + 0xE0;
         const int n = rd8(ui);
         st.row = rd8(ui + 1);
@@ -124,10 +268,20 @@ bool ReadState(Read rd, App app, uint32_t& cache, State& st, int& step, bool& be
         }
         return true;
     }
-    // PokegearMapAppData: the Pokégear's map (not flying or the Town Map), not zoomed in and
-    // not marking places, with its places (16 bytes each).
+    // PokegearMapAppData: the Pokégear's map (not flying or the Town Map).
+    return rd(own + 0x10) == data && rd8(own + 0x0D) == 0 && ReadMap(rd, own, st);
+}
+
+// A PokegearMapAppData (the Pokégear's map, or flying or the Town Map), not zoomed in and
+// not marking places, with its places (16 bytes each).
+template <class Read>
+bool ReadMap(Read rd, uint32_t own, State& st)
+{
+    using HudBag::InRam;
+    auto rd8 = [&](uint32_t a) { return (int)(rd(a) & 0xFF); };
+    auto rd16 = [&](uint32_t a) { return (int)(rd(a) & 0xFFFF); };
     const int flags = rd8(own + 0x138), extra = rd8(own + 0x13D);
-    if (rd(own + 0x10) != data || rd8(own + 0x0D) != 0 || rd8(own + 0x0C) != 0 || (flags & 1)) return false;
+    if (rd8(own + 0x0C) != 0 || (flags & 1)) return false;
 
     st.meX = (int16_t)rd16(own + 0x108);
     st.meY = (int16_t)rd16(own + 0x10A);
@@ -176,11 +330,25 @@ inline bool Shown(const State& st, int step, bool before)
         switch (step)
         {
         case 1:  // the list
+        case 3:  // a call: setting up, closing the menu, the call
+        case 5:
+        case 6:
+        case 7:  // the contact's menu, the sorting menu
+        case 8:
         case 10: // fading in
         case 12: return true; // wiping in from another tab
         case 11: // fading out to close
         case 13: return before; // wiping out to another tab
-        default: return false; // calls, menus, sorting
+        default: return false; // moving contacts
+        }
+    if (st.mode)
+        switch (step) // FlyMap_Main
+        {
+        case 1:  // the map
+        case 4:  // fading in
+        case 12: return true; // asking to fly there
+        case 5: return before; // fading out
+        default: return false;
         }
     switch (step)
     {
@@ -200,6 +368,57 @@ inline int RegionOf(int x, int y)
     y -= 2;
     if (x <= 21 || (x == 25 && y == 8)) return 2;
     return (x == 28 && y == 6) || (x == 28 && y > 8 && y < 13) ? 1 : 0;
+}
+
+// The towns one can fly to (gMapFlypointParams): the map named, its fly point (flag 0x9B0
+// on), its cells (without the map's 2 rows on top). Indigo Plateau and Victory Road (to
+// Route 26) can be flown to from either region; the others from their own.
+struct FlyPoint
+{
+    int map, flag, x, y, w, h;
+};
+constexpr FlyPoint kFlyPoints[27] = { { 49, 0, 32, 11, 1, 1 }, { 50, 1, 31, 7, 2, 2 }, { 51, 2, 32, 2, 2, 2 }, { 52, 3, 40, 3, 2, 2 },
+    { 53, 4, 44, 7, 1, 1 }, { 54, 5, 40, 9, 2, 2 }, { 55, 6, 37, 7, 2, 2 }, { 56, 7, 37, 12, 2, 2 }, { 57, 8, 32, 15, 1, 1 },
+    { 58, 9, 28, 6, 1, 1 }, { 59, 10, 40, 6, 2, 2 }, { 60, 11, 21, 12, 1, 1 }, { 67, 12, 16, 12, 2, 1 }, { 73, 13, 14, 7, 2, 2 },
+    { 74, 14, 12, 14, 2, 1 }, { 75, 15, 5, 10, 1, 2 }, { 76, 16, 9, 10, 3, 2 }, { 77, 17, 8, 7, 2, 2 }, { 78, 18, 11, 4, 2, 2 },
+    { 87, 19, 16, 5, 1, 1 }, { 89, 21, 20, 4, 2, 2 }, { 88, 20, 15, 1, 3, 2 }, { 90, 22, 25, 8, 1, 1 }, { 174, 30, 2, 8, 2, 2 },
+    { 272, 27, 6, 6, 2, 2 }, { 96, 35, 10, 6, 2, 2 }, { 124, 33, 28, 7, 1, 2 } };
+
+// The map to choose where to fly, or the Town Map (the TownMap application, FlyMap_*): its
+// PokegearMapAppData with a Pokégear of its own (+0x10, whose childAppdata +0x64 is it),
+// its kind (+0x0D: 1 flying, 2 the Town Map) and region (+0x0E), and while asking whether
+// to fly there (step 12) its menu (+0xC4). The fly points' flags are the save's (the
+// Pokégear's +0x2C, after 0x170 variables).
+template <class Read, class App>
+bool ReadFly(Read rd, App app, uint32_t& cache, State& st, int& step)
+{
+    using HudBag::InRam;
+    const auto* town = app("TownMap");
+    if (!town) return false;
+    const uint32_t man = HudBag::FindManager(rd, town->initAddr, town->execAddr, town->exitAddr, cache);
+    if (!man) return false;
+    const uint32_t own = rd(man + 0x1C), gear = rd(own + 0x10);
+    step = (int)rd(man + 0x14);
+    st = State();
+    st.app = APP_MAP;
+    st.mode = rd(own + 0x0C) >> 8 & 0xFF;
+    if (!InRam(gear) || rd(gear + 0x64) != own || st.mode < 1 || st.mode > 2 || step < 0 || step > 13 || !ReadMap(rd, own, st)) return false;
+    const uint32_t vars = rd(gear + 0x2C);
+    if (!InRam(vars)) return false;
+    const int region = rd(own + 0x0C) >> 16 & 0xFF;
+    for (const FlyPoint& p : kFlyPoints)
+    {
+        const int flag = 0x9B0 + p.flag;
+        if (!(rd(vars + 0x2E0 + flag / 8) >> (flag % 8) & 1)) continue;
+        if (p.map != 58 && p.map != 124 && region != 1 && RegionOf(p.x, p.y + 2) != region) continue;
+        st.fly.push_back({ p.map, p.x, p.y + 2, p.w, p.h });
+    }
+    // The fly point under the cursor, as the game finds it when A is pressed (its +0x0F is
+    // only updated as the cursor moves).
+    for (const Place& p : st.fly)
+        if (st.mode == 1 && st.curX >= p.x && st.curX < p.x + p.w && st.curY >= p.y && st.curY < p.y + p.h) st.flyHere = p.map;
+    if (step == 12) ReadMenu(rd, rd(own + 0xC4), st.menu);
+    return true;
 }
 
 // The ROM's phone book (tel/pmtel_book.dat: a count, then 20 bytes a contact): their
@@ -294,7 +513,8 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     // yellow, the cursor beside the one under it while it is on them.
     static const char* labels[5] = { "SETTINGS", "RADIO", "MAP", "PHONE", "CLOSE" };
     static const char* icons[5] = { "icons/icon_cog", "icons/icon_radio", "icons/icon_map", "icons/icon_phone", "icons/icon_cross" };
-    for (int i = 0; i < 5; i++)
+    if (st.mode) HudText(c, ui, f, x0 + 60, 66, 48, st.mode == 1 ? "FLY" : "TOWN MAP", White, 0, true);
+    for (int i = 0; i < 5 && !st.mode; i++)
     {
         const bool cur = i == st.app, has = !((i == APP_MAP && !(st.cards & 1)) || (i == APP_RADIO && !(st.cards & 2)));
         const float cx = x0 + 130 + i * 170 + (i == 4 ? 40 : 0), d = cur ? 112 : 88, dy = 84 - d / 2;
@@ -313,10 +533,13 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     const std::string when = std::string(days[env.weekday % 7]) + " \xC2\xB7 " + part;
     const float pw = 64 + 24 + HudTextWidth(ui, f, 48, time, true) + 24 + HudTextWidth(ui, f, 32, when) + 40;
     const float px = x0 + 1860 - pw;
-    HudPanel(c, ui, sp, "panels/button_white", px, 52, pw, 72);
-    HudSprite(c, ui, sp, "icons/icon_clock", px + 28, 64, 48, 48);
-    HudText(c, ui, f, px + 100, 64, 48, time, Ink, 0, true);
-    HudText(c, ui, f, px + pw - 32, 74, 32, when, Muted, 2);
+    if (!st.mode)
+    {
+        HudPanel(c, ui, sp, "panels/button_white", px, 52, pw, 72);
+        HudSprite(c, ui, sp, "icons/icon_clock", px + 28, 64, 48, 48);
+        HudText(c, ui, f, px + 100, 64, 48, time, Ink, 0, true);
+        HudText(c, ui, f, px + pw - 32, 74, 32, when, Muted, 2);
+    }
 
     // The other players of the session, for both tabs.
     std::vector<const PartyPeer*> peers;
@@ -327,7 +550,28 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     const float mx = x0 + 60, my = 196, mw = 1180, mh = 790;
     const float sx = x0 + 1290, sw = 570;
     HudPanel(c, ui, sp, "panels/card", mx, my, mw, mh);
-    if (st.app == APP_PHONE)
+    if (st.app == APP_PHONE && st.call.on)
+    {
+        // A call: who, how it is going, and the lines of the game's text box, with the arrow
+        // while it waits for a button.
+        const Call& k = st.call;
+        const char* status = k.phase == Call::Ringing ? (k.incoming ? "Incoming call" : "Calling\xE2\x80\xA6")
+            : k.phase == Call::Talking                ? "On the phone"
+                                                      : "Call ended";
+        HudOnline::TitledCard(c, ui, sp, f, mx + 24, my + 24, mw - 48, 60, "CALL", status);
+        const std::string name = Name(tx, k.caller);
+        const float d = 200, cx = mx + mw / 2, cy = my + 130;
+        HudSprite(c, ui, sp, k.phase == Call::Talking ? "people/chip_ring_orange" : "people/chip_ring_grey", cx - d / 2, cy, d, d);
+        HudText(c, ui, f, cx, cy + d / 2 - 24, 48, HudOnline::Initials(name), Ink, 1, true);
+        HudText(c, ui, f, cx, cy + d + 24, 48, name, Ink, 1, true);
+        const std::string cls = book.Class(tx, k.caller), place = book.Place(k.caller);
+        HudText(c, ui, f, cx, cy + d + 84, 32, cls.empty() ? place : place.empty() ? cls : cls + " \xC2\xB7 " + place, Muted, 1);
+        const float bx = mx + 60, by = my + mh - 260, bw = mw - 120;
+        HudPanel(c, ui, sp, "panels/dialogue_box", bx, by, bw, 200);
+        for (size_t i = 0; i < k.lines.size(); i++) HudText(c, ui, f, bx + 40, by + 34 + 72.0f * i, 48, k.lines[i], Ink);
+        if (k.waiting) HudSprite(c, ui, sp, "icons/icon_arrow_down", bx + bw - 76, by + 130, 40, 40);
+    }
+    else if (st.app == APP_PHONE)
     {
         // The list: the page of six the game shows, the cursor on its row.
         const int n = (int)st.contacts.size();
@@ -377,11 +621,17 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
             cx = ox + (x + 0.5f) * cell;
             cy = oy + (y + 0.5f) * cell;
         };
+        // Flying, the towns one can fly to have orange rings (larger under the cursor).
+        auto canFly = [&](int map) {
+            for (const Place& p : st.fly)
+                if (p.map == map) return true;
+            return false;
+        };
         for (int pass = 0; pass < 3; pass++)
             for (const Place* p : shown)
             {
                 const std::string name = Party_PlaceName(p->map);
-                const bool town = IsTown(name);
+                const bool fly = st.mode == 1 && canFly(p->map), town = IsTown(name) || fly;
                 float cx, cy;
                 centre(p->x + (p->w - 1) / 2.0f, p->y + (p->h - 1) / 2.0f, cx, cy);
                 if (pass == 0 && !town)
@@ -392,8 +642,8 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
                 }
                 else if (pass == 1 && town)
                 {
-                    const float d = std::max(28.0f, cell * 0.9f);
-                    HudSprite(c, ui, sp, "people/chip_ring_grey", cx - d / 2, cy - d / 2, d, d);
+                    const float d = std::max(28.0f, cell * (p->map == st.flyHere ? 1.3f : 0.9f));
+                    HudSprite(c, ui, sp, fly ? "people/chip_ring_orange" : "people/chip_ring_grey", cx - d / 2, cy - d / 2, d, d);
                 }
                 else if (pass == 2 && town)
                     HudText(c, ui, f, cx, cy + std::max(28.0f, cell * 0.9f) / 2 + 2, 32, ShortPlace(name), Ink, 1);
@@ -432,7 +682,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     std::vector<std::string> about;
     if (st.app == APP_PHONE)
     {
-        const int id = st.contacts[st.first + st.row];
+        const int id = st.call.on ? st.call.caller : st.contacts[st.first + st.row];
         title = Name(tx, id);
         sub = book.Class(tx, id);
     }
@@ -442,7 +692,12 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         about = HudWrap(ui, f, 32, tx.Get(273, st.selText), sw - 80);
         if (about.size() > 4) about.resize(4);
     }
-    const float top = title.empty() ? 0 : 160 + (sub.empty() ? 0 : 40) + 44.0f * about.size() + (about.empty() ? 0 : 16);
+    // Flying: whether one can fly from here to the place under the cursor.
+    if (st.mode == 1) sub = st.flyHere >= 0 ? "You can fly here" : title.empty() ? "Choose where to fly" : "You can't fly here";
+    if (st.mode == 1 && title.empty()) title = "Fly";
+    // The game's menu (the contact's, sorting, in a call, flying there): its buttons below.
+    const float menuH = st.menu.items.empty() ? 0 : 76.0f * st.menu.items.size() + 8;
+    const float top = title.empty() ? 0 : 160 + (sub.empty() ? 0 : 40) + 44.0f * about.size() + (about.empty() ? 0 : 16) + menuH;
     HudPanel(c, ui, sp, "panels/card", sx, my, sw, top + 120 + 104.0f * (1 + peers.size()));
     float y = my + 24;
     if (!title.empty())
@@ -450,8 +705,16 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         HudOnline::TitledCard(c, ui, sp, f, sx + 24, y, sw - 48, 60, st.app == APP_PHONE ? "CONTACT" : "PLACE");
         HudText(c, ui, f, sx + 40, y + 84, 48, title, Ink, 0, true);
         float ty = y + 148;
-        if (!sub.empty()) HudText(c, ui, f, sx + 40, ty, 32, sub, Muted), ty += 40;
+        if (!sub.empty()) HudText(c, ui, f, sx + 40, ty, 32, sub, st.flyHere >= 0 ? Ink : Muted), ty += 40;
         for (const std::string& line : about) HudText(c, ui, f, sx + 40, ty, 32, line, Ink), ty += 44;
+        ty += 8;
+        for (size_t i = 0; i < st.menu.items.size(); i++, ty += 76)
+        {
+            const bool on = (int)i == st.menu.cursor;
+            HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", sx + 40, ty, sw - 80, 60);
+            if (on) HudSprite(c, ui, sp, "cursor/cursor_small", sx + 52, ty + 14, 30, 32);
+            HudText(c, ui, f, sx + sw / 2, ty + 14, 32, st.menu.items[i], Ink, 1);
+        }
         y += top;
     }
     HudOnline::TitledCard(c, ui, sp, f, sx + 24, y, sw - 48, 60, peers.empty() ? "YOU" : "SESSION");

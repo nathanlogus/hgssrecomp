@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- New screens: phone calls in the Pokégear are drawn anew (who is calling, the ringing,
+  what they say line by line and the hang-up), as are the phone's Call, Sort and Quit
+  menu and the questions asked during a call. Choosing where to fly is drawn anew too:
+  the region's map with the towns you can fly to ringed, and the "Fly" question beside it.
+
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a
