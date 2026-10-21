@@ -508,8 +508,9 @@ inline void DrawAlph(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, con
     for (int y = 0; y < 192; y++)
         for (int x = 0; x < 192; x++)
         {
-            // (The corner of the Quit button reaching into the board's corner: the frame's edge there instead.)
-            const int sx = y >= 169 && x >= 177 ? 176 : x;
+            // (The Quit button reaches into the board's lower right corner, where no piece can
+            // go: the lower left corner instead, mirrored.)
+            const int sx = y >= 160 && x >= 160 ? 191 - x : x;
             board.px[y * 192 + x] = 0xFF000000 | bottom[y * 256 + 32 + sx];
         }
     const float bs = 864, bx = x0 + 140, by = 56, cell = bs / 6;

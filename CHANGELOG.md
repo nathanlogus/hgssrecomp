@@ -10,6 +10,9 @@
   cursor over the board, A picks a piece up and puts it down, X turns it and B quits (or
   puts a carried piece back). With the new screens the puzzle is shown framed with how many
   pieces are in place; without them a cursor shows over the game's own picture.
+- New screens: a Pokémon's pages in the Pokédex are drawn anew. Area shows the region's
+  map with the places it lives at that time of day marked, beside the list of them; Size
+  puts it next to you, height and weight; Forms lists the forms you have seen.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
@@ -25,6 +28,11 @@
   and the clerk's answers, and your money. Selling opens the bag in the same style, with
   what the shop pays, how many to sell and your money. The Pokéathlon Dome's shops and
   the clerk's questions before and after are still the game's own.
+- New screens, battles: the HP boxes, the message box and the stats after a level up are
+  drawn in the new style too (widescreen view). The HP and EXP bars run down and fill as
+  the game's do, the boxes slide in and out with the game's, and the messages appear
+  letter by letter in the menus' font. The bag in battles is drawn anew as well: its
+  pockets, their items and the item you pick with its description and Use.
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a
