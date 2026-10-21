@@ -3715,7 +3715,7 @@ int main(int argc, char** argv)
                 {
                     const int dir = tz < z ? 0 : tz > z ? 1 : tx < x ? 2 : 3;
                     // currentFacing: 0 up, 1 down, 2 left, 3 right, as the directions here.
-                    if ((int)readRam(me + 0x28) != dir) { if (frame % 8 == 0) keys |= 1 << talkKeys[dir]; }
+                    if ((int)readRam(me + 0x28) != dir) { if (frame % 8 < 2) keys |= 1 << talkKeys[dir]; } // two frames: the field reads every other one
                     else
                     {
                         keys |= 1 << KEY_A;
