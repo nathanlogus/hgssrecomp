@@ -7,10 +7,13 @@
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a
   Pokémon Center's basement lets you into the Plaza's room, where the players of your
   party see each other, can chat with emotes and invite each other to battle or trade as
-  anywhere else. Walk back down the entrance corridor to leave. The Plaza's games, Tap
-  Toys and parade are not there yet. The room moves as in the real Plaza: waving flags,
-  the scrolling news screen, the turning globe and sign, the warp pad and the minigame
-  domes. It is drawn in every screen layout, with widescreen on or off.
+  anywhere else. The whole room is open to walk in, the Plaza's own music plays, and the
+  receptionist no longer talks about Nintendo Wi-Fi Connection. Walk back down the
+  entrance corridor to leave. As in the original game, the menu can't be opened in the
+  Plaza, so you can't save there (the receptionist saves on the way in). The room moves
+  as in the real Plaza: waving flags, the scrolling news screen, the turning globe and
+  sign, the warp pad and the minigame domes. It is drawn in every screen layout, with
+  widescreen on or off. The Plaza's games, Tap Toys and parade are not there yet.
 - The project is now called **Johto Online**. The game is `johto-online` (`johto-online.exe`
   on Windows), the downloads are `johto-online-setup-*`, the Android app is
   `JohtoOnline.apk`, and settings are kept in `johto-online.cfg`. Your save, settings and
