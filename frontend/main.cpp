@@ -63,6 +63,7 @@
 #include "hudpcbox.h"
 #include "hudworld.h"
 #include "hudshop.h"
+#include "hudfrontier.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #define DR_MP3_IMPLEMENTATION
@@ -3161,7 +3162,7 @@ int main(int argc, char** argv)
         add(T_DISPLAY, M_TEXTFONT, "Text", textFamily() ? textFamily()->name : "Game font",
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
-        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, what people say, phone calls, the fly map and the Options.");
+        add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, what people say, phone calls, the fly map and the Options.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
         add(T_DISPLAY, M_WIDELINES, "World detail", std::to_string(detailLines[detailIndex()]), "How many lines the widescreen world is drawn with. Lower is faster.");
         add(T_DISPLAY, M_SHOWFPS, "FPS counter", onOff(cfg.showFps), "Shows how many frames a second are drawn, in the top right corner.");
@@ -6028,6 +6029,22 @@ int main(int argc, char** argv)
                 else if (ss.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "No" } };
                 else if (ss.step >= 10 && ss.step <= 15) hints = { { { a }, "Next" } };
                 HudShop::Draw(canvas, ui, sprites, font, romArt, bagTexts, ss, hints);
+                overlayUsed = true;
+            }
+        }
+        // The Battle Factory's rental screen redrawn (hudfrontier.h), while its overlay runs.
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && sectionActive("OVY_81"))
+        {
+            static uint32_t factoryAt = 0;
+            HudFrontier::Factory fv;
+            if (HudFrontier::ReadFactory({ nds->MainRAM, nds->MainRAMMask + 1 }, factoryAt, fv))
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" } };
+                if (fv.menu || fv.step == 4) hints.push_back({ { b }, "Back" });
+                else if (fv.numChosen) hints.push_back({ { b }, "Undo" });
+                HudFrontier::DrawFactory(canvas, ui, sprites, font, fv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
                 overlayUsed = true;
             }
         }
