@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 ROM=../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds
 mkdir -p test/runs
 OUT="$(mktemp -d test/runs/XXXXXX)"
-./build/ssrecomp "$ROM" --headless --no-save --state-load "$1" --input "$2" --frames "$3" \
+./build/johto-online "$ROM" --headless --no-save --state-load "$1" --input "$2" --frames "$3" \
     ${NOMASH:---battle-mash} --nav-map test/navmap.bin --nav "$4" --pos-every "$5" \
     --shot-dir "$OUT" --shot-every "$5" --compose 640x360 "${@:6}" 2>&1 | grep -v "^\[recomp\]"
 python3 - "$OUT" <<'PY'

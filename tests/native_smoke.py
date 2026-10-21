@@ -69,9 +69,9 @@ def main():
          '-DSSR_PORTABLE_X86=ON'])
     run(['cmake', '--build', build / 'native', '--parallel', '2'])
     # --help returns before a ROM is loaded: exercises the linked frontend entry point.
-    result = subprocess.run([str(build / 'native' / ('ssrecomp.exe' if os.name == 'nt' else 'ssrecomp')),
+    result = subprocess.run([str(build / 'native' / ('johto-online.exe' if os.name == 'nt' else 'johto-online')),
                              '--help'], capture_output=True, text=True)
-    assert result.returncode == 2 and 'usage: ssrecomp' in result.stderr, result
+    assert result.returncode == 2 and 'usage: johto-online' in result.stderr, result
     print('Native generator/link/frontend smoke test passed.', flush=True)
 
 

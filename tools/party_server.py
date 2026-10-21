@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Relay server for ssrecomp parties (frontend/party.cpp).
+"""Relay server for Johto Online parties (frontend/party.cpp).
 
 Up to four games join a party. The games' wireless layer is taken over by the frontend,
 so what passes through here are its messages: parents announcing themselves (beacons,

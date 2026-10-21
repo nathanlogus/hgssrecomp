@@ -2,18 +2,18 @@
 # Like mshots.sh, but through the real window path: the game runs fullscreen inside a
 # headless gamescope and the screenshots are read back from the renderer.
 # usage: wshots.sh <snapshot or -> <script> <last frame> <shot frames> [extra args]
-# Environment: SIZE=2560x1440 (default), CFG=<settings file> (default: a copy of ssrecomp.cfg).
+# Environment: SIZE=2560x1440 (default), CFG=<settings file> (default: a copy of johto-online.cfg).
 cd "$(dirname "$0")/.."
 ROM=../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds
 SIZE=${SIZE:-2560x1440}
 W=${SIZE%x*}; H=${SIZE#*x}
 mkdir -p test/runs
 OUT="$(mktemp -d test/runs/XXXXXX)"
-if [ -z "$CFG" ]; then CFG="$OUT/test.cfg"; cp ssrecomp.cfg "$CFG" 2>/dev/null; fi
+if [ -z "$CFG" ]; then CFG="$OUT/test.cfg"; cp johto-online.cfg "$CFG" 2>/dev/null; fi
 STATE=()
 [ "$1" != "-" ] && STATE=(--state-load "$1")
 SSR_PERF=1 SSR_NO_PAD=1 timeout 300 gamescope --backend headless -W $W -H $H -w $W -h $H -r 144 -- \
-    ./build/ssrecomp "$ROM" --no-save --config "$CFG" --fullscreen "${STATE[@]}" --input "$2" --frames "$3" \
+    ./build/johto-online "$ROM" --no-save --config "$CFG" --fullscreen "${STATE[@]}" --input "$2" --frames "$3" \
     --shot-dir "$OUT" --shot-at "$4" "${@:5}" > "$OUT/log.txt" 2>&1
 grep "^\[perf\] input" "$OUT/log.txt" | tail -1
 python3 - "$OUT" <<'PY'

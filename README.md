@@ -1,4 +1,6 @@
-# ssrecomp
+# Johto Online
+
+Johto Online is built on [ssrecomp](https://github.com/ClickingMaster/ssrecomp).
 
 A native build of Pokémon SoulSilver for single-screen devices. The game's ARM9
 code is statically recompiled to C++ from the `pokeheartgold` decompilation's
@@ -41,10 +43,10 @@ your cartridge. Nothing of the game is in this repository or its releases.
 
 1. Download the setup program for your system from the
    [latest release](../../releases/latest):
-   - Linux PC: `ssrecomp-setup-linux-x86_64`
+   - Linux PC: `johto-online-setup-linux-x86_64`
    - Linux on ARM (Raspberry Pi 4/5 with a 64-bit OS, other arm64 boards and
-     laptops): `ssrecomp-setup-linux-aarch64.AppImage`
-   - Windows: `ssrecomp-setup-windows-x86_64.exe`
+     laptops): `johto-online-setup-linux-aarch64.AppImage`
+   - Windows: `johto-online-setup-windows-x86_64.exe`
 
    On Linux, make it executable (`chmod +x <file>`, or the file's properties).
 2. Start it.
@@ -60,11 +62,11 @@ repository:
 
     xcode-select --install
     python3 -m pip install "cmake>=3.21,<4" ninja
-    python3 ssrecomp_setup.py
+    python3 johto_online_setup.py
 
 Choose your ROM, press **Build**, then **Play**. Without the setup window:
 
-    python3 ssrecomp_setup.py --rom "/path/to/your SoulSilver.nds"
+    python3 johto_online_setup.py --rom "/path/to/your SoulSilver.nds"
     ./run.sh --fullscreen
 
 Setup downloads and builds SDL2 and libpng automatically; Homebrew libraries
@@ -73,7 +75,7 @@ when setup is run again; add `--jobs N` to choose the number of compile jobs.
 Use native arm64 Python on Apple Silicon or x86_64 Python on Intel.
 
 The Mac setup download, when available, is a `.zip` containing
-`ssrecomp-setup.app`; unpack it and open the app. Python/Tk is included, but
+`johto-online-setup.app`; unpack it and open the app. Python/Tk is included, but
 Command Line Tools, CMake and Ninja are still required. Development builds are
 ad-hoc signed and may need approval in **System Settings → Privacy & Security**.
 
@@ -92,7 +94,7 @@ ROM, and installed on the phone or handheld (64-bit ARM, Android 7.0 or later):
    needs only CMake and Ninja on the PC (see below); the first time it downloads
    Google's Android NDK (about 650 MB on Linux, 750 MB on Windows) and SDL2.
    The build takes about as long as the PC one.
-2. Copy `SoulSilver-ssrecomp.apk` (in the setup program's folder) to the
+2. Copy `JohtoOnline.apk` (in the setup program's folder) to the
    device, open it there and allow installing it when asked.
 
 The APK contains your copy of the game: never share it. It is signed with a key
@@ -119,20 +121,20 @@ Android** again and install the new APK over the old one.
 
 The setup program carries this project's source and unpacks it into a folder of
 its own (`~/.local/share/ssrecomp` on Linux, `%LOCALAPPDATA%\ssrecomp` on
-Windows, `~/Library/Application Support/ssrecomp` on macOS), where the game is
-built and its save is kept. It contains nothing of the game. Instead of the download you can also run `python3 ssrecomp_setup.py`
+Windows, `~/Library/Application Support/Johto Online` on macOS), where the game is
+built and its save is kept. It contains nothing of the game. Instead of the download you can also run `python3 johto_online_setup.py`
 from a copy of this repository (then the game is built in that folder).
 
 **Updating:** the setup window shows its version and whether a newer release is
 out; **Update** downloads it, checks its checksum, replaces the setup program and
 restarts it. Press **Build** once afterwards to rebuild the game with the new
 version (your save and settings are kept). Without a display:
-`ssrecomp-setup-linux-x86_64 --update`, then `--rom` again.
+`johto-online-setup-linux-x86_64 --update`, then `--rom` again.
 
 **Portable mode:** put an empty file named `portable.txt` next to the setup
 program (the `.exe`, or the AppImage on Linux). Everything — the unpacked
 source, the build, the save and the settings — then goes into a folder
-`ssrecomp-data` beside it instead, so the whole thing can live on a USB stick or
+`johto-online-data` beside it instead, so the whole thing can live on a USB stick or
 another drive and move between PCs. Keep the ROM in that folder too (or on the
 same drive), so it is still found when the drive letter changes. After moving to
 another PC, Play works straight away; Build (only needed for updates) compiles
@@ -140,7 +142,7 @@ everything again, since the build remembers where it was made.
 
 The window checks that the ROM is the right game and tells you if something
 needed for compiling is missing, with the command to install it (with
-`python3 ssrecomp_setup.py` instead of the download, add Python's Tk support:
+`python3 johto_online_setup.py` instead of the download, add Python's Tk support:
 `python3-tk`, `python3-tkinter` or `tk`):
 
 - **Linux (Ubuntu, Debian, Mint):** `sudo apt install cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev`
@@ -148,9 +150,9 @@ needed for compiling is missing, with the command to install it (with
 - **Arch:** `sudo pacman -S --needed cmake ninja gcc pkgconf sdl2 libpng zlib`
 - **Immutable Linux (Bazzite, Silverblue, SteamOS):** run it in a container:
 
-      distrobox create -n ssrecomp -i ubuntu:24.04
-      distrobox enter ssrecomp -- sudo apt install -y cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev
-      distrobox enter ssrecomp -- ./ssrecomp-setup-linux-x86_64
+      distrobox create -n johto-online -i ubuntu:24.04
+      distrobox enter johto-online -- sudo apt install -y cmake ninja-build g++ pkg-config libsdl2-dev libpng-dev zlib1g-dev
+      distrobox enter johto-online -- ./johto-online-setup-linux-x86_64
 
   The finished game also runs outside the container (`./run.sh`).
 - **Windows (untested so far):** install [MSYS2](https://www.msys2.org) in its
@@ -159,17 +161,17 @@ needed for compiling is missing, with the command to install it (with
 
       pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-libpng mingw-w64-ucrt-x86_64-zlib
 
-  The setup program finds them there by itself. (To run `ssrecomp_setup.py`
+  The setup program finds them there by itself. (To run `johto_online_setup.py`
   instead of the download, also install `mingw-w64-ucrt-x86_64-python` and
   `mingw-w64-ucrt-x86_64-tk` and start it from that window.)
 
-Without a display: `ssrecomp-setup-linux-x86_64 --rom your-rom.nds` (or
-`python3 ssrecomp_setup.py --rom ...`) does the same in the terminal; add
+Without a display: `johto-online-setup-linux-x86_64 --rom your-rom.nds` (or
+`python3 johto_online_setup.py --rom ...`) does the same in the terminal; add
 `--android` for the Android build on Linux or Windows.
 
 Making the setup programs: `pip install "pyinstaller>=6" certifi pillow && python tools/package_setup.py`
 on the system they are for; `tools/make_appimage.sh` wraps the Linux one into an
-AppImage. On macOS it creates `dist/ssrecomp-setup.app` with Python/Tk included.
+AppImage. On macOS it creates `dist/johto-online-setup.app` with Python/Tk included.
 `.github/workflows/release.yml` packages Linux, Windows and separate Mac architectures
 when started by hand from the Actions tab. Mac bundles are checked for dependency
 paths and minimum OS versions before archiving. Set `SSRECOMP_CODESIGN_IDENTITY`
@@ -199,7 +201,7 @@ with `./setup.sh` (see "Building").
 First build it: see "Building" below. `run.sh` expects the ROM at
 `../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds`, i.e. the
 decompilation checked out next to this repository and built. The save file is `soulsilver.sav` next to the script; settings
-are remembered in `ssrecomp.cfg`.
+are remembered in `johto-online.cfg`.
 
 Everything can be done from a controller:
 
@@ -375,7 +377,7 @@ The older layouts are still in the pause menu: `hybrid`, `side`, `vertical`,
 
 In the merged view on a wide display the overworld fills the whole picture
 instead of a 4:3 box, and is drawn at high resolution ("WIDESCREEN WORLD" and
-"WORLD DETAIL" in the pause menu; `wide` and `wide_lines` in `ssrecomp.cfg`).
+"WORLD DETAIL" in the pause menu; `wide` and `wide_lines` in `johto-online.cfg`).
 "WORLD ZOOM" (`zoom`, in percent) pulls the camera back to show more of the world, or
 draws it larger: the 3D picture is projected with the zoom applied, so a close-up is
 as sharp as the normal view; the 2D parts (text boxes) keep their size.
@@ -538,12 +540,12 @@ v0.3.0. The ARM9 game code is now about 60% of the main thread's time; most of
 the rest is the ARM7, the sound and melonDS's bookkeeping.
 
 `SSR_SAMPLE=<file>` records about 1000 call stacks a second from whichever
-thread is running (`frontend/sampler.h`); `tools/samples.py build/ssrecomp
+thread is running (`frontend/sampler.h`); `tools/samples.py build/johto-online
 <file>` lists where the time went. To measure the real window path without
 putting a window on the desktop, run the game inside a headless compositor:
 
     SSR_PERF=1 gamescope --backend headless -W 2560 -H 1440 -w 2560 -h 1440 -- \
-        build/ssrecomp <rom> --fullscreen --no-save --state-load <snapshot> --frames <n>
+        build/johto-online <rom> --fullscreen --no-save --state-load <snapshot> --frames <n>
 
 In a window, `--shot-dir` with `--shot-at`/`--shot-every` also writes
 `window_<frame>.png`, read back from the renderer: exactly what is shown.
@@ -624,15 +626,15 @@ by hand or something goes wrong.
    This takes 20–30 minutes on a 6-core CPU: `gen/` holds 1.69 million
    recompiled instructions. Ninja runs one job per CPU thread by default; with
    less than about 1.5 GB of RAM per thread, limit it (`ninja -C build -j8` for
-   16 GB). The result is `build/ssrecomp`.
+   16 GB). The result is `build/johto-online`.
 
 5. **Run:**
 
        ./run.sh --fullscreen
 
-   `run.sh` starts `build/ssrecomp` with the ROM from step 2 and keeps the save
+   `run.sh` starts `build/johto-online` with the ROM from step 2 and keeps the save
    in `soulsilver.sav` next to the script. The ROM built in step 2 is identical
-   to the cartridge, so `build/ssrecomp <your own dump>.nds --save my.sav` works
+   to the cartridge, so `build/johto-online <your own dump>.nds --save my.sav` works
    too, as long as it is the same US SoulSilver ROM.
 
 ### Later
@@ -670,7 +672,7 @@ The save states and input scripts used during development are not part of this
 repository (save states contain game memory), so the examples below need ones
 of your own: `--state-save` writes one.
 
-    build/ssrecomp <rom> --lockstep --frames 9000 --input test/play2.txt
+    build/johto-online <rom> --lockstep --frames 9000 --input test/play2.txt
 
 `--lockstep` runs an interpreter-only console and the recompiled one side by
 side and compares registers, flags, cycle counts and timestamps after every

@@ -8,7 +8,7 @@ mkdir -p test/runs
 OUT="$(mktemp -d test/runs/XXXXXX)"
 STATE=()
 [ "$1" != "-" ] && STATE=(--state-load "$1")
-./build/ssrecomp "$ROM" --headless --no-save "${STATE[@]}" --input "$2" --frames "$3" \
+./build/johto-online "$ROM" --headless --no-save "${STATE[@]}" --input "$2" --frames "$3" \
     --shot-dir "$OUT" --shot-at "$4" --compose 640x360 "${@:5}" 2>&1 | grep -v "^\[recomp\]"
 python3 - "$OUT" <<'PY'
 import glob, sys

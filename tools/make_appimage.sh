@@ -1,7 +1,7 @@
 #!/bin/bash
 # Wraps the setup executable from tools/package_setup.py into an AppImage.
 #
-#   tools/make_appimage.sh <ssrecomp-setup binary> <arch: x86_64|aarch64> <output.AppImage>
+#   tools/make_appimage.sh <johto-online-setup binary> <arch: x86_64|aarch64> <output.AppImage>
 #
 # Needs appimagetool (APPIMAGETOOL=path, default: on PATH) and, when building for
 # another architecture, that architecture's AppImage runtime (RUNTIME=path, from
@@ -12,25 +12,25 @@ BIN="$1"
 ARCH="$2"
 OUT="$3"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APPDIR="$(mktemp -d)/ssrecomp-setup.AppDir"
+APPDIR="$(mktemp -d)/johto-online-setup.AppDir"
 
 mkdir -p "$APPDIR/usr/bin"
-install -m755 "$BIN" "$APPDIR/usr/bin/ssrecomp-setup"
-cp "$HERE/appimage/ssrecomp-setup.png" "$APPDIR/ssrecomp-setup.png"
-cp "$HERE/appimage/ssrecomp-setup.png" "$APPDIR/.DirIcon"
-cat > "$APPDIR/ssrecomp-setup.desktop" <<EOF
+install -m755 "$BIN" "$APPDIR/usr/bin/johto-online-setup"
+cp "$HERE/appimage/johto-online-setup.png" "$APPDIR/johto-online-setup.png"
+cp "$HERE/appimage/johto-online-setup.png" "$APPDIR/.DirIcon"
+cat > "$APPDIR/johto-online-setup.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=ssrecomp setup
+Name=Johto Online setup
 Comment=Builds the SoulSilver recompilation from your own ROM
-Exec=ssrecomp-setup
-Icon=ssrecomp-setup
+Exec=johto-online-setup
+Icon=johto-online-setup
 Terminal=false
 Categories=Game;
 EOF
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
-exec "$(dirname "$(readlink -f "$0")")/usr/bin/ssrecomp-setup" "$@"
+exec "$(dirname "$(readlink -f "$0")")/usr/bin/johto-online-setup" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 

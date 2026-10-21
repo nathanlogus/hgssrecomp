@@ -1,6 +1,6 @@
 # ui-sprites
 
-These are the UI sprites for the ssrecomp online-mode HUD, drawn in the flat, bright style of Pokémon: Let's Go. Each sprite is its own file, so you can edit them one at a time.
+These are the UI sprites for the Johto Online HUD, drawn in the flat, bright style of Pokémon: Let's Go. Each sprite is its own file, so you can edit them one at a time.
 
 ## Layout
 

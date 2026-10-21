@@ -4,7 +4,7 @@
 # The return waypoints must end on the tile below the nurse. Logs go to test/grind.log.
 cd "$(dirname "$0")/.."
 IN="$1"; OUT="$2"; N="$3"
-F=$(./build/ssrecomp ../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds --headless --no-save \
+F=$(./build/johto-online ../pokeheartgold/build/soulsilver.us/pokesoulsilver.us.nds --headless --no-save \
     --state-load "$IN" --frames 2 --pos-every 1 2>&1 | grep -m1 "^pos" | awk '{print $2}')
 : > test/grind.log
 for i in $(seq "$N"); do

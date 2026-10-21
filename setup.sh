@@ -12,7 +12,7 @@
 set -euo pipefail
 
 if [ "$(uname -s)" = Darwin ]; then
-    echo 'On macOS use: python3 ssrecomp_setup.py --rom /path/to/your-rom.nds' >&2
+    echo 'On macOS use: python3 johto_online_setup.py --rom /path/to/your-rom.nds' >&2
     echo 'See README.md for Xcode Command Line Tools and Homebrew prerequisites.' >&2
     exit 1
 fi
@@ -60,8 +60,8 @@ if [ ${#missing[@]} -gt 0 ]; then
     if [ -e /run/ostree-booted ]; then
         die "This looks like an immutable system (Bazzite, Silverblue, SteamOS...). Install the
 packages inside a container instead and run this script there, e.g.:
-    distrobox create -n ssrecomp -i ubuntu:24.04
-    distrobox enter ssrecomp -- ./setup.sh --deps
+    distrobox create -n johto-online -i ubuntu:24.04
+    distrobox enter johto-online -- ./setup.sh --deps
 The finished program also runs outside the container."
     fi
     if command -v apt-get >/dev/null; then
@@ -138,21 +138,21 @@ say "Compiling with $JOBS jobs (the first time takes 20-40 minutes)"
 ninja -C build -j"$JOBS"
 
 # run.sh finds the ROM through this file.
-printf '%s\n' "${DUMP:-$ROM}" > ssrecomp.rom
+printf '%s\n' "${DUMP:-$ROM}" > johto-online.rom
 
 # ---------------------------------------------------------------------------
 if [ $DESKTOP -eq 1 ]; then
     mkdir -p "$HOME/.local/share/applications"
-    cat > "$HOME/.local/share/applications/ssrecomp.desktop" <<EOF
+    cat > "$HOME/.local/share/applications/johto-online.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=SoulSilver (ssrecomp)
+Name=Johto Online
 Exec="$HERE/run.sh" --fullscreen
 Path=$HERE
 Terminal=false
 Categories=Game;
 EOF
-    echo "Added a menu entry: SoulSilver (ssrecomp)"
+    echo "Added a menu entry: Johto Online"
 fi
 
 say "Done"

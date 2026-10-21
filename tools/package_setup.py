@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Packages ssrecomp_setup.py and the project's source into one executable with
-PyInstaller (dist/ssrecomp-setup, or dist/ssrecomp-setup.exe on Windows). It holds no
+"""Packages johto_online_setup.py and the project's source into one executable with
+PyInstaller (dist/johto-online-setup, or dist/johto-online-setup.exe on Windows). It holds no
 game code: the game is still recompiled from the player's own ROM and compiled on
 their machine. Run it on the system the executable is for.
 
-macOS produces dist/ssrecomp-setup.app (Python/Tk included; local build tools required).
+macOS produces dist/johto-online-setup.app (Python/Tk included; local build tools required).
 
 usage: pip install "pyinstaller>=6" certifi pillow && python tools/package_setup.py
 """
@@ -27,7 +27,7 @@ SKIP_DIRS = {'.git', '.github', '__pycache__', 'build', 'gen', '.DS_Store'}
 def skip_payload(_directory, names):
     return [n for n in names if n in SKIP_DIRS or n.startswith(('build-', 'gen.new'))
             or n.endswith(('.nds', '.sav', '.state', '.nef', '.sbin', '.pyc'))
-            or n in {'ssrecomp.rom', 'ssrecomp.cfg', 'game.log', 'build.log'}]
+            or n in {'johto-online.rom', 'johto-online.cfg', 'game.log', 'build.log'}]
 
 
 with tempfile.TemporaryDirectory(prefix='ssrecomp-package-') as stage:
@@ -60,8 +60,8 @@ with tempfile.TemporaryDirectory(prefix='ssrecomp-package-') as stage:
                                  '--distpath', os.path.join(ROOT, 'dist'), '--workpath', os.path.join(stage, 'work')])
     else:
         PyInstaller.__main__.run([
-            os.path.join(ROOT, 'ssrecomp_setup.py'),
-            '--onefile', '--name', 'ssrecomp-setup', '--noconfirm',
+            os.path.join(ROOT, 'johto_online_setup.py'),
+            '--onefile', '--name', 'johto-online-setup', '--noconfirm',
             '--distpath', os.path.join(ROOT, 'dist'), '--workpath', os.path.join(stage, 'work'), '--specpath', stage,
             '--add-data', f'{project}{sep}project',
             '--add-data', f'{os.path.join(stage, "bundle.id")}{sep}.',

@@ -28,7 +28,7 @@ jobs:
       - run: python tests/native_smoke.py --build-dir '${{ runner.temp }}/ssrecomp smoke'
       - name: Check Mac minimum OS and library dependencies
         if: runner.os == 'macOS'
-        run: python tools/macos/check_binary.py '${{ runner.temp }}/ssrecomp smoke/native/ssrecomp' --max-macos 11.0 --system-libraries-only
+        run: python tools/macos/check_binary.py '${{ runner.temp }}/ssrecomp smoke/native/johto-online' --max-macos 11.0 --system-libraries-only
   windows:
     runs-on: windows-latest
     defaults:

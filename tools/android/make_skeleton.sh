@@ -16,7 +16,7 @@ W="$(mktemp -d)"
 # The icon, at the launcher's sizes.
 for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
     mkdir -p "$W/res/mipmap-${d%%:*}"
-    python3 - "$HERE/../appimage/ssrecomp-setup.png" "$W/res/mipmap-${d%%:*}/ic_launcher.png" "${d##*:}" <<'PY'
+    python3 - "$HERE/../appimage/johto-online-setup.png" "$W/res/mipmap-${d%%:*}/ic_launcher.png" "${d##*:}" <<'PY'
 import sys
 from PIL import Image
 Image.open(sys.argv[1]).convert('RGBA').resize((int(sys.argv[3]),) * 2, Image.LANCZOS).save(sys.argv[2], optimize=True)

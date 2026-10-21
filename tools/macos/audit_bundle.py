@@ -10,7 +10,7 @@ from check_binary import check_binary
 
 def audit(bundle):
     info = plistlib.loads((bundle / 'Contents/Info.plist').read_bytes())
-    assert info['CFBundleIdentifier'] == 'io.github.ssrecomp.setup'
+    assert info['CFBundleIdentifier'] == 'io.github.johtoonline.setup'
     assert info['NSHighResolutionCapable']
     minimum = info['LSMinimumSystemVersion']
     source_dirs = list(bundle.rglob('project'))
@@ -21,7 +21,7 @@ def audit(bundle):
         if path.is_symlink() or not path.is_file():
             continue
         assert path.suffix not in {'.nds', '.sav', '.state', '.nef', '.sbin'}, path
-        assert path.name not in {'.DS_Store', 'ssrecomp.rom', 'ssrecomp.cfg'}, path
+        assert path.name not in {'.DS_Store', 'johto-online.rom', 'johto-online.cfg'}, path
         assert not path.name.startswith('rc_image_'), path
         with path.open('rb') as f:
             magic = f.read(4)

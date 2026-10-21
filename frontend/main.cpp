@@ -1,4 +1,4 @@
-// ssrecomp frontend: boots the game on the melonDS core with an SDL2 window,
+// Johto Online (ssrecomp) frontend: boots the game on the melonDS core with an SDL2 window,
 // or headless with scripted input, screenshots and state hashes for testing.
 #include <algorithm>
 #include <cmath>
@@ -147,7 +147,7 @@ static void Start()
     std::thread([vm, current]() {
         JNIEnv* env = nullptr;
         if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
-        const std::string body = Get(env, "https://api.github.com/repos/ClickingMaster/ssrecomp/releases/latest");
+        const std::string body = Get(env, "https://api.github.com/repos/nathanlogus/hgssrecomp/releases/latest");
         vm->DetachCurrentThread();
         // "tag_name": "v1.2.3"
         std::string latest;
@@ -465,11 +465,11 @@ struct Options
 static void Usage()
 {
     fprintf(stderr,
-        "usage: ssrecomp <rom.nds> [options]\n"
+        "usage: johto-online <rom.nds> [options]\n"
         "  --save <file>        save file (default: <rom>.sav)\n"
         "  --no-save            never write the save file\n"
         "  --layout <name>      merged | hybrid | side | vertical | top | bottom (default merged)\n"
-        "  --config <file>      settings file (default: ssrecomp.cfg beside the save)\n"
+        "  --config <file>      settings file (default: johto-online.cfg beside the save)\n"
         "  --scale <n>          window scale (default 3)\n"
         "  --fullscreen         start in fullscreen (F11 toggles)\n"
         "  --headless           no window or audio; run as fast as possible\n"
@@ -1271,7 +1271,7 @@ int main(int argc, char** argv)
         argv = androidArgv.data();
     }
 #else
-    // Double-clicked (ssrecomp.exe in build/): play like the setup program's Play button,
+    // Double-clicked (johto-online.exe in build/): play like the setup program's Play button,
     // with the ROM it recorded, or else the first .nds in the folder above build/.
     std::vector<std::string> clickArgs;
     std::vector<char*> clickArgv;
@@ -1282,7 +1282,7 @@ int main(int argc, char** argv)
         fs::path here = base ? fs::u8path(base).parent_path().parent_path() : fs::current_path();
         SDL_free(base);
         std::string rom, save;
-        std::ifstream note(here / "ssrecomp.rom");
+        std::ifstream note(here / (fs::exists(here / "johto-online.rom") ? "johto-online.rom" : "ssrecomp.rom"));
         if (std::getline(note, rom) && !rom.empty())
         {
             // The setup program writes it relative to its folder in portable mode.
@@ -1401,7 +1401,14 @@ int main(int argc, char** argv)
     // Headless runs use the default settings unless a settings file is named (tests of
     // the zoom or the void fill name one).
     const bool configGiven = !opt.config.empty();
-    if (opt.config.empty()) opt.config = dir + "/ssrecomp.cfg";
+    if (opt.config.empty())
+    {
+        opt.config = dir + "/johto-online.cfg";
+        // Settings from before the rename (ssrecomp.cfg) are moved over once.
+        std::error_code ec;
+        if (!std::filesystem::exists(std::filesystem::u8path(opt.config), ec))
+            std::filesystem::rename(std::filesystem::u8path(dir + "/ssrecomp.cfg"), std::filesystem::u8path(opt.config), ec);
+    }
     const std::string quickState = opt.save + ".state";
 
     Settings cfg;
@@ -1504,7 +1511,7 @@ int main(int argc, char** argv)
         if (layout.mode == LayoutMode::Merged) ratio = cfg.aspect ? AspectRatios[cfg.aspect].ratio : 16 / 9.0f;
         const int winH = cfg.windowH > 0 ? cfg.windowH : h * opt.scale;
         const int winW = (int)(winH * ratio + 0.5f);
-        window = SDL_CreateWindow("Pokemon SoulSilver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        window = SDL_CreateWindow("Johto Online", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             winW, winH,
             SDL_WINDOW_RESIZABLE |
 #ifdef __APPLE__

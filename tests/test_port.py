@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tools'))
 import recomp
-import ssrecomp_setup as setup
+import johto_online_setup as setup
 
 
 class DarwinSetupTests(unittest.TestCase):
@@ -80,7 +80,7 @@ class DarwinSetupTests(unittest.TestCase):
 
     def test_portable_launch_resolves_rom_and_replaces_log(self):
         with tempfile.TemporaryDirectory(prefix='ssrecomp portable ') as tmp:
-            note = Path(tmp) / 'ssrecomp.rom'
+            note = Path(tmp) / 'johto-online.rom'
             note.write_text('roms/game.nds\n')
             log = Path(tmp) / 'game.log'
             log.write_text('old launch\n')
@@ -101,14 +101,14 @@ class DarwinSetupTests(unittest.TestCase):
             (payload / 'project/runtime/version.txt').write_text('new source')
             (payload / 'bundle.id').write_text('new version')
             data.mkdir()
-            for name in ('soulsilver.sav', 'ssrecomp.cfg', 'ssrecomp.rom'):
+            for name in ('soulsilver.sav', 'johto-online.cfg', 'johto-online.rom'):
                 (data / name).write_text('keep me')
             with patch.object(setup, 'FROZEN', True), patch.object(setup, 'HERE', str(data)), \
                  patch.object(sys, '_MEIPASS', str(payload), create=True):
                 setup.unpack()
                 setup.unpack()
             self.assertEqual((data / 'runtime/version.txt').read_text(), 'new source')
-            for name in ('soulsilver.sav', 'ssrecomp.cfg', 'ssrecomp.rom'):
+            for name in ('soulsilver.sav', 'johto-online.cfg', 'johto-online.rom'):
                 self.assertEqual((data / name).read_text(), 'keep me')
 
 

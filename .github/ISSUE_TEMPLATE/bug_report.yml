@@ -85,7 +85,7 @@ body:
       label: Log
       description: |
         Paste the whole file. Where to find it:
-        - **Setup program (Windows/Linux):** press **Open logs folder** in the setup window. `game.log` is from the last time the game was started, `build.log` from the last build. (They are in `%LOCALAPPDATA%\ssrecomp` on Windows, `~/.local/share/ssrecomp` on Linux, or `ssrecomp-data` beside the setup program in portable mode.)
+        - **Setup program (Windows/Linux):** press **Open logs folder** in the setup window. `game.log` is from the last time the game was started, `build.log` from the last build. (They are in `%LOCALAPPDATA%\ssrecomp` on Windows, `~/.local/share/ssrecomp` on Linux, or `johto-online-data` beside the setup program in portable mode.)
         - **From a terminal (`./run.sh`):** copy what the terminal printed.
         - **Android:** `log.txt` in `Android/data/io.github.clickingmaster.ssrecomp/files` (with a file manager, or from a PC over USB).
         On v0.2.6 and older the setup program doesn't save `game.log`: start the game from a terminal instead (Windows: run the game's `ssrecomp.exe` from the `build` folder in a Command Prompt) and copy what it prints.

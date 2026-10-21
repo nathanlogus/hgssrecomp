@@ -16,23 +16,23 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04      # older glibc, so the executable runs on more distributions
-            file: dist/ssrecomp-setup
-            asset: ssrecomp-setup-linux-x86_64
+            file: dist/johto-online-setup
+            asset: johto-online-setup-linux-x86_64
           - os: ubuntu-22.04-arm
-            file: dist/ssrecomp-setup
-            asset: ssrecomp-setup-linux-aarch64.AppImage
+            file: dist/johto-online-setup
+            asset: johto-online-setup-linux-aarch64.AppImage
             appimage: aarch64
           - os: macos-15
-            file: dist/ssrecomp-setup.app
-            asset: ssrecomp-setup-macos-arm64.zip
+            file: dist/johto-online-setup.app
+            asset: johto-online-setup-macos-arm64.zip
             mac: true
           - os: macos-15-intel
-            file: dist/ssrecomp-setup.app
-            asset: ssrecomp-setup-macos-x86_64.zip
+            file: dist/johto-online-setup.app
+            asset: johto-online-setup-macos-x86_64.zip
             mac: true
           - os: windows-latest
-            file: dist/ssrecomp-setup.exe
-            asset: ssrecomp-setup-windows-x86_64.exe
+            file: dist/johto-online-setup.exe
+            asset: johto-online-setup-windows-x86_64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

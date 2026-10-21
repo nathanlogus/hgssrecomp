@@ -1,6 +1,6 @@
 # Notes for coding agents
 
-This file is for AI coding agents (and people) working on ssrecomp. The README
+This file is for AI coding agents (and people) working on Johto Online (ssrecomp). The README
 is the user documentation; read its "How the recompiled code works" and
 "Testing" sections before changing the recompiler.
 
@@ -28,8 +28,8 @@ Targets: Linux and Windows first, Android second. macOS is community-maintained.
   plausible optimisations were measured to be slower; see "Already tried".
 - **Don't open pull requests to pret/pokeheartgold** (the decompilation) with
   AI-assisted code: pret does not accept it. Changes belong in this repository.
-- **Don't change the release asset names** (`ssrecomp-setup-linux-x86_64`,
-  `ssrecomp-setup-linux-aarch64.AppImage`, `ssrecomp-setup-windows-x86_64.exe`,
+- **Don't change the release asset names** (`johto-online-setup-linux-x86_64`,
+  `johto-online-setup-linux-aarch64.AppImage`, `johto-online-setup-windows-x86_64.exe`,
   `SHA256SUMS.txt`): the setup program's updater looks for them.
 
 ## Layout
@@ -50,7 +50,7 @@ Targets: Linux and Windows first, Android second. macOS is community-maintained.
 | `frontend/platform.cpp`, `host.h` | melonDS's Platform interface (files, saves, threads) |
 | `melonDS/` | melonDS 1.1 with this project's changes (dispatch into recompiled code, per-pixel layer flags, `GPU3D_Wide.cpp`, palette and blend snapshots for the widescreen view) |
 | `melonDS-ssrecomp.patch` | the changes to existing melonDS files as a diff; update it when you change one |
-| `ssrecomp_setup.py` | the setup program (Tk GUI and CLI): builds from the user's ROM, Android APK, self-update, portable mode |
+| `johto_online_setup.py` | the setup program (Tk GUI and CLI): builds from the user's ROM, Android APK, self-update, portable mode |
 | `setup.sh`, `run.sh` | building from the decompilation; starting the game (writes `game.log`) |
 | `tools/package_setup.py`, `make_appimage.sh` | packaging the setup program with PyInstaller |
 | `tools/android/` | APK packing around SDL's Java code |
@@ -86,9 +86,9 @@ Costs to plan around:
 ## Testing
 
 You need your own ROM and snapshots; none are in the repository. Running
-`build/ssrecomp` with no arguments lists every option.
+`build/johto-online` with no arguments lists every option.
 
-- **Correctness:** `build/ssrecomp <rom> --lockstep --frames 3000 --input <script>`
+- **Correctness:** `build/johto-online <rom> --lockstep --frames 3000 --input <script>`
   runs the interpreter and recompiled code side by side and stops at the first
   difference in registers, flags, cycles or timestamps. Cover booting and
   battles: e.g. `--state-load <overworld.st> --input <grass walk> --battle-mash --frames 7500`.
@@ -100,7 +100,7 @@ You need your own ROM and snapshots; none are in the repository. Running
   and the level-up window have all broken before.
 - **Controllers without hardware:** input scripts accept `pad:a`, `pad:guide`,
   `pad:rx+`, etc. On Linux `/dev/uinput` can create a virtual pad for SDL.
-- **Setup program:** `python3 ssrecomp_setup.py` (GUI) or `--rom FILE`
+- **Setup program:** `python3 johto_online_setup.py` (GUI) or `--rom FILE`
   (CLI build), `--update`.
 
 ## Conventions

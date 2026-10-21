@@ -8,7 +8,7 @@
         the moment it arrives in test/places/snapshots/<name>.st (with a picture, <name>.png);
         other times of day than "day" go to <name>.<time>.st
     places.py run <rom> [--only a,b] [--time day,night] [--set key=value ...] [--frames N] [--size WxH]
-        loads every snapshot with these settings (as in ssrecomp.cfg, e.g. zoom=60),
+        loads every snapshot with these settings (as in johto-online.cfg, e.g. zoom=60),
         walks the place's route and tiles the screenshots into test/places/sheets/sheet.png,
         one row per place and time of day (the screenshots stay in test/places/runs/)
     places.py lockstep <rom> [--only a,b] [--time day,night] [--frames N]

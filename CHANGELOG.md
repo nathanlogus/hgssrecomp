@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The project is now called **Johto Online**. The game is `johto-online` (`johto-online.exe`
+  on Windows), the downloads are `johto-online-setup-*`, the Android app is
+  `JohtoOnline.apk`, and settings are kept in `johto-online.cfg`. Your save, settings and
+  setup folder from before are moved over by themselves. The setup program you have now
+  can't find this update: download the new one by hand once.
 - Online battles and trades: after a player says yes to your Battle or Trade, both games
   save and go straight to the Union Room from wherever you are, and there the game walks
   you to each other and starts the battle or trade (the other side's yes is given for

@@ -18,6 +18,7 @@
 *.nef
 *.fw
 /ssrecomp.rom
+/johto-online.rom
 # ROM hack patches (made from the game) and the patched ROM
 /definitive/
 
@@ -43,6 +44,7 @@ assets/gamefreak_logo.png
 
 # Per-user settings, logs and test output
 ssrecomp.cfg
+johto-online.cfg
 /build.log
 /game.log
 /test/

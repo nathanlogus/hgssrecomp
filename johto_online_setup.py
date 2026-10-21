@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""ssrecomp setup: builds the game from your own copy of Pokemon SoulSilver (US).
+"""Johto Online setup: builds the game from your own copy of Pokemon SoulSilver (US).
 
 Pick your ROM, press Build, and play. The ROM's code is recompiled to C++ on your
 machine (nothing of the game is downloaded or shipped) and compiled together with
 the frontend. Needs Python 3 with Tk, CMake, Ninja, a C++ compiler and the SDL2,
 libpng and zlib development files; the window says what is missing and how to get it.
 
-Without a display: python3 ssrecomp_setup.py --rom <file> [--jobs N] [--android [--no-media]]
+Without a display: python3 johto_online_setup.py --rom <file> [--jobs N] [--android [--no-media]]
 The packaged program updates itself with --update.
 """
 import glob
@@ -34,30 +34,52 @@ ANDROID_MAC_NOTE = 'Android builds from macOS are not supported yet; use a Linux
 # inside it and is unpacked into a folder of its own, where the game is then built.
 FROZEN = getattr(sys, 'frozen', False)
 # Portable mode: with a file portable.txt next to the executable (the AppImage on Linux),
-# everything is kept in the folder ssrecomp-data beside it instead of the user's profile.
+# everything is kept in the folder johto-online-data beside it instead of the user's profile.
 EXE_DIR = os.path.dirname(os.path.abspath(os.environ.get('APPIMAGE') or sys.executable)) if FROZEN else None
 PORTABLE = FROZEN and os.path.exists(os.path.join(EXE_DIR, 'portable.txt'))
 if PORTABLE:
-    HERE = os.path.join(EXE_DIR, 'ssrecomp-data')
+    HERE = os.path.join(EXE_DIR, 'johto-online-data')
 elif FROZEN:
     if WINDOWS:
-        HERE = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ssrecomp')
+        HERE = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'johto-online')
     elif DARWIN:
-        HERE = os.path.expanduser('~/Library/Application Support/ssrecomp')
+        HERE = os.path.expanduser('~/Library/Application Support/Johto Online')
     else:
-        HERE = os.path.join(os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share')), 'ssrecomp')
+        HERE = os.path.join(os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share')), 'johto-online')
 else:
     HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def move_from_old_name():
+    """Johto Online was called ssrecomp: an install under the old names (its folder, settings
+    and ROM note) is moved over once, so saves and settings carry on."""
+    if FROZEN and not os.path.exists(HERE):
+        old = HERE.replace('johto-online-data', 'ssrecomp-data').replace('Johto Online', 'ssrecomp').replace('johto-online', 'ssrecomp')
+        if old != HERE and os.path.isdir(old):
+            try:
+                os.rename(old, HERE)
+            except OSError:
+                pass
+    for a, b in (('ssrecomp.cfg', 'johto-online.cfg'), ('ssrecomp.rom', 'johto-online.rom')):
+        a, b = os.path.join(HERE, a), os.path.join(HERE, b)
+        if os.path.exists(a) and not os.path.exists(b):
+            try:
+                os.rename(a, b)
+            except OSError:
+                pass
+
+
+move_from_old_name()
 LAYOUT = os.path.join(HERE, 'layouts', 'soulsilver-us.json')
 GEN = os.path.join(HERE, 'gen')
 BUILD = os.path.join(HERE, 'build-macos-' + MAC_ARCH if DARWIN else 'build')
-EXE = os.path.join(BUILD, 'ssrecomp.exe' if WINDOWS else 'ssrecomp')
-ROM_NOTE = os.path.join(HERE, 'ssrecomp.rom')
+EXE = os.path.join(BUILD, 'johto-online.exe' if WINDOWS else 'johto-online')
+ROM_NOTE = os.path.join(HERE, 'johto-online.rom')
 
 # The Android build: Google's NDK (compilers for Android) and SDL2's source are downloaded
 # into ANDROID_DIR the first time; the result is the APK at ANDROID_APK.
 ANDROID_DIR = os.path.join(HERE, 'android')
-ANDROID_APK = os.path.join(HERE, 'SoulSilver-ssrecomp.apk')
+ANDROID_APK = os.path.join(HERE, 'JohtoOnline.apk')
 ANDROID_ABI = 'arm64-v8a'          # phones and handhelds from the last ten years
 ANDROID_PLATFORM = 'android-24'    # Android 7.0 and later
 NDK_NAME = 'android-ndk-r27c'
@@ -174,7 +196,7 @@ def macos_toolchain_problem(path, cxx):
     """
     try:
         compiler = shlex.split(cxx) if cxx else ['xcrun', 'clang++']
-        with tempfile.TemporaryDirectory(prefix='ssrecomp-toolchain-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='johto-online-toolchain-') as tmp:
             source = os.path.join(tmp, 'probe.cpp')
             with open(source, 'w') as f:
                 f.write('#include <thread>\n#include <zlib.h>\n'
@@ -269,11 +291,11 @@ def install_hint():
     if os.path.exists('/run/ostree-booted') or os_id() == 'steamos':
         return ('This is an immutable system (Bazzite, Silverblue, SteamOS...), where programs are not installed '
                 'directly. Open a terminal (Konsole on a Steam Deck or KDE) and set up a container with:\n'
-                '  distrobox create -n ssrecomp -i ubuntu:24.04\n'
-                '  distrobox enter ssrecomp -- sudo apt install -y ' + ('' if FROZEN else 'python3-tk ') + 'cmake ninja-build g++ '
+                '  distrobox create -n johto-online -i ubuntu:24.04\n'
+                '  distrobox enter johto-online -- sudo apt install -y ' + ('' if FROZEN else 'python3-tk ') + 'cmake ninja-build g++ '
                 'pkg-config libsdl2-dev libpng-dev zlib1g-dev\n'
-                '  distrobox enter ssrecomp -- ' + (shlex.quote(os.environ.get('APPIMAGE', sys.executable)) if FROZEN
-                                                    else 'python3 ssrecomp_setup.py') + '\n'
+                '  distrobox enter johto-online -- ' + (shlex.quote(os.environ.get('APPIMAGE', sys.executable)) if FROZEN
+                                                    else 'python3 johto_online_setup.py') + '\n'
                 'The finished game also runs outside the container.')
     tk_apt, tk_dnf, tk_pac = ('', '', '') if FROZEN else ('python3-tk ', 'python3-tkinter ', 'tk ')
     how = ('Open a terminal, run this command (it asks for your password), then close and start this '
@@ -564,18 +586,18 @@ def play(extra=()):
     # build log, build.log).
     with open(os.path.join(HERE, 'game.log'), 'w') as log:
         return subprocess.Popen([EXE, rom, '--save', save_path(),
-                                 '--config', os.path.join(HERE, 'ssrecomp.cfg'), *extra], cwd=HERE,
+                                 '--config', os.path.join(HERE, 'johto-online.cfg'), *extra], cwd=HERE,
                                 stdout=log, stderr=subprocess.STDOUT, env=child_env())
 
 
 # ---------------------------------------------------------------------------
 # Updates: the packaged setup program replaces itself with the newest release's.
 
-RELEASES = 'https://api.github.com/repos/ClickingMaster/ssrecomp/releases/latest'
+RELEASES = 'https://api.github.com/repos/nathanlogus/hgssrecomp/releases/latest'
 UPDATE_ASSETS = {   # (system, machine) -> the release file for it
-    ('win32', 'AMD64'): 'ssrecomp-setup-windows-x86_64.exe',
-    ('linux', 'x86_64'): 'ssrecomp-setup-linux-x86_64',
-    ('linux', 'aarch64'): 'ssrecomp-setup-linux-aarch64.AppImage',
+    ('win32', 'AMD64'): 'johto-online-setup-windows-x86_64.exe',
+    ('linux', 'x86_64'): 'johto-online-setup-linux-x86_64',
+    ('linux', 'aarch64'): 'johto-online-setup-linux-aarch64.AppImage',
 }
 
 
@@ -608,7 +630,7 @@ def https_open(url):
         context = ssl.create_default_context(cafile=certifi.where())
     except ImportError:
         pass
-    req = urllib.request.Request(url, headers={'User-Agent': 'ssrecomp-setup', 'Accept': 'application/vnd.github+json'})
+    req = urllib.request.Request(url, headers={'User-Agent': 'johto-online-setup', 'Accept': 'application/vnd.github+json'})
     return urllib.request.urlopen(req, context=context, timeout=20)
 
 
@@ -705,13 +727,13 @@ def gui():
     from tkinter import filedialog, messagebox, ttk
 
     root = tk.Tk()
-    root.title('ssrecomp setup')
+    root.title('Johto Online setup')
     root.minsize(640, 520)
     events = queue.Queue()
 
     frame = ttk.Frame(root, padding=16)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, text='SoulSilver for one screen', font=('TkDefaultFont', 16, 'bold')).pack(anchor='w')
+    ttk.Label(frame, text='Johto Online', font=('TkDefaultFont', 16, 'bold')).pack(anchor='w')
     ttk.Label(frame, wraplength=600, justify='left', text=(
         'Builds the game from your own copy of Pokemon SoulSilver (US). Its code is recompiled on this '
         'computer; nothing of the game is downloaded.' +
@@ -993,7 +1015,7 @@ def main():
             sys.exit('This needs Python with Tk support.\n' + install_hint())
         sys.exit('This needs Python\'s Tk support for its window. ' + (
             'Install it (python3-tk on Ubuntu/Debian, python3-tkinter on Fedora, tk on Arch) '
-            'or run: python3 ssrecomp_setup.py --rom <your ROM>'))
+            'or run: python3 johto_online_setup.py --rom <your ROM>'))
     gui()
 
 
