@@ -530,7 +530,7 @@ inline void DrawAll(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Move
         switch (s.choice)
         {
         case 14: a[0] = "Forget a move!"; a[1] = "Keep old moves!"; break;
-        case 15: a[0] = "Give up on " + mvName + "?"; a[1] = "Don't give up on " + mvName + "!"; break;
+        case 15: a[0] = "Give up on " + mvName + "!"; a[1] = "Don't give up on " + mvName + "!"; break;
         case 16: a[0] = "Use next Pok\xC3\xA9mon"; a[1] = "Flee"; break;
         case 17: a[0] = "Switch Pok\xC3\xA9mon"; a[1] = "Keep battling"; break;
         default: a[0] = "Yes"; a[1] = "No"; break;
