@@ -58,6 +58,7 @@
 #include "hudparty.h"
 #include "hudtrade.h"
 #include "huddex.h"
+#include "huddexinfo.h"
 #include "hudgear.h"
 #include "hudoptions.h"
 #include "hudpcbox.h"
@@ -6209,7 +6210,7 @@ int main(int argc, char** argv)
         }
         // The Pokedex redrawn (huddex.h): its front page and its list, mirrored from the game's
         // application; its details and search are the game's own picture.
-        static int dexShown = 0; // what was drawn the frame before: 0 nothing, 1 the front page, 2 the list
+        static int dexShown = 0; // what was drawn the frame before: 0 nothing, 1 the front page, 2 the list, 3 the details
         int dexNow = 0;
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("Pokedex"))
             for (unsigned i = 0; i < rc_num_apps; i++)
@@ -6217,8 +6218,34 @@ int main(int argc, char** argv)
                 {
                     static uint32_t dexAt = 0;
                     HudDex::View dv;
-                    if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
-                            HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown, dv))
+                    // The details (huddexinfo.h), drawn as 3; while they fade or flash a
+                    // button, the page drawn last stays.
+                    static HudDexInfo::View infoLast;
+                    HudDexInfo::View iv;
+                    const int info = HudDexInfo::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr,
+                        rc_apps[i].exitAddr, HudDex::JohtoNumbers(rom.data(), rom.size()), iv);
+                    if (info == 1 || (info < 0 && dexShown == 3))
+                    {
+                        if (info == 1) infoLast = iv;
+                        const HudDexInfo::View& v = infoLast;
+                        const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                        std::vector<HudHint> hints = { { { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" } };
+                        if (v.page == HudDexInfo::Area && !v.places.empty()) hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Place" });
+                        if (v.page == HudDexInfo::Area) hints.push_back({ { a }, "Time of day" });
+                        if (v.page == HudDexInfo::Forms && v.forms.size() > 1)
+                        {
+                            hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Choose" });
+                            hints.push_back({ { a }, "Compare" });
+                        }
+                        if (v.page == HudDexInfo::Back) hints.push_back({ { a }, "Back to the list" });
+                        hints.push_back({ { b }, "Back" });
+                        HudDexInfo::Draw(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), v, trainerArt.px.empty() ? nullptr : &trainerArt,
+                            Party_MyCard().gender, hints);
+                        dexNow = 3;
+                        overlayUsed = true;
+                    }
+                    else if (HudDex::Read({ nds->MainRAM, nds->MainRAMMask + 1 }, dexAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr,
+                            HudDex::JohtoNumbers(rom.data(), rom.size()), dexShown == 3 ? 0 : dexShown, dv))
                     {
                         const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         const std::string x = PadGlyph(cfg.byLabel ? PAD_X : PAD_Y), y = PadGlyph(cfg.byLabel ? PAD_Y : PAD_X);

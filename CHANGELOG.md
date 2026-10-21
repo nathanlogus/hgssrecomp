@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- New screens: a Pokémon's pages in the Pokédex are drawn anew. Area shows the region's
+  map with the places it lives at that time of day marked, beside the list of them; Size
+  puts it next to you, height and weight; Forms lists the forms you have seen.
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) show their answers beside it, and signs slide in
