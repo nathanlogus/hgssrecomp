@@ -440,7 +440,7 @@ inline void OffscreenPointer(Canvas& c, const Ui& ui, Sprites& sp, const RomFont
     const PartyPeer& p, const std::string& place, float screenW)
 {
     if (const Image* img = TurnedPointer(sp, angle)) Blit(c, *img, 0, 0, (float)img->w, (float)img->h, ui(x - 32), ui(y - 32), ui(64), ui(64));
-    const std::string text = place.empty() ? p.name : p.name + " Â· " + place;
+    const std::string text = place.empty() ? p.name : p.name + " \xC2\xB7 " + place;
     const float w = HudTextWidth(ui, f, 32, text) + 48, h = 48;
     const float px = x < screenW / 2 ? x + 44 : x - 44 - w;
     DrawSprite(c, sp.Get(PillOf(p.colour)), ui(px), ui(y - h / 2), ui(w), ui(h), ui.s);
