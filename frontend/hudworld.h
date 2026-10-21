@@ -326,6 +326,73 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const D
     }
 }
 
+// The game's own menu (X, src/start_menu.c) while it waits for a button: the buttons it draws
+// on the touch screen, in the order the cursor counts them, and the cursor (FieldSystem
+// +0xD3). StartMenuTaskData (the field task's data): +0x20 cursorActive, +0x26 state (3
+// waiting), +0x2C how many actions, +0x3A the actions. An action is drawn when its button is
+// unlocked (script flags in the save's general block, FieldSystem +0x0C); running shoes (6)
+// and the second Pokégear entries (9, 10) never are.
+struct XMenu
+{
+    std::vector<int> actions; // 0 Pokédex, 1 Pokémon, 2 Bag, 3 trainer card, 4 Save, 5 Options, 11 Pokégear
+    int cursor = -1;
+};
+
+inline bool ReadXMenu(const Ram& r, XMenu& m)
+{
+    m = XMenu();
+    const uint32_t fs = r.R32(kFieldSystem), sm = r.R32(r.R32(fs + 0x10) + 0x0C), save = r.R32(fs + 0x0C);
+    if (!r.Ptr(fs) || !r.Ptr(sm) || !r.Ptr(save) || r.R32(sm + 0x20) != 1 || r.R16(sm + 0x26) != 3) return false;
+    auto flag = [&](uint32_t f) { return (r.R8(save + 0x10 + 0x10C4 + f / 8) >> (f % 8) & 1) != 0; };
+    const uint32_t n = r.R32(sm + 0x2C);
+    if (n < 1 || n > 10) return false;
+    for (uint32_t i = 0; i < n; i++)
+    {
+        const int a = (int)r.R8(sm + 0x3A + i);
+        static const uint32_t unlock[] = { 0x6B, 0x6A, 0x11B, 0x11C, 0x11D, 0x11E };
+        if (a <= 5) { if (flag(unlock[a])) m.actions.push_back(a); }
+        else if (a == 11 || a == 12) { if (flag(0x9C)) m.actions.push_back(11); }
+        else if (a != 6 && a != 9 && a != 10) return false; // the Safari Zone's and others' buttons are left to the game
+    }
+    m.cursor = (int)r.R8(fs + 0xD3);
+    return m.cursor < (int)m.actions.size();
+}
+
+// The menu in a card at (x, y, w, h), its buttons where the game has them: Pokédex,
+// Pokémon, Bag and Pokégear down the left, the trainer card, Save and Options down the right.
+// shortcut: the Pokédex's place (top left) is the one left free; not seen on a save that has it drawn.
+inline void DrawXMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const XMenu& m, const std::string& name, float x, float y,
+    float w, float h)
+{
+    using namespace HudColour;
+    HudPanel(c, ui, sp, "panels/card", x, y, w, h);
+    HudText(c, ui, f, x + w / 2, y + 22, 40, "Menu", Ink, 1, true);
+    const float gx = x + 24, gy = y + 90, cw = (w - 48 - 16) / 2, ch = std::min(150.0f, (h - 90 - 24 - 3 * 14) / 4);
+    for (size_t i = 0; i < m.actions.size(); i++)
+    {
+        const int a = m.actions[i];
+        int col = 0, row = 0;
+        const char* icon = "";
+        std::string label;
+        switch (a)
+        {
+        case 0: row = 0; icon = "menu/menu_dex"; label = "Pok\xC3\xA9" "dex"; break;
+        case 1: row = 1; icon = "menu/menu_party"; label = "Pok\xC3\xA9mon"; break;
+        case 2: row = 2; icon = "menu/menu_bag"; label = "Bag"; break;
+        case 11: row = 3; icon = "menu/menu_pokegear"; label = "Pok\xC3\xA9gear"; break;
+        case 3: col = 1; row = 0; icon = "menu/menu_trainer"; label = name; break;
+        case 4: col = 1; row = 1; icon = "menu/menu_save"; label = "Save"; break;
+        default: col = 1; row = 2; icon = "menu/menu_options"; label = "Options"; break;
+        }
+        const bool on = (int)i == m.cursor;
+        const float bx = gx + col * (cw + 16), by = gy + row * (ch + 14);
+        HudPanel(c, ui, sp, on ? "panels/row_selected" : "panels/row", bx, by, cw, ch);
+        const float is = std::min(96.0f, ch - 52);
+        HudSprite(c, ui, sp, std::string(icon) + (on ? "_selected" : ""), bx + cw / 2 - is / 2, by + 8, is, is);
+        HudText(c, ui, f, bx + cw / 2, by + ch - 42, 32, label, Ink, 1);
+    }
+}
+
 // A check of Page on made-up messages (run with SSR_WORLDUI_SELFTEST=1).
 inline bool SelfTest()
 {

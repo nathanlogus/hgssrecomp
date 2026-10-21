@@ -5880,6 +5880,34 @@ int main(int argc, char** argv)
                     HudWorld::kBoxH * u - 6, frame, &choice);
                 overlayUsed = true;
             }
+            // The game's X menu, drawn where its touch-screen panel stands, which is left out;
+            // as it was last while the game closes it or opens what was chosen (its panel stays
+            // up for a few frames).
+            static HudWorld::XMenu xmLast;
+            static uint32_t xmAt = 0;
+            HudWorld::XMenu xm;
+            const bool xmView = spritesOk && cfg.redrawn && merged && hudFree && !strcmp(scene.name, "start-menu") && scene.items.size() == 2;
+            if (xmView && HudWorld::ReadXMenu(ram, xm)) xmLast = xm, xmAt = frame;
+            else if (xmView && xmAt && frame - xmAt <= 20)
+                xm = xmLast;
+            if (xm.cursor >= 0)
+            {
+                const Element& el = scene.items[1];
+                const float u = view.unit / ui.s, x = (mergedX + view.originX) / ui.s + el.dx * u, y = view.originY / ui.s + el.dy * u;
+                const float w = el.sw * el.scale * u, h = el.sh * el.scale * u;
+                HudWorld::DrawXMenu(canvas, ui, sprites, font, xm, trainerName(), x, y, w, h);
+                // The screen fading to what was chosen (master brightness): the menu fades with it.
+                const auto& tu = (nds->PowerControl9 & (1 << 15)) ? nds->GPU.GPU2D_A : nds->GPU.GPU2D_B;
+                int fadeMode = (tu.MasterBrightness >> 14) & 3, fade = std::min(16, tu.MasterBrightness & 0x1F);
+                if (fadeMode != 1 && fadeMode != 2) fade = 0;
+                // (Or a brightness effect of the 2D layers, as the widescreen world takes it.)
+                if (const int effect = (tu.BlendCnt >> 6) & 3; (tu.BlendCnt & 1) && effect >= 2)
+                    if (const int evy = std::min<int>(16, tu.EVY); evy > fade) fadeMode = effect == 2 ? 1 : 2, fade = evy;
+                if ((fadeMode == 1 || fadeMode == 2) && fade)
+                    FillBlend(canvas, ui(x - 16), ui(y - 16), ui(w + 32), ui(h + 32), (uint32_t)(fade * 255 / 16) << 24 | (fadeMode == 1 ? 0xFFFFFF : 0));
+                scene.items.resize(1);
+                overlayUsed = true;
+            }
         }
         if (menu.open && spritesOk)
         {
