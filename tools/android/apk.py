@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Packs the Android build into an installable APK and signs it, with nothing but Python.
 
-usage: apk.py <skeleton.apk> <abi> <libmain.so> <libSDL2.so> <rom.nds> <key file> <out.apk>
+usage: apk.py <skeleton.apk> <abi> <libmain.so> <libSDL2.so> <rom.nds> <key file> <out.apk> [--no-media]
 
 <abi> is the Android name of the CPU type: arm64-v8a for phones and handhelds,
 x86_64 for the Android emulator on a PC.
 
 The skeleton (tools/android/skeleton.apk, made by make_skeleton.sh) holds the manifest,
-the resources and SDL's Java code; this adds the game library, SDL's library and the
-player's ROM, then signs the result with APK Signature Scheme v2. The key is made on the
+the resources and SDL's Java code; this adds the game library, SDL's library, the
+player's ROM and their own files from assets/ (see user_files; --no-media leaves out the
+songs and the title video), then signs the result with APK Signature Scheme v2. The key is made on the
 first run and kept in <key file>: Android only installs an update over an app signed with
 the same key, so it has to be kept to update without uninstalling (which deletes the save).
 """
@@ -210,7 +211,33 @@ def write_aligned(z, name, data, compress, align):
     z.writestr(info, data, compresslevel=6 if compress else None)
 
 
-def build(skeleton, abi, libmain, libsdl, rom, key_path, out):
+# The player's own files beside assets/ui (never shipped with the source), packed under the
+# same names. Folders cannot be listed inside an APK, so their names also go into
+# assets/user-files.txt, one per line (the frontend finds the fonts through it).
+USER_INDEX = 'user-files.txt'
+
+
+def user_files(assets, media=True):
+    """[(name under assets/, path)] of the player's files in `assets`: fonts, button pictures
+    and the autosave GIF always; songs and the title video (often hundreds of MB) with `media`."""
+    found = []
+
+    def folder(sub, exts):
+        root = os.path.join(assets, sub)
+        for f in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+            if os.path.isfile(os.path.join(root, f)) and not f.startswith('.') and f.lower().endswith(exts):
+                found.append((sub + '/' + f, os.path.join(root, f)))
+    folder('fonts', ('.otf', '.ttf'))
+    folder('buttons', ('.png',))
+    if media:
+        folder('songs', ('.mp3', '.txt'))
+    for name in ['autosave.gif'] + (['animations/intro.mpg'] if media else []):
+        if os.path.isfile(os.path.join(assets, name)):
+            found.append((name, os.path.join(assets, name)))
+    return found
+
+
+def build(skeleton, abi, libmain, libsdl, rom, key_path, out, media=True):
     tmp = out + '.unsigned'
     with zipfile.ZipFile(skeleton) as src, zipfile.ZipFile(tmp, 'w') as z:
         for item in src.infolist():
@@ -232,6 +259,11 @@ def build(skeleton, abi, libmain, libsdl, rom, key_path, out):
         logo = os.path.join(os.path.dirname(ui), 'logo.png')
         if os.path.exists(logo):
             write_aligned(z, 'assets/logo.png', open(logo, 'rb').read(), True, 4)
+        files = user_files(os.path.dirname(ui), media)
+        for name, path in files:
+            # MP3s, the video, GIF and PNGs are compressed already: stored, they are read faster.
+            write_aligned(z, 'assets/' + name, open(path, 'rb').read(), name.endswith(('.otf', '.ttf', '.txt')), 4)
+        write_aligned(z, 'assets/' + USER_INDEX, ''.join(n + '\n' for n, _ in files).encode(), True, 4)
     signed = sign_v2(open(tmp, 'rb').read(), load_key(key_path))
     with open(out, 'wb') as f:
         f.write(signed)
@@ -240,6 +272,7 @@ def build(skeleton, abi, libmain, libsdl, rom, key_path, out):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 8:
+    args = [a for a in sys.argv[1:] if a != '--no-media']
+    if len(args) != 7:
         sys.exit(__doc__)
-    print('->', build(*sys.argv[1:8]))
+    print('->', build(*args, media='--no-media' not in sys.argv))

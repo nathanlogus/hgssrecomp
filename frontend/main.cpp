@@ -362,15 +362,19 @@ static std::vector<uint8_t> ReadFile(const std::string& path)
 
 // The HUD's sprite folder (assets/ui): next to the source tree's build folder on PCs, in
 // the APK's assets on Android.
-static std::string g_uiDir;
+// The folder above it (assets/) holds the logo and the player's own files: songs, fonts,
+// buttons, the title video and the autosave GIF. On Android that is the APK's assets
+// themselves (tools/android/apk.py), as "ui/../x" is not resolved there.
+static std::string g_uiDir, g_userDir;
 static std::vector<uint8_t> ReadUiFile(const std::string& name) { return ReadFile(g_uiDir + name); }
 // The player's own songs (songs.h): assets/songs, beside the HUD's folder.
-static std::vector<uint8_t> ReadSongFile(const std::string& name) { return ReadFile(g_uiDir + "../songs/" + name); }
+static std::vector<uint8_t> ReadSongFile(const std::string& name) { return ReadFile(g_userDir + "songs/" + name); }
 namespace melonDS { extern u16 ssr_SpuHearMute; } // SPU.cpp: channels left out of what is heard
 static void FindUiDir()
 {
 #ifdef __ANDROID__
     g_uiDir = "ui/";
+    g_userDir = "";
 #else
     namespace fs = std::filesystem;
     char* base = SDL_GetBasePath();
@@ -382,9 +386,10 @@ static void FindUiDir()
         if (fs::exists(d / "manifest.json", ec))
         {
             g_uiDir = (d / "").u8string();
-            return;
+            break;
         }
     }
+    g_userDir = g_uiDir + "../";
 #endif
 }
 
@@ -2454,16 +2459,32 @@ int main(int argc, char** argv)
         std::unique_ptr<VectorFont> regular, bold;
     };
     std::vector<FontFamily> fontFamilies;
-#ifndef __ANDROID__
     {
-        std::error_code ec;
         std::vector<std::filesystem::path> files;
-        for (const auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(g_uiDir + "../fonts"), ec))
+#ifdef __ANDROID__
+        // An APK's assets cannot be listed: apk.py writes the names of the player's files.
+        const std::vector<uint8_t> index = ReadFile("user-files.txt");
+        std::string line;
+        for (const uint8_t ch : index)
         {
-            std::string ext = e.path().extension().u8string();
-            for (char& ch : ext) ch = (char)tolower((unsigned char)ch);
-            if (ext == ".otf" || ext == ".ttf") files.push_back(e.path());
+            if (ch != '\n')
+            {
+                line += (char)ch;
+                continue;
+            }
+            if (line.compare(0, 6, "fonts/") == 0) files.push_back(std::filesystem::u8path(line));
+            line.clear();
         }
+#else
+        std::error_code ec;
+        for (const auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(g_userDir + "fonts"), ec))
+            files.push_back(e.path());
+#endif
+        files.erase(std::remove_if(files.begin(), files.end(), [](const std::filesystem::path& p) {
+            std::string ext = p.extension().u8string();
+            for (char& ch : ext) ch = (char)tolower((unsigned char)ch);
+            return ext != ".otf" && ext != ".ttf";
+        }), files.end());
         std::sort(files.begin(), files.end());
         for (const auto& path : files)
         {
@@ -2493,7 +2514,6 @@ int main(int argc, char** argv)
         for (FontFamily& f : fontFamilies)
             if (!f.regular) f.regular = std::move(f.bold);
     }
-#endif
     // The family in use (cfg.textFont), or null for the game's letters.
     auto textFamily = [&]() -> const FontFamily* {
         if (cfg.textFont == "game" || fontFamilies.empty()) return nullptr;
@@ -2513,7 +2533,7 @@ int main(int argc, char** argv)
             { "buttons/button_zr", "zr" }, { "buttons/button_plus", "plus" }, { "buttons/button_minus", "minus" },
             { "buttons/button_dpad_up", "up" }, { "buttons/button_dpad_down", "down" }, { "buttons/button_dpad_left", "left" },
             { "buttons/button_dpad_right", "right" }, { "buttons/stick_l", "stick_l" }, { "buttons/stick_r", "stick_r" } };
-        const std::string dir = g_uiDir + "../buttons/";
+        const std::string dir = g_userDir + "buttons/";
         for (const auto& n : names)
         {
             Image glyph, shadow;
@@ -2556,7 +2576,7 @@ int main(int argc, char** argv)
     };
     applyButtons();
     SongPlayer songs;
-    if (songs.Load(ReadSongFile)) fprintf(stderr, "[songs] a list of songs in %s../songs\n", g_uiDir.c_str());
+    if (songs.Load(ReadSongFile)) fprintf(stderr, "[songs] a list of songs in %ssongs\n", g_userDir.c_str());
     GameSfx sfx;
     sfx.SetRom(rom.data(), rom.size());
     auto uiSound = [&](GameSfx::Sound s) {
@@ -2589,18 +2609,12 @@ int main(int argc, char** argv)
     // The logo on the start screen: assets/logo.png (beside the HUD's folder), if it is there.
     Image logo;
     {
-#ifdef __ANDROID__
-        const std::vector<uint8_t> f = ReadFile("logo.png");
-#else
-        const std::vector<uint8_t> f = ReadFile(g_uiDir + "../logo.png");
-#endif
+        const std::vector<uint8_t> f = ReadFile(g_userDir + "logo.png");
         if (f.empty() || !DecodePng(f.data(), f.size(), logo)) logo = Image();
     }
     // The title screen's video (intro.h), if the player has put one in assets/animations.
     IntroVideo intro;
-#ifndef __ANDROID__
-    if (intro.Load(ReadFile(g_uiDir + "../animations/intro.mpg"))) fprintf(stderr, "[hud] title video\n");
-#endif
+    if (intro.Load(ReadFile(g_userDir + "animations/intro.mpg"))) fprintf(stderr, "[hud] title video\n");
     // Other players' trainers near this one (online), moved smoothly towards where they
     // were last heard and drawn into the widescreen world as the far map's people are.
     struct RemoteTrainer
@@ -2949,7 +2963,7 @@ int main(int argc, char** argv)
     resume.path = opt.save + ".resume";
     Autosave::GameSave gameSave;
     Autosave::Indicator saveIndicator;
-    saveIndicator.Load(ReadFile(g_uiDir + "../autosave.gif"));
+    saveIndicator.Load(ReadFile(g_userDir + "autosave.gif"));
     bool played = false;           // the overworld has run since the game started or was reset
     uint32_t resumeAt = frame;     // when the last resume point was made
     uint32_t resumeShownUntil = 0; // its indicator

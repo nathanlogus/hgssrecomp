@@ -99,6 +99,12 @@ The APK contains your copy of the game: never share it. It is signed with a key
 kept next to it (`android/signing-key.json`); builds made later with the same
 key install over it and keep the save. Uninstalling the app deletes its save.
 
+Your own files in `assets` (songs, fonts, button pictures, the title video and
+the autosave picture, see below) go into the APK too. Songs and the video can
+make it hundreds of MB larger: untick **Android: include my songs and title
+video in the APK** in the setup program (or add `--no-media` to `--android`)
+to leave them out. The setup program says how large the APK is.
+
 On the device: the touch screen works on the touch-screen parts of the picture,
 and on-screen buttons are shown over it. Using a controller (Bluetooth, USB, or a
 handheld's built-in controls) hides them; touching the screen brings them back.

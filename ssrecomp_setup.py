@@ -6,7 +6,7 @@ machine (nothing of the game is downloaded or shipped) and compiled together wit
 the frontend. Needs Python 3 with Tk, CMake, Ninja, a C++ compiler and the SDL2,
 libpng and zlib development files; the window says what is missing and how to get it.
 
-Without a display: python3 ssrecomp_setup.py --rom <file> [--jobs N]
+Without a display: python3 ssrecomp_setup.py --rom <file> [--jobs N] [--android [--no-media]]
 The packaged program updates itself with --update.
 """
 import glob
@@ -409,8 +409,9 @@ def forget_moved_build(build):
             os.remove(os.path.join(build, 'build.ninja'))
 
 
-def run_steps(rom, jobs, log, progress, android=False):
-    """Generates and compiles (for Android: and makes the APK). log(text) reports a line,
+def run_steps(rom, jobs, log, progress, android=False, media=True):
+    """Generates and compiles (for Android: and makes the APK, with the player's songs and
+    title video when `media`). log(text) reports a line,
     progress(fraction, label) the progress (fraction None: only the label changes).
     Raises RuntimeError with a message for the user on failure."""
     if DARWIN and android:
@@ -473,7 +474,7 @@ def run_steps(rom, jobs, log, progress, android=False):
     tool('recomp.py', '--rom', rom, '--layout', LAYOUT, os.path.join(HERE, 'melonDS', 'src'), GEN)
     tool('apps.py', '--layout', LAYOUT, GEN)
     if android:
-        return android_steps(rom, jobs, log, progress, run)
+        return android_steps(rom, jobs, log, progress, run, media)
     progress(0.08, 'Configuring the build')
     forget_moved_build(BUILD)
     prefix = windows_prefix()
@@ -497,7 +498,7 @@ def run_steps(rom, jobs, log, progress, android=False):
     progress(1.0, 'Done')
 
 
-def android_steps(rom, jobs, log, progress, run):
+def android_steps(rom, jobs, log, progress, run, media=True):
     import tarfile
     ndk = android_ndk(log, progress)
     toolchain = os.path.join(ndk, 'build', 'cmake', 'android.toolchain.cmake').replace('\\', '/')
@@ -534,10 +535,11 @@ def android_steps(rom, jobs, log, progress, run):
     sys.path.insert(0, os.path.join(HERE, 'tools', 'android'))
     import apk
     apk.build(os.path.join(HERE, 'tools', 'android', 'skeleton.apk'), ANDROID_ABI, os.path.join(build, 'libmain.so'),
-              sdl_lib, rom, os.path.join(ANDROID_DIR, 'signing-key.json'), ANDROID_APK)
+              sdl_lib, rom, os.path.join(ANDROID_DIR, 'signing-key.json'), ANDROID_APK, media)
     write_rom_note(rom)
-    log('Made ' + ANDROID_APK)
-    progress(1.0, 'Done: ' + ANDROID_APK)
+    size = 'Made %s (%d MB)' % (ANDROID_APK, os.path.getsize(ANDROID_APK) >> 20)
+    log(size)
+    progress(1.0, size)
 
 
 ANDROID_HELP = (
@@ -776,6 +778,10 @@ def gui():
     jobs_var = tk.IntVar(value=default_jobs())
     ttk.Spinbox(jobs_row, from_=1, to=64, width=4, textvariable=jobs_var).pack(side='left', padx=6)
     ttk.Label(jobs_row, text='(fewer if the computer runs out of memory)').pack(side='left')
+    # Songs and the title video can make the APK hundreds of MB larger.
+    media_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(frame, text='Android: include my songs and title video in the APK',
+                    variable=media_var).pack(anchor='w', pady=(4, 0))
 
     bar = ttk.Progressbar(frame, maximum=1.0)
     bar.pack(fill='x', pady=(12, 2))
@@ -843,7 +849,7 @@ def gui():
     def start(android=False):
         build_btn.state(['disabled'])
         android_btn.state(['disabled'])
-        rom, jobs = rom_var.get().strip(), jobs_var.get()
+        rom, jobs, media = rom_var.get().strip(), jobs_var.get(), media_var.get()
 
         def worker():
             try:
@@ -853,7 +859,7 @@ def gui():
                         build_log.flush()
                         events.put(('log', text))
                     try:
-                        run_steps(rom, jobs, log, lambda f, l: events.put(('progress', f, l)), android=android)
+                        run_steps(rom, jobs, log, lambda f, l: events.put(('progress', f, l)), android=android, media=media)
                     except Exception as e:
                         build_log.write('Failed: %s\n' % e)
                         raise
@@ -964,7 +970,8 @@ def main():
                 if f is not None:
                     last[0] = f
                 print(f'[{int(last[0] * 100):3d}%] {label}', file=out, flush=True)
-            run_steps(rom, jobs, lambda t: print(t, file=out, flush=True), progress, android=android)
+            run_steps(rom, jobs, lambda t: print(t, file=out, flush=True), progress, android=android,
+                      media='--no-media' not in args)
         except RuntimeError as e:
             sys.exit(str(e))
         if android:

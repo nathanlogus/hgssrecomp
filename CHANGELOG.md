@@ -15,6 +15,9 @@
   in the box beside them, so nothing of the battle is covered. Double battles get the new
   menus too, for both of your Pokémon, with the target drawn the same way, and so do the
   questions with two answers ("Will you switch your Pokémon?" and the like).
+- Android: your own songs, fonts, button pictures, title video and autosave picture are
+  packed into the APK and used there too. Songs and the video can be left out (setup
+  program option, or `--no-media`) to keep the APK small; its size is shown when it is made.
 - Autosave no longer stops the game: it keeps your place in the background (for Continue).
   The game's own save by itself in Pokémon Centers and after a badge is now ALSO SAVE THE
   GAME in the Game tab (off by default), and its writing is much quicker.
