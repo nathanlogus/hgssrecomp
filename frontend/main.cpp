@@ -5879,6 +5879,11 @@ int main(int argc, char** argv)
         static HudPcBox::Screen pc;
         static float pcSlide = -1; // how far the game's panels have slid (0-1), or -1
         static uint32_t pcSlideTo = 0;
+        static int pcGlideFrom = -1;
+        static float pcGlide = -1;
+        static HudPcBox::Screen pcScrollFrom;
+        static int pcScrollDir = 0;
+        static uint32_t pcScrollAt = 0, pcScrollStart = 0;
         const bool pcMay = spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen;
         const bool pcHold = pcMay && pcShownAt && pcShownAt == frame - 1;
         bool pcNow = false;
@@ -5896,7 +5901,10 @@ int main(int argc, char** argv)
                     // the fade out too) is drawn at once rather than the game's picture fading in.
                     static bool pcOpening = false;
                     if (read) pcOpening = now.step == 11 || now.step == 15 || (pcOpening && now.step == 2);
-                    pcNow = read && (HudPcBox::Shown(now, (pcShownAt && frame - pcShownAt <= 3) || (pcTabsAt && frame - pcTabsAt <= 3)) ||
+                    static uint32_t pcMsgAt = 0;
+                    if (read && (now.step == 6 || now.step == 7)) pcMsgAt = frame;
+                    pcNow = read && (HudPcBox::Shown(now, (pcShownAt && frame - pcShownAt <= 3) || (pcTabsAt && frame - pcTabsAt <= 3),
+                                         pcMsgAt ? frame - pcMsgAt : ~0u) ||
                                         (pcOpening && now.step == 2 && !HudPcBox::PastTabs(now)));
                     if (read && HudPcBox::PastTabs(now)) pcTabsAt = frame;
                     // A button that changes the screen (hudpcbox.h SlideOf) starts the game's
@@ -5921,6 +5929,24 @@ int main(int argc, char** argv)
                         if (now.grid == HudPcBox::kGridMoveParty && pcLastGrid != now.grid && pcLastGrid) pcMovedFrom = pcLastGrid;
                         pcLastGrid = now.grid;
                     }
+                    // Withdraw sends the Pokemon to the party once the party's panel is out (step 5
+                    // going on to 85): it glides there over the 9 frames the game takes.
+                    static uint32_t pcGlideAt = 0;
+                    if (read && now.step == 5 && now.next == 85)
+                    {
+                        if (!pcGlideAt) pcGlideAt = frame, pcGlideFrom = now.chosen;
+                        pcGlide = (frame - pcGlideAt) / 9.0f;
+                    }
+                    else if (read) pcGlideAt = 0, pcGlide = -1;
+                    // Left or right on the box's name: the game scrolls the old box out and the new
+                    // one in over the 24 frames of the step 5 that follows.
+                    if (pcNow && pcLiveAt && frame - pcLiveAt <= 5 && now.box != pc.box && now.mode == pc.mode)
+                    {
+                        const int d = (now.box - pc.box + 18) % 18;
+                        pcScrollDir = d == 1 ? 1 : d == 17 ? -1 : 0;
+                        pcScrollFrom = pc, pcScrollAt = frame, pcScrollStart = 0;
+                    }
+                    if (pcScrollDir && read && now.step == 5 && !pcScrollStart) pcScrollStart = frame;
                     if (pcNow) pc = now, pcLiveAt = frame;
                     // A Pokemon being put down is copied over a frame: the storage reads
                     // half-written for that frame and the last screen stands in for it.
@@ -5933,12 +5959,21 @@ int main(int argc, char** argv)
         // redrawn screen stands in for it rather than the game's own flashing up.
         else if (pcHold && frame - pcLiveAt <= 30)
             pcNow = true;
+        // How far the new box still is from its place: still until the step 5 begins (or a few
+        // frames without one), then steadily, as the game moves it.
+        float pcScroll = 0;
+        if (pcScrollDir)
+        {
+            const float p = pcScrollStart ? (frame - pcScrollStart) / 24.0f : frame - pcScrollAt > 6 ? 1.0f : 0.0f;
+            if (p >= 1) pcScrollDir = 0;
+            else pcScroll = pcScrollDir * (1 - p);
+        }
         if (pcNow)
         {
             auto ds = [&](int k) { return PadGlyph(PadButtonFor(k, cfg.byLabel, cfg.padMap)); };
             HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, trainerName(), Party_MyCard().id,
                 { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" }, { { ds(1) }, "Back" } },
-                pcSlide, pcSlideTo);
+                pcSlide, pcSlideTo, pcGlideFrom, pcGlide, &pcScrollFrom, pcScroll);
             overlayUsed = true;
             pcShownAt = frame;
         }

@@ -119,13 +119,17 @@ inline bool Read(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, 
 inline bool OnTabs(const Screen& s) { return s.grid == kGridMoveParty && s.cursor >= 37 && s.cursor <= 42; }
 inline bool PastTabs(const Screen& s) { return s.grid == kGridMoveParty && s.cursor > 42; }
 
-inline bool Shown(const Screen& s, bool before)
+// `sinceMsg` is the frames since a message or question (step 6 or 7) was last up: once one
+// closes (step 14, or 5 as the window clears and the menu slides back) the game's screen is
+// back after the window's 2 frames of clearing, and the redraw returns with it.
+inline bool Shown(const Screen& s, bool before, uint32_t sinceMsg = ~0u)
 {
     // Step 5 going on to 53-56 (the box's menu, A on its name) or 92-97 (Deposit's "Deposit
     // where?"): the game slides in a screen of its own, shown from its first frame rather
     // than a still redraw.
     if (PastTabs(s) || (s.step == 5 && ((s.next >= 53 && s.next <= 56) || (s.next >= 92 && s.next <= 97)))) return false;
     if (s.step == 12 || s.step == 41 || s.step == 115 || s.step == 36 || s.step == 81 || s.step == 91) return true;
+    if (sinceMsg >= 3 && sinceMsg <= 40 && (s.step == 14 || s.step == 5)) return true;
     return before && (s.step == 5 || s.step == 8 || (s.step >= 140 && s.step <= 180));
 }
 
@@ -188,8 +192,26 @@ inline float CellY(int i) { return kBoxY + 102 + 132 * (i / 6); }
 inline float SlotX(int i) { return kPartyX + 28 + 128 * (i % 2); }
 inline float SlotY(int i) { return kPartyY + 82 + 128 * (i / 2); }
 
+// Draws with `draw` only inside x0..x1 (design pixels): what it draws beside that, on the
+// rows y0..y1 it keeps to, is put back as it was.
+template <class F> inline void Clipped(Canvas& c, const Ui& ui, float x0, float y0, float x1, float y1, F draw)
+{
+    const int X0 = std::clamp((int)ui(x0), 0, c.w), X1 = std::clamp((int)ui(x1), X0, c.w);
+    const int Y0 = std::clamp((int)ui(y0), 0, c.h), Y1 = std::clamp((int)ui(y1), Y0, c.h);
+    const std::vector<uint32_t> keep(c.px.begin() + (size_t)Y0 * c.w, c.px.begin() + (size_t)Y1 * c.w);
+    draw();
+    for (int yy = Y0; yy < Y1; yy++)
+    {
+        uint32_t* row = &c.px[(size_t)yy * c.w];
+        const uint32_t* k = &keep[(size_t)(yy - Y0) * c.w];
+        std::copy(k, k + X0, row);
+        std::copy(k + X1, k + c.w, row + X1);
+    }
+}
+
 inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Screen& s, const HudOnline::IconFn& icon,
-    const std::string& myName, uint32_t myId, const std::vector<HudHint>& hints, float slide = -1, uint32_t slideTo = 0)
+    const std::string& myName, uint32_t myId, const std::vector<HudHint>& hints, float slide = -1, uint32_t slideTo = 0,
+    int glideFrom = -1, float glide = -1, const Screen* from = nullptr, float scroll = 0)
 {
     using namespace HudColour;
     using HudParty::FillRound;
@@ -216,6 +238,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
         if (place >= 30 && place - 30 < s.partyCount) return &s.party[place - 30];
         return nullptr;
     };
+    const bool gliding = glide >= 0 && glideFrom >= 0 && glideFrom < 30 && s.has[glideFrom] && s.partyCount < 6;
     const PartyMon* shown = s.held >= 0 ? monAt(s.held) : menuOpen ? monAt(s.chosen) : monAt(at);
 
     // A Pokemon's icon in a cell `size` wide, or an egg's word.
@@ -278,16 +301,32 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
         FillRound(c, ui, x + 26, y + 26, w - 52, 60, 18, on ? Gold : Teal);
         HudSprite(c, ui, sp, "cursor/value_arrow_left", x + 120, y + 36, 32, 40, on ? 0xFFFFFFFF : 0x80FFFFFF);
         HudSprite(c, ui, sp, "cursor/value_arrow_right", x + w - 152, y + 36, 32, 40, on ? 0xFFFFFFFF : 0x80FFFFFF);
-        HudText(c, ui, f, x + w / 2, y + 32, 48, s.headName, on ? Ink : White, 1);
-        for (int i = 0; i < 30; i++)
+        auto name = [&](const std::string& n, float dx) { HudText(c, ui, f, x + w / 2 + dx, y + 32, 48, n, on ? Ink : White, 1); };
+        auto cells = [&](const Screen& b, float dx, bool live) {
+            for (int i = 0; i < 30; i++)
+            {
+                const float cx = x0 + CellX(i) + dx, cy = CellY(i);
+                const bool here = live && (at == i || (menuOpen && s.chosen == i));
+                HudPanel(c, ui, sp, here ? "panels/slot_grid_selected" : "panels/slot_grid", cx, cy, 118, 118,
+                    here || b.has[i] ? 0xFFFFFFFF : 0xB0FFFFFF);
+                if (b.has[i] && !(live && (s.held == i || (gliding && glideFrom == i)))) iconIn(b.mons[i], cx + 11, cy + 11, 96);
+            }
+        };
+        if (!from || scroll == 0)
         {
-            const float cx = x0 + CellX(i), cy = CellY(i);
-            const bool here = at == i || (menuOpen && s.chosen == i);
-            HudPanel(c, ui, sp, here ? "panels/slot_grid_selected" : "panels/slot_grid", cx, cy, 118, 118,
-                here || s.has[i] ? 0xFFFFFFFF : 0xB0FFFFFF);
-            if (s.has[i] && s.held != i) iconIn(s.mons[i], cx + 11, cy + 11, 96);
+            name(s.headName, 0);
+            cells(s, 0, true);
         }
-        HudText(c, ui, f, x + w / 2, y + h - 58, 32, std::to_string(s.count) + " / 30", 0xFF2A9DB0, 1);
+        else
+        {
+            // Changing box scrolls the old one out and the new one in, as the game does:
+            // `scroll` is how far the new box still is from its place, in boxes (+ from the right).
+            constexpr float span = 820;
+            const float old = (scroll - (scroll > 0 ? 1 : -1)) * span;
+            Clipped(c, ui, x + 160, y + 26, x + w - 160, y + 86, [&] { name(from->headName, old); name(s.headName, scroll * span); });
+            Clipped(c, ui, x + 26, CellY(0) - 12, x + w - 26, CellY(24) + 130, [&] { cells(*from, old, false); cells(s, scroll * span, true); });
+        }
+        HudText(c, ui, f, x + w / 2, y + h - 58, 32, std::to_string(from && std::abs(scroll) > 0.5f ? from->count : s.count) + " / 30", 0xFF2A9DB0, 1);
         // The box steps back (the game greys it) while the party panel is out, fading with
         // the slide.
         float dim = s.grid == kGridParty ? 1.0f : 0.0f;
@@ -369,6 +408,14 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
             iconIn(*m, hx, hy, 96);
             HudSprite(c, ui, sp, "cursor/cursor", hx + 58, hy + 58, 36, 40);
         }
+    // Withdrawn: the Pokemon glides from its cell to the party's first free slot.
+    if (gliding)
+    {
+        const float t = std::clamp(glide, 0.0f, 1.0f);
+        const float fx = CellX(glideFrom) + 11, fy = CellY(glideFrom) + 11;
+        const float tx = SlotX(s.partyCount) + 10, ty = SlotY(s.partyCount) + 10;
+        iconIn(s.mons[glideFrom], x0 + fx + (tx - fx) * t, fy + (ty - fy) * t, 96);
+    }
     if (s.held >= 0 && tabs)
         if (const PartyMon* m = monAt(s.held))
         {
