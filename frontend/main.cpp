@@ -6080,6 +6080,9 @@ int main(int argc, char** argv)
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Select" }, { { back }, gs.inTabs ? "Close" : "Back" } };
                 if (!gs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
                 else if (gs.call.on) hints = gs.call.waiting ? std::vector<HudHint>{ { { accept }, "Next" } } : std::vector<HudHint>{};
+                else if (gs.app == HudGear::APP_RADIO && !gs.inTabs)
+                    hints = { { { "buttons/button_dpad" }, "Tune" }, { { accept }, "Next station" }, { { back }, "Back" } };
+                else if (gs.moving >= 0) hints = { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Put here" }, { { back }, "Cancel" } };
                 HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env, hints);
                 overlayUsed = true;
             }

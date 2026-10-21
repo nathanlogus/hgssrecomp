@@ -28,6 +28,15 @@ struct Menu
     int cursor = 0;
 };
 
+// The radio: the tuning cursor, the channel button chosen with A, the stations on offer,
+// the station tuned (255 none) and how clearly, its show and the lines on screen.
+struct Radio
+{
+    int x = 128, y = 92, button = 0, stations = 0, signal = 0, station = 255;
+    std::string title, host;
+    std::vector<std::string> lines;
+};
+
 // A phone call (PokegearPhoneCallContext): who, how far it is, and the lines its text box
 // shows; `waiting` while the game waits for a button before going on.
 struct Call
@@ -60,6 +69,8 @@ struct State
     int flyHere = -1;
     Menu menu;
     Call call;
+    Radio radio;
+    int moving = -1; // the phone's contact being moved (its place in the list), -1 none
 };
 
 // A TouchscreenListMenu at `m` (src/touchscreen_list_menu.c): its items (ListMenuItem, a
@@ -190,6 +201,84 @@ constexpr uint16_t kContactBank[75] = { 664, 716, 666, 662, 663, 643, 661, 660, 
 template <class Read>
 bool ReadMap(Read rd, uint32_t own, State& st);
 
+// The radio (PokegearRadioAppData `own`): the tuning cursor (+0x28, +0x2A: DS pixels, in a
+// circle of 52 around 128, 92), the channel button last chosen with A (+0x24 bits 5-7),
+// the stations on offer (+0x26 bits 0-3: Johto, Kanto, Kanto with the expansion, none, the
+// Unown, Team Rocket, Mahogany), the signal (bits 4-5: 0 none, 1 with static, 2 clear),
+// the station tuned (+0x27, 255 none) and its show (RadioShow +0x60): its title (+0x4C)
+// and host (+0x50), the message (+0x6C) of which +0x62 lines are printed, two at a time in
+// its window, which scrolls them all off between segments (+0x5E 2 and 3).
+template <class Read>
+bool ReadRadio(Read rd, uint32_t own, Radio& r)
+{
+    using HudBag::InRam;
+    auto rd16 = [&](uint32_t a) { return rd(a) & 0xFFFF; };
+    r.x = (int16_t)rd16(own + 0x28);
+    r.y = (int16_t)rd16(own + 0x2A);
+    r.button = rd(own + 0x24) >> 5 & 7;
+    const uint32_t w = rd(own + 0x24);
+    r.stations = w >> 16 & 15;
+    r.signal = w >> 20 & 3;
+    r.station = w >> 24 & 0xFF;
+    r.title.clear();
+    r.host.clear();
+    r.lines.clear();
+    if (r.stations > 6 || r.x < 60 || r.x > 196 || r.y < 30 || r.y > 154) return false;
+    static uint32_t lastShow = 0, lastHash = 0;
+    static int lastLine = 0, lastStation = -1;
+    static std::vector<std::string> shown;
+    const uint32_t show = rd(own + 0x60);
+    if (r.station == 255 || !InRam(show))
+    {
+        lastShow = 0;
+        shown.clear();
+        return true;
+    }
+    if (!HudScreens::GameString(rd16, rd(show + 0x4C), r.title) || !HudScreens::GameString(rd16, rd(show + 0x50), r.host)) return false;
+    const uint32_t str = rd(show + 0x6C);
+    if (!InRam(str) || rd(str + 4) != 0xB6F8D2ECu) return false;
+    const uint32_t len = rd(str) >> 16;
+    if (len > 1024) return false;
+    // The message's lines (split at 0xE000), as String_GetLineN gives them.
+    std::vector<std::vector<uint16_t>> lines(1);
+    uint32_t hash = len;
+    for (uint32_t i = 0; i < len; i++)
+    {
+        const uint16_t c = (uint16_t)rd16(str + 8 + 2 * i);
+        hash = hash * 33 + c;
+        if (c == 0xFFFF) break;
+        if (c == 0xFFFE) // a text command: the command, how many arguments, those
+        {
+            i += 2 + rd16(str + 8 + 2 * (i + 2));
+            continue;
+        }
+        if (c == 0xE000) lines.emplace_back();
+        else lines.back().push_back(c);
+    }
+    const int printed = std::min((int)(rd(show + 0x60) >> 16 & 0xFF), (int)lines.size()), run = (int)(rd(show + 0x5C) >> 16 & 0xFF);
+    // Another station, or the window scrolled clear: nothing on it yet.
+    const bool other = show != lastShow || r.station != lastStation;
+    if (other || run >= 2) shown.clear();
+    // The message left from the station before stays in the show's buffer until the new
+    // one prints: its lines are not shown again.
+    if (other && hash == lastHash) lastLine = printed;
+    else if (other || hash != lastHash) lastLine = 0;
+    lastStation = r.station;
+    // The newest line as printed (+0x48): with static, the game blots letters out of it.
+    for (; lastLine < printed && run < 2; lastLine++)
+    {
+        std::string line;
+        if (lastLine != printed - 1 || !HudScreens::GameString(rd16, rd(show + 0x48), line))
+            line = NdsText(lines[lastLine].data(), lines[lastLine].size());
+        shown.push_back(line);
+    }
+    lastShow = show;
+    lastHash = hash;
+    if (shown.size() > 2) shown.erase(shown.begin(), shown.end() - 2);
+    r.lines = shown;
+    return true;
+}
+
 template <class Read, class App>
 bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, int& step, bool& between)
 {
@@ -197,8 +286,8 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
     using HudBag::InRam;
     auto rd8 = [&](uint32_t a) { return (int)(rd(a) & 0xFF); };
     auto rd16 = [&](uint32_t a) { return (int)(rd(a) & 0xFFFF); };
-    const auto *gear = app("Pokegear"), *phone = app("GearPhone"), *map = app("GearMap");
-    if (!gear || !phone || !map) return false;
+    const auto *gear = app("Pokegear"), *phone = app("GearPhone"), *map = app("GearMap"), *radio = app("GearRadio");
+    if (!gear || !phone || !map || !radio) return false;
     const uint32_t man = HudBag::FindManager(rd, gear->initAddr, gear->execAddr, gear->exitAddr, cache);
     if (!man) return false;
     const uint32_t data = rd(man + 0x1C);
@@ -225,7 +314,7 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
         if (st.tabCursor > APP_CANCEL) return false;
     }
     // The tab's own application, run by the Pokégear (childApplication) in its per-frame step.
-    const auto* tab = st.app == APP_PHONE ? phone : st.app == APP_MAP ? map : nullptr;
+    const auto* tab = st.app == APP_PHONE ? phone : st.app == APP_MAP ? map : st.app == APP_RADIO ? radio : nullptr;
     const uint32_t child = rd(data + 0x70);
     if (!tab || !InRam(child) || (rd(child) & ~1u) != tab->initAddr || (rd(child + 4) & ~1u) != tab->execAddr ||
         (rd(child + 8) & ~1u) != tab->exitAddr || rd(child + 0x18) != data)
@@ -235,9 +324,9 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
     }
     const uint32_t own = rd(child + 0x1C);
     step = (int)rd(child + 0x14);
-    // Starting (0), ending (2) or done (the phone's 14, the map's 13), or not yet in its
-    // per-frame function: between tabs.
-    if (rd(child + 0x10) != 2 || step == 0 || step == 2 || step == (st.app == APP_PHONE ? 14 : 13))
+    // Starting (0), ending (2) or done (the phone's 14, the map's 13, the radio's 9), or not
+    // yet in its per-frame function: between tabs.
+    if (rd(child + 0x10) != 2 || step == 0 || step == 2 || step == (st.app == APP_PHONE ? 14 : st.app == APP_RADIO ? 9 : 13))
     {
         between = true;
         return false;
@@ -256,8 +345,10 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
         const int n = rd8(ui);
         st.row = rd8(ui + 1);
         st.first = rd8(ui + 3);
-        if (n < 1 || n > 75 || n != rd8(own + 0xCD) || st.first >= n || st.row > 5 || st.first + st.row >= n || rd8(ui + 6) >> 1)
-            return false; // movingContacts
+        if (n < 1 || n > 75 || n != rd8(own + 0xCD) || st.first >= n || st.row > 5 || st.first + st.row >= n) return false;
+        // Moving a contact (Sort, then by hand): the one being moved (selectedIndex +2).
+        st.moving = rd8(ui + 6) >> 1 ? rd8(ui + 2) : -1;
+        if (st.moving >= n) return false;
         st.contacts.clear();
         for (int i = 0; i < n; i++)
         {
@@ -268,6 +359,7 @@ bool ReadState(Read rd, App app, HudBag::Texts& tx, uint32_t& cache, State& st, 
         }
         return true;
     }
+    if (st.app == APP_RADIO) return rd(own + 0x0C) == data && ReadRadio(rd, own, st.radio);
     // PokegearMapAppData: the Pokégear's map (not flying or the Town Map).
     return rd(own + 0x10) == data && rd8(own + 0x0D) == 0 && ReadMap(rd, own, st);
 }
@@ -339,7 +431,18 @@ inline bool Shown(const State& st, int step, bool before)
         case 12: return true; // wiping in from another tab
         case 11: // fading out to close
         case 13: return before; // wiping out to another tab
-        default: return false; // moving contacts
+        case 9: return true; // moving a contact
+        default: return false;
+        }
+    if (st.app == APP_RADIO)
+        switch (step) // PokegearRadio_Main
+        {
+        case 1:  // tuning
+        case 5:  // fading in
+        case 7: return true; // wiping in from another tab
+        case 6:  // fading out to close
+        case 8: return before; // wiping out to another tab
+        default: return false;
         }
     if (st.mode)
         switch (step) // FlyMap_Main
@@ -581,7 +684,14 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
             const int id = st.contacts[st.first + k];
             const bool here = !st.inTabs && k == st.row;
             const float ry = my + 112 + k * 108, rx = mx + 40, rw = mw - 120;
-            HudPanel(c, ui, sp, here ? "panels/row_selected" : "panels/row", rx, ry, rw, 92);
+            // A contact being moved: lifted out in teal, with arrows to say it moves.
+            const bool lifted = st.first + k == st.moving;
+            HudPanel(c, ui, sp, lifted ? "panels/row_teal" : here ? "panels/row_selected" : "panels/row", rx, ry, rw, 92);
+            if (lifted)
+            {
+                HudSprite(c, ui, sp, "icons/icon_arrow_up", rx + rw - 120, ry + 26, 40, 40);
+                HudSprite(c, ui, sp, "icons/icon_arrow_down", rx + rw - 70, ry + 26, 40, 40);
+            }
             if (here) HudSprite(c, ui, sp, "cursor/cursor_small", rx + 10, ry + 30, 30, 32);
             const std::string name = Name(tx, id);
             HudSprite(c, ui, sp, here ? "people/chip_ring_orange" : "people/chip_ring_grey", rx + 50, ry + 10, 72, 72);
@@ -593,6 +703,42 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         // The arrows the game shows when there is more above or below.
         if (st.first > 0) HudSprite(c, ui, sp, "icons/icon_arrow_up", mx + mw - 64, my + 112, 40, 40);
         if (st.first + 6 < n) HudSprite(c, ui, sp, "icons/icon_arrow_down", mx + mw - 64, my + 112 + 5 * 108 + 52, 40, 40);
+    }
+    else if (st.app == APP_RADIO)
+    {
+        // The radio: the tuning dial with the game's channels as numbered rings and its
+        // cursor, the show on air beside it and its words below; A steps through the channels.
+        const Radio& r = st.radio;
+        const char* signal = r.station == 255 ? "No signal" : r.signal == 1 ? "Faint signal" : "Clear signal";
+        HudOnline::TitledCard(c, ui, sp, f, mx + 24, my + 24, mw - 48, 60, "RADIO", signal);
+        // The dial: the game's circle of 52 around (128, 92), four design pixels to one.
+        const float k = 4, rad = 52 * k, dcx = mx + 70 + rad, dcy = my + 140 + rad;
+        HudSprite(c, ui, sp, "people/chip_ring_grey", dcx - rad - 30, dcy - rad - 30, 2 * rad + 60, 2 * rad + 60);
+        // The channels' centres (sTuningHitboxes_*) for the stations on offer.
+        static const int chan[5][2] = { { 112, 76 }, { 152, 76 }, { 96, 108 }, { 136, 116 }, { 128, 48 } };
+        const int nChan = r.stations == 0 ? 4 : r.stations == 1 ? 3 : r.stations == 2 ? 5 : 0;
+        for (int i = 0; i < nChan; i++)
+        {
+            const float px = dcx + (chan[i][0] - 128) * k, py = dcy + (chan[i][1] - 92) * k;
+            HudSprite(c, ui, sp, i == r.button ? "people/chip_ring_orange" : "people/chip_ring_grey", px - 36, py - 36, 72, 72);
+            HudText(c, ui, f, px, py - 16, 32, std::to_string(i + 1), Ink, 1);
+        }
+        const float cx = dcx + (r.x - 128) * k, cy = dcy + (r.y - 92) * k;
+        HudSprite(c, ui, sp, "people/chip_ring_orange", cx - 30, cy - 30, 60, 60);
+        HudSprite(c, ui, sp, "icons/icon_radio", cx - 20, cy - 20, 40, 40);
+        // The show, beside the dial.
+        const float tx0 = dcx + rad + 60, tw = mx + mw - 40 - tx0;
+        if (r.station != 255)
+        {
+            const std::vector<std::string> t = HudWrap(ui, f, 48, r.title, tw);
+            for (size_t i = 0; i < t.size() && i < 2; i++) HudText(c, ui, f, tx0, my + 160 + 60.0f * i, 48, t[i], Ink, 0, true);
+            HudText(c, ui, f, tx0, my + 300, 32, r.host, Muted);
+        }
+        else
+            HudText(c, ui, f, tx0, my + 160, 32, "Move the dial to a station", Muted);
+        const float bx = mx + 40, by = my + mh - 200, bw = mw - 80;
+        if (r.station != 255) HudPanel(c, ui, sp, "panels/dialogue_box", bx, by, bw, 160);
+        for (size_t i = 0; i < r.lines.size(); i++) HudText(c, ui, f, bx + 40, by + 20 + 66.0f * i, 48, r.lines[i], Ink);
     }
     else
     {
@@ -686,6 +832,11 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         title = Name(tx, id);
         sub = book.Class(tx, id);
     }
+    else if (st.app == APP_RADIO)
+    {
+        title = st.radio.title;
+        sub = st.radio.host;
+    }
     else if (st.selMap >= 0 && !st.inTabs)
     {
         title = Party_PlaceName(st.selMap);
@@ -702,7 +853,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
     float y = my + 24;
     if (!title.empty())
     {
-        HudOnline::TitledCard(c, ui, sp, f, sx + 24, y, sw - 48, 60, st.app == APP_PHONE ? "CONTACT" : "PLACE");
+        HudOnline::TitledCard(c, ui, sp, f, sx + 24, y, sw - 48, 60, st.app == APP_PHONE ? "CONTACT" : st.app == APP_RADIO ? "ON AIR" : "PLACE");
         HudText(c, ui, f, sx + 40, y + 84, 48, title, Ink, 0, true);
         float ty = y + 148;
         if (!sub.empty()) HudText(c, ui, f, sx + 40, ty, 32, sub, st.flyHere >= 0 ? Ink : Muted), ty += 40;

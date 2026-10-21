@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New screens: the Pokégear's radio is drawn anew (the tuning dial with its stations, the
+  show on air and its words as they come, static and all), and so is moving a contact by
+  hand in the phone's list.
+
 - The new party menu shows Fly and a Pokémon's other field moves where the game puts them,
   in a column on the left that you reach with LEFT; before, they were listed under Quit
   where the cursor never went.
