@@ -13,6 +13,8 @@
   now show the game's own map of Johto or Kanto (read from your ROM, in the colours of
   your Pokégear skin), with towns you have not visited greyed as in the game; the cursor,
   the towns you can fly to, where a Pokémon lives and where your friends are sit on top.
+  The map fills its whole panel, zoomed in, and glides along to keep the cursor (or the
+  places a Pokémon lives) in view.
 - New screens: when a Pokémon evolves, an egg hatches or a Pokémon is traded, the
   messages appear in the new message box while the game's own animation plays: "What? …
   is evolving!" (with a hint that B stops it), the moves it wants to learn and the
