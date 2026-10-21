@@ -394,6 +394,150 @@ inline bool ReadXMenu(const Ram& r, XMenu& m)
     return m.cursor < (int)m.actions.size();
 }
 
+// The X menu's entries the save has unlocked (its script flags, as the menu checks them), in
+// the pause menu's order: Pokédex, Pokémon, Bag, Pokégear, trainer card, Save, Options. The
+// menu itself may still leave some out (the Safari Zone's, the Bug-Catching Contest's).
+inline std::vector<int> UnlockedActions(const Ram& r)
+{
+    std::vector<int> v;
+    const uint32_t fs = r.R32(kFieldSystem), save = r.R32(fs + 0x0C);
+    if (!r.Ptr(fs) || !r.Ptr(save)) return v;
+    auto flag = [&](uint32_t f) { return (r.R8(save + 0x10 + 0x10C4 + f / 8) >> (f % 8) & 1) != 0; };
+    static const std::pair<int, uint32_t> order[] = { { 0, 0x6B }, { 1, 0x6A }, { 2, 0x11B }, { 11, 0x9C }, { 3, 0x11C }, { 4, 0x11D }, { 5, 0x11E } };
+    for (const auto& e : order)
+        if (flag(e.second)) v.push_back(e.first);
+    return v;
+}
+
+// Opens an entry of the game's X menu for the pause menu: X, the D-pad to the entry, A, as
+// presses (held three frames: the overworld reads the buttons every other frame), so the
+// game does it all itself. The cursor (FieldSystem +0xD3) is an index of the menu's actions
+// (StartMenuTaskData +0x3A); each move goes towards the entry's place in the menu's two
+// columns (DrawXMenu), the other way round when a press does not move it.
+class XMenuDrive
+{
+public:
+    bool Busy() const { return step != 0; }
+    // The overworld's picture stays while it runs and a moment after (the X menu never shows).
+    bool Covering(uint32_t frame) const { return Busy() || (doneAt && frame - doneAt < 40); }
+    // Coming back from what was opened, the game puts its X menu back up: it is closed again
+    // with B, and kept out of the picture (its panel and strip) until then.
+    bool Hiding() const { return returning; }
+    void Start(int action, uint32_t frame)
+    {
+        target = action;
+        step = 1;
+        stepAt = frame;
+        presses = 0;
+        hold = gap = 0;
+        failed.clear();
+    }
+    // `startMenu`: the X menu's task runs (probeStartMenu); `idle`: the overworld with nothing
+    // open (fieldIdle). `keys`: replaced while busy.
+    // Returns a message for the player when the entry cannot be opened, else empty.
+    std::string Step(const Ram& r, uint32_t frame, bool startMenu, bool idle, uint32_t& keys, int keyA, int keyB, int keyX, int keyUp, int keyDown,
+        int keyLeft, int keyRight)
+    {
+        if (!step && returning)
+        {
+            const uint32_t fs = r.R32(kFieldSystem), sm = startMenu ? r.R32(r.R32(fs + 0x10) + 0x0C) : 0;
+            if (idle) returning = false; // the menu closed (or never came back)
+            if (!startMenu || !r.Ptr(sm)) return "";
+            const uint32_t state = r.R16(sm + 0x26);
+            if (state == 3 || state == 15 || state == 17) // back in the menu, or fading back to it
+            {
+                keys = 0;
+                if (hold > 0) { keys = holdKey; hold--; }
+                else if (gap > 0) gap--;
+                else if (state == 3) { holdKey = 1u << keyB; keys = holdKey; hold = 2; gap = 20; }
+            }
+            return "";
+        }
+        if (!step) return "";
+        keys = 0;
+        if (hold > 0) { keys = holdKey; hold--; return ""; }
+        if (gap > 0) { gap--; return ""; }
+        auto tap = [&](int key, int wait) { holdKey = 1u << key; keys = holdKey; hold = 2; gap = wait; };
+        const uint32_t since = frame - stepAt;
+        const uint32_t fs = r.R32(kFieldSystem), sm = startMenu ? r.R32(r.R32(fs + 0x10) + 0x0C) : 0;
+        const uint32_t n = sm ? r.R32(sm + 0x2C) : 0;
+        const bool ready = r.Ptr(sm) && r.R16(sm + 0x26) == 3 && n >= 1 && n <= 10;
+        auto finish = [&](const char* why) {
+            fprintf(stderr, "[xmenu] frame %u: %s\n", frame, why);
+            step = 0;
+            doneAt = frame;
+        };
+        if (step == 1) // open the menu
+        {
+            if (ready) step = 2, stepAt = frame, lastCur = -1;
+            else if (since > 150) { finish("the menu did not open"); return "The menu can't be opened here"; }
+            else if (!startMenu && since % 60 == 0) tap(keyX, 20);
+            return "";
+        }
+        if (step == 4) // A pressed and held (above): the game opens the entry
+        {
+            finish("opened");
+            returning = true;
+            return "";
+        }
+        if (step == 3) // closing after a failure
+        {
+            if (!startMenu || since > 200) finish("menu closed");
+            else if (ready && since % 40 == 0) tap(keyB, 20);
+            return "";
+        }
+        if (!ready) { finish("the menu went away"); return ""; }
+        int want = -1;
+        for (uint32_t i = 0; i < n; i++)
+        {
+            const int a = (int)r.R8(sm + 0x3A + i);
+            if (a == target || (target == 11 && a == 12)) { want = (int)i; break; }
+        }
+        const int cur = (int)r.R8(fs + 0xD3);
+        if (want < 0 || cur >= (int)n || presses > 16 || since > 600)
+        {
+            step = 3, stepAt = frame;
+            return want < 0 ? "Not available here" : "";
+        }
+        if (cur == want)
+        {
+            tap(keyA, 4);
+            step = 4;
+            return "";
+        }
+        // Where the cursor and the entry are in the menu's two columns.
+        auto cell = [&](int a, int& col, int& row) {
+            col = (a >= 3 && a <= 5) ? 1 : 0;
+            row = a == 0 || a == 3 ? 0 : a == 1 || a == 4 ? 1 : a == 2 || a == 5 ? 2 : 3;
+        };
+        int cc, cr, tc, tr;
+        cell((int)r.R8(sm + 0x3A + cur), cc, cr);
+        cell(target, tc, tr);
+        // A press that did not move the cursor: that way is closed from here.
+        if (lastCur == cur && lastDir >= 0) failed.push_back(cur * 4 + lastDir);
+        auto tried = [&](int d) { return std::find(failed.begin(), failed.end(), cur * 4 + d) != failed.end(); };
+        int dir = -1; // 0 down, 1 right, 2 up, 3 left
+        // Across to the entry's column first (up and down wrap round within a column), then
+        // up or down; the other ways when those do not move the cursor.
+        const int prefer[4] = { tc > cc ? 1 : tc < cc ? 3 : -1, tr > cr ? 0 : tr < cr ? 2 : -1, tr > cr ? 2 : 0, tc > cc ? 3 : 1 };
+        for (int d : prefer)
+            if (d >= 0 && !tried(d)) { dir = d; break; }
+        if (dir < 0) { step = 3, stepAt = frame; return ""; }
+        const int keys4[4] = { keyDown, keyRight, keyUp, keyLeft };
+        lastCur = cur;
+        lastDir = dir;
+        presses++;
+        tap(keys4[dir], 10);
+        return "";
+    }
+
+private:
+    bool returning = false;
+    int step = 0, target = -1, presses = 0, hold = 0, gap = 0, lastCur = -1, lastDir = -1;
+    uint32_t stepAt = 0, doneAt = 0, holdKey = 0;
+    std::vector<int> failed;
+};
+
 // The menu in a card at (x, y, w, h), its buttons where the game has them: Pokédex,
 // Pokémon, Bag and Pokégear down the left, the trainer card, Save and Options down the right.
 // shortcut: the Pokédex's place (top left) is the one left free; not seen on a save that has it drawn.

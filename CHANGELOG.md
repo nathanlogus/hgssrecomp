@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- One menu: on the overworld, X and + both open the pause menu, whose first page now lists
+  the game's own menu (Pokédex, Pokémon, Bag, Pokégear, your trainer card, Save, Options:
+  what you have so far). Choosing one opens it in the game, and closing it brings you back
+  to the overworld. (In the screen layouts with both screens, X is still the game's menu.)
 - Online: choose your look (Profile, Look) from any of the game's people who walk all
   four ways, browsing them with the d-pad and seeing them walk before you confirm (left
   and right on Look change it straight away). The others see you walking around with that
