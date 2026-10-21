@@ -6220,6 +6220,21 @@ int main(int argc, char** argv)
                 overlayUsed = true;
             }
         }
+        // The Battle Castle's screen of your Pokemon redrawn (hudfrontier.h).
+        if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && sectionActive("OVY_83"))
+        {
+            static uint32_t castleAt = 0;
+            HudFrontier::Castle cv;
+            if (HudFrontier::ReadCastle({ nds->MainRAM, nds->MainRAMMask + 1 }, castleAt, cv))
+            {
+                const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
+                HudFrontier::DrawCastle(canvas, ui, sprites, font, cv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); },
+                    [&](int item) { return romArt.ItemIcon(item); }, hints);
+                overlayUsed = true;
+            }
+        }
         // Voltorb Flip redrawn (hudminigames.h); the game keeps its own controls.
         if (spritesOk && cfg.redrawn && screen == SCR_NONE && !menu.open && !startOpen && appRunning("VoltorbFlip"))
             for (unsigned i = 0; i < rc_num_apps; i++)
