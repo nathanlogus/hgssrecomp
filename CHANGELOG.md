@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-<<<<<<< HEAD
 - New screens: choosing your rental Pokémon at the Battle Frontier's Battle Factory. All
   six Pokémon on offer are shown at once, with everything about the one you are on (types,
   ability, nature, held item and moves), the team you have picked so far, the Summary,
@@ -20,21 +19,15 @@
 - New screens: a Pokémon's pages in the Pokédex are drawn anew. Area shows the region's
   map with the places it lives at that time of day marked, beside the list of them; Size
   puts it next to you, height and weight; Forms lists the forms you have seen.
-=======
 - New screens: the Pokégear's settings tab (choosing its skin) is drawn anew.
-
 - New screens: the keyboard for naming (nicknames, boxes, your name) is drawn anew, with
   the name in its boxes and the keys of each page.
-
 - New screens: the Pokégear's radio is drawn anew (the tuning dial with its stations, the
   show on air and its words as they come, static and all), and so is moving a contact by
   hand in the phone's list.
-
 - The new party menu shows Fly and a Pokémon's other field moves where the game puts them,
   in a column on the left that you reach with LEFT; before, they were listed under Quit
   where the cursor never went.
-
->>>>>>> worktree-agent-ab843c23e5ec8fe76
 - New screens: what people say in the overworld appears in a new message box, the text
   coming in as the game writes it, with the arrow when there is more; yes/no questions
   (such as the Pokémon Center's nurse) and lists of choices (such as the shop clerk's
