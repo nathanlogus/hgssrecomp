@@ -282,6 +282,7 @@ inline float DrawLogo(Canvas& c, const Ui& ui, const RomFont& f, const Image* lo
         return y + h;
     }
     const float w = h * logo->w / logo->h;
+    BlitShadow(c, *logo, ui(wd / 2 - w / 2), ui(y), ui(w), ui(h));
     Blit(c, *logo, 0, 0, (float)logo->w, (float)logo->h, ui(wd / 2 - w / 2), ui(y), ui(w), ui(h));
     return y + h;
 }
@@ -337,7 +338,7 @@ inline void StartScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     DrawBackdrop(c, sp, "backgrounds/bg_sunny", 0xFFFFFFFF);
     const float wd = ui.W / ui.s;
     const float top = DrawLogo(c, ui, f, logo, title, 20, 230);
-    HudText(c, ui, f, wd / 2, top + 4, 32, sub, 0xFF5B6270, 1);
+    if (!sub.empty()) HudText(c, ui, f, wd / 2, top + 4, 32, sub, 0xFF5B6270, 1);
     const float pitch = 260, x0 = wd / 2 - pitch * (items.size() - 1) / 2, iy = top + 150;
     for (size_t i = 0; i < items.size(); i++)
     {

@@ -1287,7 +1287,8 @@ int main(int argc, char** argv)
         {
             // The setup program writes it relative to its folder in portable mode.
             rom = (here / fs::u8path(rom)).u8string();
-            save = (here / "soulsilver.sav").u8string();
+            // The save is kept in ROMS/ when the player keeps it there with the ROMs.
+            save = ((fs::exists(here / "ROMS" / "soulsilver.sav") ? here / "ROMS" : here) / "soulsilver.sav").u8string();
         }
         else
         {
@@ -6236,6 +6237,7 @@ int main(int argc, char** argv)
                         const float lh = lw * logo.h / logo.w;
                         // Faded in with the video's own fade from white (its first second).
                         const float fade = std::clamp(((SDL_GetTicks() - titleSince) / 1000.0f - 0.2f) / 0.9f, 0.0f, 1.0f);
+                        BlitShadow(canvas, logo, lx - lw / 2, ly - lh / 2, lw, lh, (uint32_t)(0xA6 * fade) << 24);
                         Blit(canvas, logo, 0, 0, (float)logo.w, (float)logo.h, lx - lw / 2, ly - lh / 2, lw, lh, true,
                             (uint32_t)(255 * fade) << 24 | 0xFFFFFF);
                     }
@@ -6270,7 +6272,7 @@ int main(int argc, char** argv)
                 // HeartGold's game codes are IPK*, SoulSilver's IPG*.
                 const bool heartGold = rom.size() > 0x10 && rom[0x0C] == 'I' && rom[0x0D] == 'P' && rom[0x0E] == 'K';
                 HudOnline::StartScreen(canvas, ui, sprites, font, items, startSel, logo.px.empty() ? nullptr : &logo,
-                    heartGold ? "POK\xC3\xA9MON HEARTGOLD" : "POK\xC3\xA9MON SOULSILVER", "ssrecomp \xC2\xB7 widescreen build",
+                    heartGold ? "POK\xC3\xA9MON HEARTGOLD" : "POK\xC3\xA9MON SOULSILVER", "",
                     { { { accept }, "Select" } }, footer, drawSave);
                 }
             }

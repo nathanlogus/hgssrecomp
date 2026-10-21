@@ -120,6 +120,12 @@ def read_rom_note():
     return os.path.normpath(os.path.join(HERE, rom)) if rom and not os.path.isabs(rom) else rom
 
 
+def save_path():
+    """The game's save: in ROMS/ when the player keeps it there with the ROMs."""
+    kept = os.path.join(HERE, 'ROMS', 'soulsilver.sav')
+    return kept if os.path.exists(kept) else os.path.join(HERE, 'soulsilver.sav')
+
+
 def write_rom_note(rom):
     rom = os.path.abspath(rom)
     if PORTABLE:
@@ -557,7 +563,7 @@ def play(extra=()):
     # the game's messages go to game.log, made new each time, for bug reports (beside the
     # build log, build.log).
     with open(os.path.join(HERE, 'game.log'), 'w') as log:
-        return subprocess.Popen([EXE, rom, '--save', os.path.join(HERE, 'soulsilver.sav'),
+        return subprocess.Popen([EXE, rom, '--save', save_path(),
                                  '--config', os.path.join(HERE, 'ssrecomp.cfg'), *extra], cwd=HERE,
                                 stdout=log, stderr=subprocess.STDOUT, env=child_env())
 

@@ -7,6 +7,8 @@
   you to each other and starts the battle or trade (the other side's yes is given for
   them). Press B to stop it and do it yourself; leaving the Union Room takes you back to
   where you were.
+- Your save can live in a `ROMS` folder beside the game, with your ROMs: if
+  `ROMS/soulsilver.sav` is there, Play and starting the game directly use it.
 - NEW SCREENS: the Union Room's trade screen: both parties side by side, the Pokémon you
   and the other player are on in cards in the middle (ability and held item), the menu,
   "Cancel trading?", the trade question and the Ball Capsule warning along the bottom, and

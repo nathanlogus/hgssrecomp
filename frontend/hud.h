@@ -182,6 +182,58 @@ inline void Blit(Canvas& c, const Image& img, float sx, float sy, float sw, floa
     }
 }
 
+// A soft drop shadow for `img` drawn at dx, dy, dw, dh (call it before drawing the image):
+// its outline blurred and darkened, a little below. The blurred copy is made once per image
+// at a small size and scaled up when drawn, so it costs about as much as the image itself.
+inline void BlitShadow(Canvas& c, const Image& img, float dx, float dy, float dw, float dh, uint32_t tint = 0xA6000000)
+{
+    static const Image* made = nullptr;
+    static size_t madeSize = 0;
+    static Image shadow;
+    static int w = 0, pad = 0;
+    if (img.px.empty() || dw <= 0 || dh <= 0) return;
+    if (made != &img || madeSize != img.px.size())
+    {
+        made = &img;
+        madeSize = img.px.size();
+        const float k = std::min(1.0f, 160.0f / std::max(img.w, img.h));
+        w = std::max(1, (int)(img.w * k));
+        const int h = std::max(1, (int)(img.h * k));
+        pad = 6;
+        const int W = w + 2 * pad, H = h + 2 * pad;
+        std::vector<float> a((size_t)W * H, 0.0f), t((size_t)W * H);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                a[(size_t)(y + pad) * W + x + pad] = float(img.px[(size_t)std::min(img.h - 1, (int)(y / k)) * img.w + std::min(img.w - 1, (int)(x / k))] >> 24);
+        // Two box blurs each way, close to a Gaussian.
+        const int r = 2;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    float s = 0;
+                    for (int i = std::max(0, x - r); i <= std::min(W - 1, x + r); i++) s += a[(size_t)y * W + i];
+                    t[(size_t)y * W + x] = s / (2 * r + 1);
+                }
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    float s = 0;
+                    for (int i = std::max(0, y - r); i <= std::min(H - 1, y + r); i++) s += t[(size_t)i * W + x];
+                    a[(size_t)y * W + x] = s / (2 * r + 1);
+                }
+        }
+        shadow.w = W;
+        shadow.h = H;
+        shadow.px.resize((size_t)W * H);
+        for (size_t i = 0; i < shadow.px.size(); i++) shadow.px[i] = (uint32_t)std::min(255.0f, a[i] + 0.5f) << 24;
+    }
+    const float scale = dw / w, off = dh * 0.035f;
+    Blit(c, shadow, 0, 0, (float)shadow.w, (float)shadow.h, dx - pad * scale + off * 0.5f, dy - pad * scale + off,
+        shadow.w * scale, shadow.h * scale, true, tint);
+}
+
 // A rectangle in a flat colour, blended (Canvas::Fill overwrites).
 inline void FillBlend(Canvas& c, float x, float y, float w, float h, uint32_t argb)
 {
