@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- New screens: the keyboard for naming (nicknames, boxes, your name) is drawn anew, with
+  the name in its boxes and the keys of each page.
+
 - New screens: the Pokégear's radio is drawn anew (the tuning dial with its stations, the
   show on air and its words as they come, static and all), and so is moving a contact by
   hand in the phone's list.
