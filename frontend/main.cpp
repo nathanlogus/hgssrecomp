@@ -4377,6 +4377,9 @@ int main(int argc, char** argv)
                 case H_SAVE:
                     // As at the counter, a save first: a link that breaks restarts the game from it.
                     if (hmap == 2) go(H_ROOM);
+                    // None in the Wi-Fi Plaza: the game has no menu there (a "Mystery Zone");
+                    // a broken link restarts from the receptionist's save on the way in.
+                    else if (hmap == PlazaMap::MapId) go(H_WARP);
                     else if (frame - hand.start > 60 * 60) callOff("Not going to the Union Room: the game could not be saved", true);
                     else if (gameSave.Busy()) hand.saveSeen = true;
                     else if (hand.saveSeen && gameSave.wrote) go(H_WARP);
