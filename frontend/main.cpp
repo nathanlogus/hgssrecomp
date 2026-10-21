@@ -5851,22 +5851,33 @@ int main(int argc, char** argv)
             bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
             static HudWorld::Dialogue worldLast;
             static uint32_t worldLastAt = 0;
-            if (shown) worldLast = dlg, worldLastAt = frame;
+            // A script lets go of its box and leaves the last page on the screen (HoldMsg, before
+            // a list of choices): that page, while the game's box shows exactly what it did.
+            static uint64_t worldBoxPicture = 0;
+            const uint64_t picture = top >= 0 ? HudWorld::BoxPicture(screenImages[0]) : 0;
+            if (shown) worldLast = dlg, worldLastAt = frame, worldBoxPicture = dlg.more ? 0 : picture;
             else if (top >= 0 && slide && worldLast.sign >= 0 && frame - worldLastAt < 12)
             {
                 dlg = worldLast;
                 dlg.more = false;
                 shown = true;
             }
+            else if (top >= 0 && !slide && picture && picture == worldBoxPicture && worldLast.sign < 0)
+            {
+                dlg = worldLast;
+                shown = true;
+            }
+            else
+                worldBoxPicture = 0;
             worldBoxHold = shown ? 3 : std::max(0, worldBoxHold - 1);
             if (worldBoxHold > 0 && fieldView) scene.items[0].drop |= LAYER_BG3;
             if (shown)
             {
-                const int yesNo = HudWorld::ReadYesNo(ram);
-                if (yesNo >= 0) scene.items.resize(1);
+                HudWorld::Choice choice;
+                if (HudWorld::ReadChoice(ram, choice)) scene.items.resize(1);
                 const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
                 HudWorld::Draw(canvas, ui, sprites, font, dlg, x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u,
-                    HudWorld::kBoxH * u - 6, frame, yesNo);
+                    HudWorld::kBoxH * u - 6, frame, &choice);
                 overlayUsed = true;
             }
         }

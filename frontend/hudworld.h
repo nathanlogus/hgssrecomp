@@ -194,42 +194,102 @@ inline int BoxTop(const uint8_t* flags)
             }
     return inBox > 16 * 8 ? top : -1;
 }
+// A fingerprint of what the top screen shows of the box (its BG3 pixels), never 0.
+inline uint64_t BoxPicture(const ScreenImage& top)
+{
+    if (!top.pixels || !top.flags) return 0;
+    uint64_t h = 1469598103934665603ull;
+    for (int y = kBoxY; y < kBoxY + kBoxH; y++)
+        for (int x = kBoxX; x < kBoxX + kBoxW; x++)
+            if (LayerClass(top.flags[y * 256 + x]) == LAYER_BG3) h = (h ^ (top.pixels[y * 256 + x] & 0xFFFFFF) ^ (uint64_t)(y * 256 + x) << 32) * 1099511628211ull;
+    return h | 1;
+}
+
 inline bool OnlyTheBox(const uint8_t* flags)
 {
     const int top = BoxTop(flags);
     return top >= 0 && top <= kBoxY + 2;
 }
 
-// A script's yes/no question (ScrCmd_GetMenuChoice): the touch screen's buttons
-// (overlay 27, run by the field's bottom-screen task at FieldSystem +0xD8), which the d-pad
-// moves too. Its data: +0 its step (4 waiting for the answer, 5 the answer taken), +4 where
-// the answer goes, +0x24 the FieldSystem, +0x394 the cursor (0 yes, 1 no). -1 when none.
-inline int ReadYesNo(const Ram& r)
+// A String of the game (its codes from +8) as one line of text; false for anything but
+// plain characters.
+inline bool StringText(const Ram& r, uint32_t s, std::string& out)
 {
+    out.clear();
+    if (!r.Ptr(s) || r.R32(s + 4) != 0xB6F8D2ECu) return false;
+    const uint32_t n = r.R16(s + 2);
+    if (n > r.R16(s) || n > 64) return false;
+    for (uint32_t i = 0; i < n; i++)
+    {
+        const uint16_t c = (uint16_t)r.R16(s + 8 + 2 * i);
+        if (c == 0xFFFF) break;
+        const std::string ch = NdsCharToUtf8(c);
+        if (ch.empty() || c == 0xE000 || c == 0x25BC || c == 0x25BD) return false;
+        out += ch;
+    }
+    return !out.empty();
+}
+
+// A script's question with answers on the touch screen, which the d-pad works too: a yes/no
+// (ScrCmd_GetMenuChoice, the script waiting in sub_020477C0) or a list of choices
+// (ScrCmd_MenuInit/MenuItemAdd/MenuExec, waiting in sub_020478D0), as the shop clerk's BUY,
+// SELL, SEE YA! Overlay 27 shows them, run by the field's bottom-screen task (FieldSystem
+// +0xD8: its data, +0 the mode, 3 for these; +4 the task of overlay 27). Overlay 27's data:
+// +0 its step (yes/no: 4 waiting for the answer, 5 taken; a list: 8 and 9), +4 where the
+// answer goes, +0xC the list, +0x24 the FieldSystem, +0x394 the cursor. The list
+// (overlay 1's, MoveTutorMenu_SetListItem): +0x9B how many choices, +0x1C4 + 8i their texts.
+struct Choice
+{
+    std::vector<std::string> items;
+    int cursor = -1;
+};
+
+inline bool ReadChoice(const Ram& r, Choice& ch)
+{
+    ch = Choice();
     const uint32_t fs = r.R32(kFieldSystem);
-    if (!r.Ptr(fs)) return -1;
+    if (!r.Ptr(fs)) return false;
     const uint32_t env = ScriptEnv(r, fs);
-    if (!env) return -1;
-    // A context of the script (+0x38, three) waits for it in sub_020477C0 (its native function +4).
-    uint32_t ctx = 0;
+    if (!env) return false;
+    // The context of the script (+0x38, three) that waits for the answer (its native function +4).
+    uint32_t ctx = 0, waits = 0;
     for (uint32_t k = 0; k < 3 && !ctx; k++)
     {
-        const uint32_t c = r.R32(env + 0x38 + 4 * k);
-        if (r.Ptr(c) && (r.R32(c + 4) & ~1u) == 0x020477C0) ctx = c;
+        const uint32_t c = r.R32(env + 0x38 + 4 * k), w = r.R32(c + 4) & ~1u;
+        if (r.Ptr(c) && (w == 0x020477C0 || w == 0x020478D0)) ctx = c, waits = w;
     }
-    if (!ctx) return -1;
+    if (!ctx) return false;
     const uint32_t d = r.R32(r.R32(fs + 0xD8) + 0x10);
-    if (!r.Ptr(d) || r.R8(d) != 3) return -1;
-    const uint32_t a = r.R32(r.R32(d + 4) + 0x10), out = r.R32(a + 4);
-    if (!r.Ptr(a) || r.R32(a + 0x24) != fs || out < ctx || out >= ctx + 0x100) return -1; // the answer goes to the context's data
-    const uint32_t step = r.R32(a), cur = r.R32(a + 0x394);
-    return (step == 4 || step == 5) && cur <= 1 ? (int)cur : -1;
+    if (!r.Ptr(d) || r.R8(d) != 3) return false;
+    const uint32_t a = r.R32(r.R32(d + 4) + 0x10), step = r.R32(a), cur = r.R32(a + 0x394);
+    if (!r.Ptr(a) || r.R32(a + 0x24) != fs) return false;
+    if (waits == 0x020477C0)
+    {
+        // The answer goes to the context's data.
+        const uint32_t out = r.R32(a + 4);
+        if (out < ctx || out >= ctx + 0x100 || (step != 4 && step != 5) || cur > 1) return false;
+        ch.items = { "Yes", "No" };
+    }
+    else
+    {
+        const uint32_t list = r.R32(a + 0x0C), n = r.R8(list + 0x9B);
+        // shortcut: a list longer than eight (the move tutor's pages) is left to the game.
+        if (!r.Ptr(list) || (step != 8 && step != 9) || n < 1 || n > 8 || cur >= n) return false;
+        for (uint32_t i = 0; i < n; i++)
+        {
+            std::string t;
+            if (!StringText(r, r.R32(list + 0x1C4 + 8 * i), t)) return false;
+            ch.items.push_back(t);
+        }
+    }
+    ch.cursor = (int)cur;
+    return true;
 }
 
 // The box over the game's own (x, y, w, h in design pixels); `frame` moves the arrow.
-// `yesNo`: the cursor of a yes/no question to show above the box, or -1.
+// `choice`: the answers of a question to show above the box, or none.
 inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const Dialogue& d, float x, float y, float w, float h, uint32_t frame,
-    int yesNo = -1)
+    const Choice* choice = nullptr)
 {
     HudPanel(c, ui, sp, "panels/dialogue_box", x, y, w, h);
     const float pitch = 78, ty = y + (h - pitch * 2) / 2 + 2;
@@ -247,15 +307,21 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const D
         const float bob = phase == 2 ? 8.0f : phase ? 4.0f : 0.0f;
         HudSprite(c, ui, sp, "icons/icon_arrow_down", x + w - 84, y + h - 76 + bob, 44, 44, 0xFF6F7BF7);
     }
-    if (yesNo >= 0)
+    if (choice && choice->cursor >= 0)
     {
-        const float bw = 340, bh = 86, gap = 18, bx = x + w - bw;
-        for (int i = 0; i < 2; i++)
+        // The answers in a column at the right above the box, as wide as the longest.
+        const int n = (int)choice->items.size();
+        const float bh = n > 4 ? 72 : 86, gap = n > 4 ? 12 : 18, px = n > 4 ? 48 : 56;
+        float bw = 340;
+        for (const std::string& t : choice->items) bw = std::max(bw, HudTextWidth(ui, f, px, t) + 140);
+        const float bx = x + w - bw;
+        for (int i = 0; i < n; i++)
         {
-            const float by = y - 30 - (2 - i) * (bh + gap) + gap;
-            HudPanel(c, ui, sp, i == yesNo ? "panels/row_selected" : "panels/row", bx, by, bw, bh);
-            if (i == yesNo) HudSprite(c, ui, sp, "cursor/cursor", bx + 24, by + 23, 36, 40);
-            HudText(c, ui, f, bx + bw / 2, by + 15, 56, i ? "No" : "Yes", HudColour::Ink, 1);
+            const float by = y - 30 - (n - i) * (bh + gap) + gap;
+            const bool on = i == choice->cursor;
+            HudPanel(c, ui, sp, on ? "panels/row_selected" : "panels/row", bx, by, bw, bh);
+            if (on) HudSprite(c, ui, sp, "cursor/cursor", bx + 24, by + bh / 2 - 20, 36, 40);
+            HudText(c, ui, f, bx + bw / 2, by + (bh - px) / 2 - 4, px, choice->items[i], HudColour::Ink, 1);
         }
     }
 }
