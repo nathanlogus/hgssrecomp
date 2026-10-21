@@ -17,6 +17,11 @@
   and the clerk's answers, and your money. Selling opens the bag in the same style, with
   what the shop pays, how many to sell and your money. The Pokéathlon Dome's shops and
   the clerk's questions before and after are still the game's own.
+- New screens: more of the PC's Pokémon storage is drawn anew: Move Items (the Pokémon
+  holding an item stand out with it, giving and putting away items), the box's menu
+  (change box, wallpaper, name), choosing a wallpaper, "Deposit where?" with the box you
+  point at shown, and the storage's messages and yes/no questions, such as releasing a
+  Pokémon or a full box.
 - New button pictures in the menus and hints, the same for everyone; the BUTTON PICTURES
   setting is gone. The logo's shadow is softer and wider.
 - The Wi-Fi Plaza is open again, with no online login: the Wi-Fi receptionist in a

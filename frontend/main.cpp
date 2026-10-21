@@ -6345,8 +6345,12 @@ int main(int argc, char** argv)
         if (pcNow)
         {
             auto ds = [&](int k) { return PadGlyph(PadButtonFor(k, cfg.byLabel, cfg.padMap)); };
-            HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, trainerName(), Party_MyCard().id,
-                { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" }, { { ds(1) }, "Back" } },
+            std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, pc.held >= 0 ? "Put down" : "Select" },
+                { { ds(1) }, "Back" } };
+            if (pc.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, "Select" }, { { ds(1) }, "No" } };
+            else if (!pc.message.empty()) hints = { { { ds(0) }, "Next" } };
+            const HudOnline::IconFn itemIcon = [&](int item) { return romArt.ItemIcon(item); };
+            HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, itemIcon, trainerName(), Party_MyCard().id, hints,
                 pcSlide, pcSlideTo, pcGlideFrom, pcGlide, &pcScrollFrom, pcScroll);
             overlayUsed = true;
             pcShownAt = frame;
