@@ -277,18 +277,21 @@ inline bool ReadCastle(const Ram& ram, uint32_t& cache, Castle& s)
     s.cp = (int)ram.R16(fr + 0x90 + 0x10 * type);
     for (int k = 0; k < 3; k++) s.ranks[k] = (int)ram.R16(fr + 0x96 + 0x10 * type + 2 * k);
     if (s.cp > 9999 || s.ranks[0] < 1 || s.ranks[0] > 3 || s.ranks[1] < 1 || s.ranks[1] > 3 || s.ranks[2] < 1 || s.ranks[2] > 3) return false;
+    // The menu entry last chosen from (the one under its cursor when it closed).
+    static std::string lastPick;
     s.grid = (flags & 0x08) != 0;
     s.yesNo = -1;
     s.menu.clear();
     if (s.grid)
     {
         // The grid (+0x844, a GridInputHandler made with the table at 0x022485C8; its place
-        // +0x0D), Berries or items +0x860 (only the Berries are drawn), how many +0x861, the
-        // page +0x862; "Is that OK?" up +0x850, its YesNoPrompt +0x84C (cursor +0x75).
+        // +0x0D), how many +0x861, the page +0x862; "Is that OK?" up +0x850, its YesNoPrompt
+        // +0x84C (cursor +0x75). Only the Berries' grid is drawn: the one opened from the
+        // menu's "Berries" (the items' prices are not known here).
         const uint32_t g = ram.R32(d + 0x844);
         const int total = (int)ram.R8(d + 0x861);
         s.page = (int)ram.R8(d + 0x862);
-        if (!ram.Ptr(g) || ram.R32(g) != 0x022485C8 || ram.R8(d + 0x860) != 0 || total < 1 || total > 32 || s.page * 6 >= total) return false;
+        if (!ram.Ptr(g) || ram.R32(g) != 0x022485C8 || lastPick != "Berries" || total < 1 || total > 32 || s.page * 6 >= total) return false;
         s.pages = (total + 5) / 6;
         s.items.clear();
         s.costs.clear();
@@ -323,6 +326,7 @@ inline bool ReadCastle(const Ram& ram, uint32_t& cache, Castle& s)
             if (!HudParty::ReadString(ram, ram.R32(list + 8 * k), t) || t.empty()) return false;
             s.menu.push_back(MenuCase(t));
         }
+        lastPick = s.menu[s.sel];
     }
     return true;
 }
