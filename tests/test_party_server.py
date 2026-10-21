@@ -149,6 +149,26 @@ class PartyServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await a.until('y'), b'')
         self.assertNotIn(b_id.decode(), self.relay.online)
 
+    async def test_lag_keeps_order(self):
+        # Messages held back by --lag leave in the order they came, even when many are due at
+        # the same moment (timers due together run in any order).
+        self.relay.lag = 0.02
+        sent = []
+
+        class To:
+            class writer:
+                is_closing = staticmethod(lambda: False)
+                write = staticmethod(sent.append)
+
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        loop.time = lambda: now  # all sent within one tick of the clock
+        for i in range(500):
+            self.relay.send(To, 'D', struct.pack('<H', i))
+        del loop.time
+        await asyncio.sleep(0.1)
+        self.assertEqual([struct.unpack_from('<H', m, 3)[0] for m in sent], list(range(500)))
+
 
 if __name__ == '__main__':
     unittest.main()
