@@ -13,6 +13,10 @@
   Rent and Cancel buttons and the "Are these Pokémon OK?" question. The Battle Hall's
   board of types is drawn anew too (before, the single screen hid it): each type with its
   rank, your Pokémon and the question before a battle.
+- The Battle Frontier's scratch-off cards can be played with a controller: the d-pad
+  chooses a card, a panel or NEXT CARD and A touches it; on a panel A scratches it clean.
+- New screens: Voltorb Flip's Game Info lessons (How to Play, Hint!, About Memos) are drawn
+  in the same style as its board, with the game's explanations.
 - New screens: Voltorb Flip at the Goldenrod Game Corner is drawn anew on the one screen:
   the board with its cards, your memo marks and the totals along each row and column, the
   level, your coins and those of the game, the memo panel, Quit and the game's messages and
