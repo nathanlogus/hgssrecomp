@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         Thanks for reporting! Please fill in everything below; without the log, most problems can't be tracked down.
+        Please check [KNOWN_BUGS.md](https://github.com/nathanlogus/hgssrecomp/blob/main/KNOWN_BUGS.md) first. In the game, the pause menu's GAME tab has **Report a bug** (or press F9): it saves a folder with the log, version, settings and a screenshot to attach.
         **Never attach or link your ROM, a save file, an APK or the `gen` folder** — they contain the game.
   - type: input
     id: version
@@ -97,7 +98,7 @@ body:
     attributes:
       label: Checks
       options:
-        - label: I searched the existing issues and this hasn't been reported yet.
+        - label: I checked KNOWN_BUGS.md and searched the existing issues and this hasn't been reported yet.
           required: true
         - label: I'm using my own copy of Pokémon SoulSilver (US) and the setup window said the ROM is correct.
           required: true
