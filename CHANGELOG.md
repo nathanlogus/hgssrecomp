@@ -3,13 +3,13 @@
 ## Unreleased
 
 - Overworld HUD (Display, on by default): while you walk about, your party along the top
-  left (HP bars, status, fainted Pokémon greyed, eggs), a round map of the area around you
-  at the top right with the place and the time under it, Repel steps left and a held
-  EXP. Share beside it, the other players' faces down the right edge when online (also as
-  faces on the map), and buttons along the bottom for the Bag, your Pokémon, the menu and
-  your friends: click the left stick, click the right stick, + and the right trigger (or
-  click them). The right stick zooms the map. It fades away for messages, menus, battles
-  and scenes.
+  left (HP bars, status, fainted Pokémon greyed, eggs), a round map of the area around you,
+  seen from above as the game draws it, at the top right with the place and the time under
+  it, Repel steps left and a held EXP. Share, the other players' faces down the right
+  edge when online (also as faces on the map), and buttons along the bottom for the Bag,
+  your Pokémon, the menu and your friends: click the left stick, click the right stick, +
+  and the right trigger (or click them). The right stick zooms the map. It fades away for
+  messages, menus, battles and scenes, and the party steps aside for the place's name.
 - Auto run (Settings, Game): once you have the Running Shoes, you run whenever you walk,
   and holding B makes you walk instead. Off unless you turn it on.
 - Online: choose your look (Profile, Look) from any of the game's people who walk all

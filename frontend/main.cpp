@@ -2505,6 +2505,7 @@ int main(int argc, char** argv)
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
     HudOverworld::Hud owHud;
+    bool placeNameUp = false; // the place's name was shown at the top left (last frame)
     owHud.SetRom(rom.data(), rom.size());
     // Looks (online): frames and faces of the ROM's overworld people, made once each.
     if (cfg.onlineLook >= 0 && !worldBlocks.IsLook(cfg.onlineLook)) cfg.onlineLook = -1; // (chosen with another ROM)
@@ -5859,7 +5860,11 @@ int main(int argc, char** argv)
                 scene.items[0].screen == 0 && fieldIdle() && !fading && !gameSave.Covering(frame) && !emoteWheel && !appRunning("Battle");
             oin.top = 32 + cornerY / ui.s;
             oin.partyTop = oin.top + (online ? 76 : 0);
-            oin.bottomLift = touchPadUsed && touchPad.visible ? 0.3f * ui.H / ui.s : 0;
+            // Above the on-screen d-pad and buttons (their tops at 80% of the height).
+            oin.bottomLift = touchPadUsed && touchPad.visible ? 0.21f * ui.H / ui.s : 0;
+            // The top left is the place's name's while it shows, and the watched battle's.
+            oin.hideParty = placeNameUp || watching >= 0;
+            placeNameUp = false;
             int year, month, day, second;
             nds->RTC.GetDateTime(year, month, day, oin.hour, oin.minute, second);
             oin.place = Party_PlaceName(partyMap);
@@ -5887,6 +5892,10 @@ int main(int argc, char** argv)
                     oin.glyphs[HudOverworld::Q_MAP] = "buttons/stick_r";
                 }
             }
+            // The round map's pictures: the map blocks from above, with the textures in video memory.
+            owHud.Painter.tex = nds->GPU.VRAMFlat_Texture;
+            owHud.Painter.pal = nds->GPU.VRAMFlat_TexPal;
+            owHud.BlockFromAbove = [&](int x, int z, std::vector<u32>* cmds, uint64_t& key) { return worldBlocks.BlockFromAbove(*nds, x, z, cmds, key); };
             owHud.Update({ nds->MainRAM, nds->MainRAMMask + 1 }, oin, frame, outW, outH, ui, sprites, font, romArt);
             if (opt.headless) owHud.Composite(canvas);
             overlayUsed |= opt.headless && owHud.Visible();
@@ -5964,7 +5973,9 @@ int main(int argc, char** argv)
                     // looks north, so the world's x and z are the screen's across and down).
                     const float ang = (float)std::atan2(at[2] - mine[2], at[0] - mine[0]);
                     const float ca = std::cos(ang), sa = std::sin(ang);
-                    const float k = std::min((W / 2 - 80) / std::max(std::fabs(ca), 1e-3f), (H / 2 - 150) / std::max(std::fabs(sa), 1e-3f));
+                    // (Inside the overworld HUD's corners and bottom row while it shows.)
+                    const float mw = owHud.Visible() ? 150 : 80, mh = owHud.Visible() ? 340 : 150;
+                    const float k = std::min((W / 2 - mw) / std::max(std::fabs(ca), 1e-3f), (H / 2 - mh) / std::max(std::fabs(sa), 1e-3f));
                     HudOnline::OffscreenPointer(cv, ui, sprites, font, W / 2 + ca * k, H / 2 + sa * k, ang, p,
                         p.walk.map != peers[me].walk.map ? Party_PlaceName(p.walk.map) : "", W);
                 }
@@ -6295,6 +6306,7 @@ int main(int argc, char** argv)
             int placeSlide = 0;
             const bool placeShown = may && !shown && HudWorld::OnlyTheName(screenImages[0].flags) &&
                 HudWorld::ReadMapName(ram, placeName, placeSlide);
+            placeNameUp = placeShown;
             if (placeShown)
             {
                 const float u = view.unit / ui.s, x0 = (mergedX + view.originX) / ui.s, y0 = view.originY / ui.s;
