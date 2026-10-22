@@ -14,6 +14,13 @@
   trainer and in a short log. Practice battles (Online): a battle with a friend saves
   nothing, and your Pokémon are as they were afterwards.
 - Online: sign in with Discord from the Online tab (it opens your browser and shows a short code to check), for servers that ask for an account. Your account name shows in the Profile tab. Servers that do not ask work as before.
+- Comfort and accessibility: an ACCESS tab with colour vision filters (protanopia, deuteranopia,
+  tritanopia, monochrome, with a strength), high contrast, a limit on sudden flashes, less
+  motion, bigger text, the foe's HP as a percentage in battles and a volume for the low
+  health beep; a SOUND tab with separate volumes for music, sound effects and cries; a KEYS
+  tab with keyboard layouts (Classic, WASD, Any keyboard) and your own keys for each button
+  (they work in the menus too); a low-power mode and a picture limit for slow computers; and
+  a shortcut wheel (hold Select on a controller, point with the left stick, let go).
 - **REPORT A BUG** in the Game tab of the pause menu (or F9): saves the latest messages, the version,
   your system, your settings (without your name or server address), the party connection's state
   and a picture of the game to a `reports` folder beside your save, opens the folder and copies a

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <zlib.h>
+#include "access.h"
 #include "ndsrom.h"
 #include "ui.h"
 #include "thirdparty/stb_truetype.h"
@@ -650,6 +651,7 @@ public:
     // Width in canvas pixels at `scale` (canvas pixels per font pixel).
     int Width(const std::string& text, float scale, bool bold = false) const
     {
+        scale *= g_textBoost;
         if (vector) return bold && vectorBold ? vectorBold->Width(Utf8(text), scale, false) : vector->Width(Utf8(text), scale, bold);
         if (!ok) return Canvas::TextWidth(text, std::max(1, (int)std::lround(scale)));
         int w = 0;
@@ -664,6 +666,7 @@ public:
     // others; the letters stay sharp.
     void Draw(Canvas& c, int x, int y, const std::string& text, float scale, uint32_t ink, uint32_t shadow, bool bold = false) const
     {
+        scale *= g_textBoost; // Settings: Text size
         if (vector)
         {
             if (bold && vectorBold) vectorBold->Draw(c, x, y, Utf8(text), scale, ink, false);

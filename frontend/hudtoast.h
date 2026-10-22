@@ -53,7 +53,7 @@ public:
         {
             if (k++ >= max) break;
             // Slides in from the left over 8 frames; fades out over the last 15.
-            const float in = std::min(1.0f, (frame - s.start) / 8.0f);
+            const float in = g_reduceMotion ? 1.0f : std::min(1.0f, (frame - s.start) / 8.0f);
             const float out = std::min(1.0f, (s.until - frame) / 15.0f);
             const uint32_t a = (uint32_t)(255 * std::min(in, out));
             const uint32_t tint = a << 24 | 0xFFFFFF;
