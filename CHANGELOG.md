@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **NUZLOCKE** in the Game tab (off unless you choose it): Nuzlocke, Hardlocke, Monolocke, Soul Link and Duallocke.
+  The first wild Pokémon in each area is the only one you can catch; a catch that breaks the rules goes to the
+  last PC box, renamed Graveyard, and so do Pokémon that faint (nothing is deleted). The Nuzlocke ledger shows each
+  area's first encounter, the Graveyard and your lives. Hardlocke also blocks the Bag in battle (with the buttons).
+  Soul Link plays as a plain Nuzlocke for now: the partner's deaths are not shared yet.
 - Playing together: stand facing a friend (both of you facing each other) and press A to
   offer a battle or a trade, with no trip to a Pokémon Center first. In Friends, "Fly there"
   takes you to the town your friend is in by the game's own Fly, if one of your Pokémon

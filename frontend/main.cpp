@@ -86,6 +86,7 @@
 #include "hudoverworld.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
+#include "nuzlocke.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
 #include "gamesfx.h"
@@ -3044,6 +3045,8 @@ int main(int argc, char** argv)
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
         M_SHOWCODE, M_COPYCODE, M_LOCK, M_CHAT, M_QUICK, M_PRACTICE,
         M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK, M_BUGREPORT, M_TALKBUBBLES,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK, M_BUGREPORT,
+        M_NUZRULE, M_NUZTYPE, M_NUZTYPE2, M_NUZBOOK,
         M_ACCOUNT, M_ACCOUNTURL,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
         // Comfort and accessibility (access.h), the sound tab and the keyboard.
@@ -3065,7 +3068,12 @@ int main(int argc, char** argv)
     HudWorld::XMenuDrive xDrive;
     bool menuFromField = false, xOpensMenu = false;
     // Screens of the online HUD over (or instead of) the pause menu.
-    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE, SCR_LOOK, SCR_CHALLENGE };
+    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE, SCR_LOOK, SCR_CHALLENGE, SCR_NUZ };
+    // The built-in Nuzlocke (nuzlocke.h): its book and its ledger screen. SSR_NUZ_FILE: tests' own file.
+    Nuz::Tracker nuz;
+    Nuz::View nuzView;
+    nuz.sec = Party_MapSec;
+    nuz.Load(getenv("SSR_NUZ_FILE") ? getenv("SSR_NUZ_FILE") : g_userDir + "nuzlocke.txt");
     int lookSel = 0; // the look chosen on SCR_LOOK (an index of worldBlocks.Looks())
     int screen = SCR_NONE;
     Menu sessionMenu;
@@ -3242,6 +3250,7 @@ int main(int argc, char** argv)
     // Typing a text: the nickname, the server's address or a party's code.
     enum { E_NAME, E_SERVER, E_CODE, E_CHAT, E_ACCOUNTURL };
     int quickSel = 0; // the quick line the menu says
+    enum { E_ACCOUNTURL = E_CHAT + 1 };
     struct TextEdit
     {
         int purpose = E_NAME;
@@ -3327,6 +3336,15 @@ int main(int argc, char** argv)
         add(T_GAME, M_FPSMAX, "Frame rate", cfg.fpsUnlimited ? "Unlimited" : "60",
             "Unlimited: as many pictures of the world as your computer can draw, for screens faster than 60 Hz. The game runs at its normal speed either way.");
         add(T_GAME, M_FAST, "Fast forward", onOff(fastLock), "Runs the game faster until you turn it off again.");
+        add(T_GAME, M_NUZRULE, "Nuzlocke", Nuz::RuleName(nuz.rule), Nuz::RuleAbout(nuz.rule));
+        if (nuz.rule == Nuz::Monolocke || nuz.rule == Nuz::Duallocke)
+        {
+            add(T_GAME, M_NUZTYPE, nuz.rule == Nuz::Duallocke ? "First type" : "Type", HudParty::TypeName(nuz.type[0]), "The type every Pokémon of the run must have.");
+            if (nuz.rule == Nuz::Duallocke)
+                add(T_GAME, M_NUZTYPE2, "Second type", HudParty::TypeName(nuz.type[1]), "The other type allowed.");
+        }
+        if (nuz.On())
+            add(T_GAME, M_NUZBOOK, "Nuzlocke ledger", "", "The first Pokémon met in each area, and the Graveyard.");
         add(T_GAME, M_AUTOSAVE, "Autosave", onOff(cfg.autosave),
             "Keeps your place every few minutes and when you quit, in the background, for Continue. The game never stops for it.");
         add(T_GAME, M_AUTOSAVEGAME, "Also save the game", onOff(cfg.autosaveGame),
@@ -4400,6 +4418,27 @@ int main(int argc, char** argv)
             else if (hit == M_LEAVE && dir == 0) screen = SCR_SUMMARY;
             else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel);
         }
+        else if (screen == SCR_NUZ && !toggleMenu)
+        {
+            const int total = nuzView.page == 0 ? (int)nuz.ledger.size() : (int)nuz.grave.size();
+            if (nav.left || nav.right || nav.tabPrev || nav.tabNext) nuzView.page ^= 1, nuzView.scroll = 0, uiSound(GameSfx::Cursor);
+            if (nav.up && nuzView.scroll > 0) nuzView.scroll--, uiSound(GameSfx::Cursor);
+            if (nav.down && nuzView.scroll + 11 < total) nuzView.scroll++, uiSound(GameSfx::Cursor);
+            // X starts the run again (asked twice, in case it was pressed by mistake).
+            if (pressed(cfg.byLabel ? PAD_X : PAD_Y))
+            {
+                if (nuzView.confirmNew)
+                {
+                    nuz.NewRun();
+                    nuzView = Nuz::View();
+                    say("A new run begins", "icons/icon_star");
+                    uiSound(GameSfx::Confirm);
+                }
+                else
+                    nuzView.confirmNew = true, uiSound(GameSfx::Cursor);
+            }
+            else if (nav.back) screen = SCR_NONE, uiSound(GameSfx::Cancel), buildMenu();
+        }
         else if (screen == SCR_LOOK && !toggleMenu)
         {
             const int n = (int)worldBlocks.Looks().size(), was = lookSel;
@@ -4447,6 +4486,7 @@ int main(int argc, char** argv)
                     startOpen = false;
                     swallowMenuButtons = true;
                     if (bootSkipOk) bootMode = act == ST_CONTINUE ? BOOT_CONTINUE : BOOT_NEW;
+                    if (act == ST_NEW && nuz.On()) nuz.NewRun(), say(std::string(Nuz::RuleName(nuz.rule)) + ": a new run", "icons/icon_star");
                     if (act == ST_CONTINUE && tryResume())
                     {
                         bootMode = BOOT_NONE;
@@ -4638,6 +4678,35 @@ int main(int argc, char** argv)
                 break;
             case M_AUTORUN:
                 cfg.autoRun = !cfg.autoRun;
+                break;
+            case M_NUZRULE:
+            {
+                nuz.rule = (nuz.rule + (dir < 0 ? Nuz::RuleCount - 1 : 1)) % Nuz::RuleCount;
+                if ((nuz.rule == Nuz::Monolocke || nuz.rule == Nuz::Duallocke) && nuz.type[0] < 0)
+                {
+                    // The first Pokémon's type, to start from.
+                    const std::vector<int> mine = Party_MySpecies();
+                    int t[2] = { 0, 0 };
+                    if (!mine.empty()) Party_SpeciesTypes(mine[0], t);
+                    nuz.type[0] = t[0];
+                    nuz.type[1] = t[1] != t[0] ? t[1] : (t[0] + 1) % 17;
+                }
+                nuz.Save();
+                say(nuz.rule == Nuz::Off ? "Nuzlocke off" : std::string(Nuz::RuleName(nuz.rule)) + " on", "icons/icon_star");
+                break;
+            }
+            case M_NUZTYPE:
+            case M_NUZTYPE2:
+            {
+                int& t = hit == M_NUZTYPE ? nuz.type[0] : nuz.type[1];
+                do t = (t + (dir < 0 ? 17 : 1)) % 18;
+                while (t == 9); // (the ??? type)
+                nuz.Save();
+                break;
+            }
+            case M_NUZBOOK:
+                nuzView = Nuz::View();
+                screen = SCR_NUZ;
                 break;
             case M_REDRAWN:
                 cfg.redrawn = !cfg.redrawn;
@@ -5620,7 +5689,9 @@ int main(int argc, char** argv)
                                 if (usable(order[p])) { battleSel = order[p]; break; }
                 }
                 if (opt.logSections && edge) fprintf(stderr, "[strip] frame %u: keys %03x, chosen %d\n", frame, edge, battleSel);
-                if (edge & (1 << KEY_A))
+                if ((edge & (1 << KEY_A)) && cmd && battleSel == 1 && nuz.BagBlocked())
+                    say("Hardlocke: no items in battle", "icons/icon_fight");
+                else if (edge & (1 << KEY_A))
                 {
                     stripTouch = 4;
                     const int* xs = cmd ? cmdX : target ? tgtX : choice ? ansX : movX;
@@ -5906,6 +5977,22 @@ int main(int argc, char** argv)
                 if (Party_Me() >= 0) sessionStats.caught[Party_Me()] = Party_CaughtThisSession();
             }
             partyMap = pmap;
+            // The Nuzlocke (nuzlocke.h): watches the fights and the party, and tells with toasts.
+            if (nuz.On())
+            {
+                Nuz::Env ne;
+                ne.ram = { nds->MainRAM, nds->MainRAMMask + 1 };
+                ne.mem = { nds->MainRAM };
+                if (ref) ne.mem.push_back(ref->MainRAM);
+                ne.mask = nds->MainRAMMask;
+                ne.battle = appRunning("Battle");
+                ne.idle = fieldRunning() && !uiOpen && !ne.battle;
+                ne.map = pmap;
+                ne.frame = frame;
+                nuz.Update(ne);
+                for (const auto& t : nuz.toasts) say(t.first, t.second, 300);
+                nuz.toasts.clear();
+            }
             // Hosting by itself (Host when playing): once, when the player is first in the world
             // and not already in a party; the code is then shown so it can be shared.
             static bool autoHosted = false;
@@ -8029,6 +8116,9 @@ int main(int argc, char** argv)
                     left / 20, left,
                     { { { accept }, "Choose" }, { { back }, "Not now" } });
             }
+            else if (screen == SCR_NUZ)
+                Nuz::Draw(canvas, ui, sprites, font, nuz, nuzView, monIcon,
+                    { { { "buttons/button_dpad" }, "Scroll or change page" }, { { PadGlyph(cfg.byLabel ? PAD_X : PAD_Y) }, "New run" }, { { back }, "Back" } });
             else if (screen == SCR_LOOK)
             {
                 PartyPeer me;

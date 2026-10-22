@@ -1788,6 +1788,22 @@ std::string Party_PlaceName(int map)
     return names[map] = NdsMessage(RomData, RomSize, 279, R16(MapHeaders + 24 * map + 0x12) & 0xFF);
 }
 
+int Party_MapSec(int map)
+{
+    if (map < 0 || map >= 540 || !Nds) return -1;
+    return (int)(R16(MapHeaders + 24 * map + 0x12) & 0xFF);
+}
+
+static const uint8_t* RomMember(const char* narc, int i, uint32_t need);
+bool Party_SpeciesTypes(int species, int types[2])
+{
+    const u8* ps = species > 0 && species <= 493 ? RomMember("a/0/0/2", species, 0x14) : nullptr;
+    if (!ps) return false;
+    types[0] = ps[6];
+    types[1] = ps[7];
+    return true;
+}
+
 void Party_SetPartner(int species)
 {
     MyPartner = species;
