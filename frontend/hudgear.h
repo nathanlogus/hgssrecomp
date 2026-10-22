@@ -7,6 +7,7 @@
 // (calls, the phone's menus, the map zoomed or being marked, the radio, the settings)
 // leaves the game's own picture on screen.
 #include "hudbag.h"
+#include "hudparty.h"
 #include "party.h"
 
 namespace HudGear
@@ -661,6 +662,7 @@ struct Env
     int weekday = 0;
     std::function<uint32_t(uint32_t)> rd;
     RomArt* art = nullptr; // for the game's map picture
+    int wayX = -1, wayY = -1; // the waypoint's cell on the region map (-1: none)
 };
 
 constexpr uint32_t kMapHeaders = 0x020F6BE0; // sMapHeaders (as party.cpp), 24 bytes a map
@@ -935,6 +937,20 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
             if (PeerCell(st, *p, kMapHeaders, env.rd, x, y)) player(*p, x, y, p->name);
         }
         player(env.me, st.meX, st.meY, "You");
+        if (env.wayX >= 0 && (RegionOf(env.wayX, env.wayY) == 2) == (region == 2))
+        {
+            // The waypoint: a pin on its cell.
+            float px, py;
+            centre(env.wayX, env.wayY, px, py);
+            if (inView(px, py))
+            {
+                const float s = 22;
+                HudParty::FillConvex(c, ui, { { px - s * 0.42f, py - s * 0.62f }, { px + s * 0.42f, py - s * 0.62f }, { px, py + cell / 2 } }, 0xFF8E1F26);
+                HudParty::FillRound(c, ui, px - s * 0.5f, py + cell / 2 - s * 1.26f, s, s, s / 2, 0xFF8E1F26);
+                HudParty::FillRound(c, ui, px - s * 0.42f, py + cell / 2 - s * 1.18f, s * 0.84f, s * 0.84f, s * 0.42f, 0xFFF0505A);
+                HudParty::FillRound(c, ui, px - s * 0.16f, py + cell / 2 - s * 0.92f, s * 0.32f, s * 0.32f, s * 0.16f, 0xFFFFFFFF);
+            }
+        }
         if (!peers.empty()) HudText(c, ui, f, mx + mw - 40, my + mh - 64, 32, "Friends shown live", Muted, 2);
     }
 

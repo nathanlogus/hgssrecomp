@@ -477,6 +477,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
             if (!m.egg)
             {
                 HudParty::Gender(c, ui, nx + nw + 12, y + 232, m.gender, 26);
+                if (m.shiny) HudParty::Star(c, ui, nx - 20, y + 246, 14);
                 HudText(c, ui, f, nx + nw + 44, y + 232, 32, lv, 0xFF3E8EF0);
                 // The types.
                 std::vector<int> types;

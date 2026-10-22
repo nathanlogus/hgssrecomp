@@ -56,6 +56,7 @@
 #include "wheel.h"
 #include "hudmenu.h"
 #include "hudtoast.h"
+#include "qolread.h"
 #include "hudscreens.h"
 #include "hudbattle.h"
 #include "hudbattleui.h"
@@ -1068,6 +1069,7 @@ struct Settings
     bool nightFx = true;  // glow, light pools, fireflies and night colours in the evening and at night
     bool redrawn = true;
     bool overworldHud = true; // the party, map and quick buttons over the overworld (hudoverworld.h)
+    bool talkBubbles = true;  // a "..." over the people on the overworld that have not been talked to (qolread.h)
     bool newSongs = true;
     bool autoRun = false;   // runs on foot without holding B (holding B walks)
     bool menuSounds = true; // the game's own cursor and button sounds in the frontend's menus (gamesfx.h)
@@ -1155,6 +1157,7 @@ struct Settings
             else if (k == "night_fx") nightFx = v == "1";
             else if (k == "redrawn_screens") redrawn = v == "1";
             else if (k == "overworld_hud") overworldHud = v == "1";
+            else if (k == "talk_bubbles") talkBubbles = v == "1";
             else if (k == "music") newSongs = v != "original";
             else if (k == "menu_sounds") menuSounds = v == "1";
             else if (k == "auto_run") autoRun = v == "1";
@@ -1212,6 +1215,7 @@ struct Settings
         f << "night_fx=" << (nightFx ? 1 : 0) << "\n";
         f << "redrawn_screens=" << (redrawn ? 1 : 0) << "\n";
         f << "overworld_hud=" << (overworldHud ? 1 : 0) << "\n";
+        f << "talk_bubbles=" << (talkBubbles ? 1 : 0) << "\n";
         f << "music=" << (newSongs ? "new" : "original") << "\n";
         f << "menu_sounds=" << (menuSounds ? 1 : 0) << "\n";
         f << "auto_run=" << (autoRun ? 1 : 0) << "\n";
@@ -2543,6 +2547,15 @@ int main(int argc, char** argv)
     std::vector<NightLight> lamps;
     worldBlocks.SetRom(rom);
     HudOverworld::Hud owHud;
+    // Shiny toast, unread-talk bubbles, the waypoint and the bag's sorting (qolread.h): what
+    // they remember is kept in files beside the save.
+    QolRead::ShinyWatch shinyWatch;
+    QolRead::TalkTracker talkTracker;
+    QolRead::Waypoint waypoint;
+    QolRead::BagSorter bagSorter;
+    talkTracker.SetPath(opt.save + ".talked");
+    waypoint.SetPath(opt.save + ".waypoint");
+    bagSorter.SetPath(opt.save + ".bagseen");
     bool placeNameUp = false; // the place's name was shown at the top left (last frame)
     owHud.SetRom(rom.data(), rom.size());
     // Looks (online): frames and faces of the ROM's overworld people, made once each.
@@ -3032,6 +3045,7 @@ int main(int argc, char** argv)
         M_SHOWCODE, M_COPYCODE, M_LOCK, M_CHAT, M_QUICK, M_PRACTICE,
         M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK, M_BUGREPORT,
         M_ACCOUNT, M_ACCOUNTURL,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK, M_BUGREPORT, M_TALKBUBBLES,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
         // Comfort and accessibility (access.h), the sound tab and the keyboard.
         MA_FILTER, MA_STRENGTH, MA_CONTRAST, MA_FLASH, MA_MOTION, MA_TEXTSIZE, MA_FOEPCT, MA_BEEP, MA_VOLMUSIC, MA_VOLSFX, MA_VOLCRY,
@@ -3345,6 +3359,8 @@ int main(int argc, char** argv)
             !fontFamilies.empty() ? "The letters of this menu and the HUD: one of the fonts in assets/fonts, or the game's own."
                                   : "Put a font file (.otf or .ttf) in assets/fonts to use it for the menus and the HUD.")->disabled = fontFamilies.empty();
         add(T_DISPLAY, M_REDRAWN, "New screens", onOff(cfg.redrawn), "The game's own screens drawn anew, in this menu's style: the save screen, the trainer card, the bag, the party and summary, the Pok\xC3\xA9" "dex with its pages and its search, the Unown Report, the Pok\xC3\xA9gear, the PC's boxes, the battle commands, the trade screen, buying and selling in shops, the Battle Factory's rentals, the Battle Hall's board, the Battle Castle's screen, the Factory's swaps, choosing who enters a Frontier challenge, the Battle Arcade's board, Voltorb Flip, the Ruins of Alphâs puzzles, what people say, evolving, hatching and trading, phone calls, the fly map and the Options.");
+        add(T_GAME, M_TALKBUBBLES, "Unread-talk bubbles", onOff(cfg.talkBubbles),
+            "A \"...\" bubble over the people on the map that you have not talked to yet. Who you have talked to is kept in a file beside your save.");
         add(T_DISPLAY, M_OWHUD, "Overworld HUD", onOff(cfg.overworldHud),
             "While you walk about: your party, a map of the area with the time, and buttons for the Bag, your Pok\xC3\xA9mon, the menu and your friends.");
         add(T_DISPLAY, M_BLUR, "Blur", cfg.blur == 2 ? "Strong" : cfg.blur == 1 ? "Light" : "Off", "Blurs the far edges of the world a little, like a camera.");
@@ -4630,6 +4646,9 @@ int main(int argc, char** argv)
             case M_OWHUD:
                 cfg.overworldHud = !cfg.overworldHud;
                 break;
+            case M_TALKBUBBLES:
+                cfg.talkBubbles = !cfg.talkBubbles;
+                break;
             case M_VOIDFILL:
                 cfg.voidFill = !cfg.voidFill;
                 break;
@@ -5332,6 +5351,8 @@ int main(int argc, char** argv)
                 speed = 1;
             }
         }
+        // (What went down this frame, for the screens redrawn below: prevPad is next frame's.)
+        const bool padYDown = pressed(PAD_Y), padRSDown = pressed(PAD_RS);
         prevPad = ps;
 
         SDL_Rect rects[2];
@@ -6383,6 +6404,10 @@ int main(int argc, char** argv)
                 (unsigned long long)fb, (unsigned long long)ram, nds->ARM9.R[15], nds->ARM7.R[15]);
         }
 
+        // A wild shiny Pokemon has appeared; who on this map has been talked to.
+        if (const int shinySpecies = shinyWatch.Update({ nds->MainRAM, nds->MainRAMMask }))
+            say("A shiny " + Party_SpeciesName(shinySpecies) + " appeared!", "icons/icon_star", 360);
+        talkTracker.Update({ nds->MainRAM, nds->MainRAMMask + 1 }, !cfg.talkBubbles || !fieldIdle());
         // Overlay: touch cursor, status message, pause menu.
         bool overlayUsed = false;
         canvas.Resize(outW, outH);
@@ -6425,6 +6450,9 @@ int main(int argc, char** argv)
             oin.bottomLift = touchPadUsed && touchPad.visible ? 0.21f * ui.H / ui.s : 0;
             // The top left is the place's name's while it shows, and the watched battle's.
             oin.hideParty = placeNameUp || watching >= 0;
+            oin.waypoint = waypoint.set && readRam(readRam(0x021D4158) + 0x70) == 0; // (the outdoor map's tiles)
+            oin.waypointX = waypoint.x;
+            oin.waypointZ = waypoint.z;
             placeNameUp = false;
             int year, month, day, second;
             nds->RTC.GetDateTime(year, month, day, oin.hour, oin.minute, second);
@@ -6491,7 +6519,65 @@ int main(int argc, char** argv)
             }
         // Names over the trainers, emotes, the emote wheel, and pointers to the others when
         // they are off the screen; drawn into `cv` by the view of the picture shown.
+        // The unread-talk bubbles and the waypoint's pointer, in the world like the names.
+        auto drawQolTags = [&](Canvas& cv) {
+            if (!spritesOk || !hudFree || !fieldActive() || !(melonDS::Wide.Owner || dsWorld)) return;
+            const bool bubbles = cfg.talkBubbles && !talkTracker.Unread.empty();
+            const uint32_t fsQ = readRam(0x021D4158), meQ = readRam(readRam(fsQ + 0x40) + 0x30);
+            const bool way = waypoint.set && meQ && readRam(fsQ + 0x70) == 0;
+            if (!bubbles && !way) return;
+            const float W = ui.W / ui.s, H = ui.H / ui.s;
+            auto headAt = [&](double x, double y, double z, float& u, float& v) {
+                if (dsWorld)
+                {
+                    if (!dsPlace(x / 4096, y / 4096 + 30, (z + 0x6000) / 4096, u, v)) return false;
+                    u /= ui.W;
+                    v /= ui.H;
+                    return true;
+                }
+                return worldBlocks.PlaceInView(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, x / 4096, y / 4096 + 30, (z + 0x6000) / 4096, u, v);
+            };
+            float u, v;
+            if (bubbles)
+                for (const QolRead::Person& p : talkTracker.Unread)
+                    if (headAt(p.x, p.y, p.z, u, v) && u > 0.02f && u < 0.98f && v > 0.05f && v < 0.98f)
+                        QolRead::TalkBubble(cv, ui, u * W, v * H - 6);
+            if (way)
+            {
+                // Where the player is and where the waypoint is, in tiles (a tile is 65536
+                // units); the pin stands on the ground there, or an arrow at the edge of the
+                // picture points towards it, with how far it is.
+                const double mx = (int32_t)readRam(meQ + 0x70) / 65536.0, mz = (int32_t)readRam(meQ + 0x78) / 65536.0;
+                const double my = (int32_t)readRam(meQ + 0x74);
+                const double dx = waypoint.x - mx, dz = waypoint.z - mz, dist = std::sqrt(dx * dx + dz * dz);
+                if (dist < 2.5)
+                {
+                    say("You are at your waypoint", "icons/icon_star", 240);
+                    waypoint.Clear();
+                    return;
+                }
+                const std::string label = std::to_string((int)dist) + " steps";
+                if (headAt(waypoint.x * 65536, my, waypoint.z * 65536, u, v) && u > 0.04f && u < 0.96f && v > 0.1f && v < 0.95f)
+                {
+                    QolRead::Pin(cv, ui, u * W, v * H + 30, 26);
+                    HudParty::Pill(cv, ui, font, u * W - HudTextWidth(ui, font, 28, label) / 2 - 16, v * H - 56, 38, label, 0xFF8E1F26, HudColour::White, 28);
+                }
+                else
+                {
+                    const float ang = (float)std::atan2(dz, dx), ca = std::cos(ang), sa = std::sin(ang);
+                    const float mw = owHud.Visible() ? 190 : 120, mh = owHud.Visible() ? 340 : 170;
+                    const float k = std::min((W / 2 - mw) / std::max(std::fabs(ca), 1e-3f), (H / 2 - mh) / std::max(std::fabs(sa), 1e-3f));
+                    const float ex = W / 2 + ca * k, ey = H / 2 + sa * k;
+                    auto pt = [&](float fx, float fy) { return std::make_pair(ex + (fx * ca - fy * sa) * 30, ey + (fx * sa + fy * ca) * 30); };
+                    HudParty::FillConvex(cv, ui, { pt(1.25f, 0), pt(-0.8f, 0.95f), pt(-0.35f, 0), pt(-0.8f, -0.95f) }, 0xFFFFFFFF);
+                    HudParty::FillConvex(cv, ui, { pt(1.0f, 0), pt(-0.6f, 0.75f), pt(-0.25f, 0), pt(-0.6f, -0.75f) }, 0xFFF0505A);
+                    const float lw = HudTextWidth(ui, font, 28, label) + 32;
+                    HudParty::Pill(cv, ui, font, ex - lw / 2, ey + (sa > 0 ? -62 : 36), 38, label, 0xFF8E1F26, HudColour::White, 28);
+                }
+            }
+        };
         auto drawWorldTags = [&](Canvas& cv) {
+            drawQolTags(cv);
             if (!online || !(trayShown || dsWorld) || !(melonDS::Wide.Owner || dsWorld)) return;
             const float W = ui.W / ui.s, H = ui.H / ui.s;
             const PartyPeer* peers = Party_Peers();
@@ -7153,6 +7239,25 @@ int main(int argc, char** argv)
                         if (!bs.message.empty()) hints = { { { accept }, "Next" } };
                         if (bs.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "No" } };
                         if (bs.picking) hints = { { { "buttons/button_dpad" }, "How many" }, { { accept }, "Sell" }, { { back }, "Cancel" } };
+                        // Sorting the pocket (qolread.h): the right stick's button goes round the ways.
+                        if (!bs.items.empty()) bagSorter.Remember(bs.items);
+                        if (!bs.selling && bs.procState == 1 && !bs.menu && !bs.quantity && bs.message.empty())
+                        {
+                            int& way = bagSorter.mode[bs.pocket];
+                            if (padRSDown && bs.items.size() > 1)
+                            {
+                                way = (way + 1) % QolRead::SortCount;
+                                const uint32_t slotsAt = readRam(readRam(bagManager + 0x18) + 4 + 12 * bs.pocket);
+                                bagSorter.Apply(nds->MainRAM, nds->MainRAMMask, slotsAt, (int)bs.items.size(), bs.pocket, (QolRead::SortMode)way,
+                                    [&](int id) { return bagTexts.Get(HudBag::kItemName, id); });
+                                say(std::string("Sorted: ") + QolRead::SortName_(way), "icons/icon_bag", 150);
+                                // (Drawn from the memory just changed.)
+                                HudBag::ReadState(readRam, bagManager, bs, bagActions);
+                                uiSound(GameSfx::Confirm);
+                            }
+                            if (bs.items.size() > 1)
+                                hints.push_back({ { PadGlyph(PAD_RS) }, std::string("Sort: ") + QolRead::SortName_((way + 1) % QolRead::SortCount) });
+                        }
                         if (bs.selling) bs.money = HudShop::SellingMoney(readRam);
                         DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudBag::Draw(hc, hu, sprites, font, romArt, bagTexts, bs, hints); });
                         overlayUsed = true;
@@ -7434,8 +7539,25 @@ int main(int argc, char** argv)
                 env.rd = readRam;
                 env.art = &romArt;
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
+                env.wayX = waypoint.set ? waypoint.CellX() : -1;
+                env.wayY = waypoint.CellY();
+                // A waypoint: the place under the cursor (or its cell), marked on the minimap and
+                // pointed to in the world. The same spot again takes it off.
+                if (padYDown && fs.menu.items.empty() && !fs.inTabs && step == 1)
+                {
+                    double wx, wz;
+                    std::string place;
+                    QolRead::TownMapTarget(fs, wx, wz, place);
+                    if (waypoint.set && waypoint.CellX() == (int)std::floor(wx / 32) && waypoint.CellY() == (int)std::floor(wz / 32) + 2)
+                        waypoint.Clear(), say("Waypoint removed", "icons/icon_info", 200);
+                    else
+                        waypoint.Put(wx, wz, place), say(place.empty() ? "Waypoint set" : "Waypoint set: " + place, "icons/icon_star", 240);
+                    env.wayX = waypoint.set ? waypoint.CellX() : -1;
+                    uiSound(GameSfx::Confirm);
+                }
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Move" } };
                 if (fs.mode == 1) hints.push_back({ { accept }, "Fly here" });
+                hints.push_back({ { PadGlyph(PAD_Y) }, "Waypoint" });
                 hints.push_back({ { back }, "Close" });
                 if (!fs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
                 DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudGear::Draw(hc, hu, sprites, font, bagTexts, gearBook, fs, env, hints); });
@@ -7604,8 +7726,18 @@ int main(int argc, char** argv)
             }
             else if (sa && appRunning("PokemonSummary") && frame - summaryGood <= 3)
             {
+                // The IV / EV page is the frontend's own: a button turns it on and off, and
+                // turning the game's page (or leaving the summary) ends it.
+                static bool ivevOn = false;
+                static int ivevPage = 0;
+                static uint32_t ivevSeen = 0;
+                if (summaryView.mon.egg || summaryView.page != ivevPage || frame - ivevSeen > 10) ivevOn = false;
+                ivevSeen = frame;
+                if (padYDown && !summaryView.mon.egg) ivevOn = !ivevOn, ivevPage = summaryView.page, uiSound(GameSfx::Confirm);
+                summaryView.ivev = ivevOn;
                 std::vector<HudHint> hints; // an egg has one page
                 if (!summaryView.mon.egg) hints.push_back({ { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" });
+                if (!summaryView.mon.egg) hints.push_back({ { PadGlyph(PAD_Y) }, ivevOn ? "Back to pages" : "IVs and EVs" });
                 if (summaryView.count > 1) hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Next Pok\xC3\xA9mon" });
                 hints.push_back({ { back }, "Back" });
                 DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudParty::DrawSummary(hc, hu, sprites, font, summaryView, partyIcon, hints); });

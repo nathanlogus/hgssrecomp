@@ -208,6 +208,10 @@ struct PartyMon
     int metMonth = 0, metDay = 0;      // the date met (0: not known)
     int ribbons = 0;
     int friendship = 0;                // for an egg, the cycles of steps left before it hatches
+    uint32_t pid = 0;                  // the personality value
+    int ivs[6] = {}, evs[6] = {};      // in the order of stats[]
+    bool shiny = false;                // (trainer ID ^ secret ID ^ both halves of the personality) < 8, as the game works it out
+    int hiddenType = 0, hiddenPower = 0; // what Hidden Power would be: the type (the game's numbering) and its power
 };
 // The Pokemon (236 bytes, the party's format) at `addr` in main RAM; false unless its
 // checksum and numbers check out. `boxed`: the 136 bytes a PC box keeps, without the

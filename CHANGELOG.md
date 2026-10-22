@@ -21,6 +21,19 @@
   tab with keyboard layouts (Classic, WASD, Any keyboard) and your own keys for each button
   (they work in the menus too); a low-power mode and a picture limit for slow computers; and
   a shortcut wheel (hold Select on a controller, point with the left stick, let go).
+- IVs and EVs: on the Pokémon summary, the Y button opens a fourth page with the six IVs and
+  EVs as bars, the total EVs, the Hidden Power it has (type and power) and what its nature
+  raises and lowers.
+- Shiny Pokémon get a gold star beside their name in the party, the summary, the PC, trades
+  and battle boxes, and a message tells you when a wild shiny appears.
+- Unread-talk bubbles (Game, on by default): a "..." over the people on the map you have not
+  talked to yet. Who you have talked to is kept in a file beside your save, not in it.
+- Waypoints: on the Town Map (or the fly map), Y marks the place under the cursor; a pin shows
+  on the round map and on the Town Map and an arrow at the edge of the picture points the way
+  (with the distance in steps) while you are outdoors. Y on the same place takes it off.
+- Bag: the right stick's button sorts the pocket you are looking at (A to Z, by kind, newest
+  first, back to how you had it). It changes the order of the items in the bag, as moving
+  them one by one would.
 - **REPORT A BUG** in the Game tab of the pause menu (or F9): saves the latest messages, the version,
   your system, your settings (without your name or server address), the party connection's state
   and a picture of the game to a `reports` folder beside your save, opens the folder and copies a

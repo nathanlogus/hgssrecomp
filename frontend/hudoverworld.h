@@ -47,6 +47,8 @@ struct Input
     std::string place;          // the place's name
     std::vector<Other> others;  // other players on this map
     std::vector<const PartyPeer*> faces; // other players in the session (chips down the right edge)
+    bool waypoint = false;      // a waypoint on this (outdoor) map: its tile
+    double waypointX = 0, waypointZ = 0;
     std::string glyphs[Q_COUNT + 1]; // the controller button of each quick button and of the zoom ("": none)
 };
 
@@ -628,6 +630,17 @@ private:
             const float len = std::sqrt(ox * ox + oz * oz), most = d / 2 - 26;
             if (len > most) ox *= most / len, oz *= most / len;
             HudOnline::Chip(Layer, ui, sp, f, ccx + ox - 22, ccy + oz - 22, 44, *o.peer);
+        }
+        // The waypoint: a pin, kept inside the disc (at the rim when it is farther away).
+        if (in.waypoint && HaveMe)
+        {
+            float wx = (float)((in.waypointX - MeX) * kd), wz = (float)((in.waypointZ - MeZ) * kd);
+            const float len = std::sqrt(wx * wx + wz * wz), most = d / 2 - 30;
+            if (len > most) wx *= most / len, wz *= most / len;
+            HudParty::FillRound(Layer, ui, ccx + wx - 15, ccy + wz - 42, 30, 30, 15, 0xFF8E1F26);
+            HudParty::FillConvex(Layer, ui, { { ccx + wx - 12, ccy + wz - 22 }, { ccx + wx + 12, ccy + wz - 22 }, { ccx + wx, ccy + wz } }, 0xFF8E1F26);
+            HudParty::FillRound(Layer, ui, ccx + wx - 11, ccy + wz - 38, 22, 22, 11, 0xFFF0505A);
+            HudParty::FillRound(Layer, ui, ccx + wx - 4, ccy + wz - 31, 8, 8, 4, 0xFFFFFFFF);
         }
         // The player: an arrow the way they face (0 north, 1 south, 2 west, 3 east).
         static const float ang[4] = { -1.5707963f, 1.5707963f, 3.1415927f, 0 };

@@ -188,6 +188,7 @@ inline void Offer(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float 
     {
         HudText(c, ui, f, x + w / 2 - nw / 2 + HudTextWidth(ui, f, 48, name), y + 190, 48, lv, Muted);
         HudParty::Gender(c, ui, x + w / 2 + nw / 2 + 12, y + 202, m->gender);
+        if (m->shiny) HudParty::Star(c, ui, x + w / 2 - nw / 2 - 24, y + 218, 14);
         const std::string more = HudScreens::TitleCase(Party_Text(720, m->ability)) + " \xC2\xB7 " +
             (m->item ? Party_Text(222, m->item) : std::string("no item"));
         HudText(c, ui, f, x + w / 2, y + 248, 32, more, Muted, 1);

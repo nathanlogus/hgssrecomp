@@ -188,6 +188,7 @@ struct SummaryScreen
     PartyMon mon;
     int page = 0, slot = 0, count = 0;
     bool national = false;           // the National Pokedex is had: its numbers are shown
+    bool ivev = false;               // the frontend's own page of IVs and EVs is shown instead of the game's page
 };
 
 inline bool ReadSummaryScreen(const Ram& ram, uint32_t& cache, uint32_t init, uint32_t exec, uint32_t exit, SummaryScreen& s)
@@ -360,6 +361,25 @@ inline void Gender(Canvas& c, const Ui& ui, float x, float y, int g, float s = 3
     }
 }
 
+// The gold star that marks a shiny Pokemon, centred at (cx, cy), `r` design pixels from the
+// middle to a tip, with a darker edge so that it shows on light cards.
+inline void Star(Canvas& c, const Ui& ui, float cx, float cy, float r)
+{
+    auto draw = [&](float R, uint32_t argb) {
+        std::vector<std::pair<float, float>> tip(5), in(5);
+        for (int i = 0; i < 5; i++)
+        {
+            const float a = -1.5707963f + i * 1.2566371f;
+            tip[i] = { cx + std::cos(a) * R, cy + std::sin(a) * R };
+            in[i] = { cx + std::cos(a + 0.6283185f) * R * 0.42f, cy + std::sin(a + 0.6283185f) * R * 0.42f };
+        }
+        FillConvex(c, ui, in, argb);
+        for (int i = 0; i < 5; i++) FillConvex(c, ui, { in[(i + 4) % 5], tip[i], in[i] }, argb);
+    };
+    draw(r + 2.5f, 0xFFA66F00);
+    draw(r, 0xFFFFC61A);
+}
+
 // Text with an arrow after it (the stat a nature raises or lowers): the arrow is drawn,
 // as not every font has one. align as HudText.
 inline void TextArrow(Canvas& c, const Ui& ui, const RomFont& f, float x, float y, const std::string& s, uint32_t col, int align, int dir)
@@ -423,6 +443,7 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
         // (An egg has only its name: in the middle of the card's height.)
         HudText(c, ui, f, nx, m.egg ? y + ch / 2 - 24 : y + 36, 48, m.egg ? "Egg" : m.name, Ink);
         if (m.egg) continue;
+        if (m.shiny) Star(c, ui, nx + HudTextWidth(ui, f, 48, m.name) + 30, y + 62, 17);
         Gender(c, ui, x + cw - 60, y + 48, m.gender);
         // The level and held item; the status at the right.
         HudText(c, ui, f, x + 196, y + 108, 32, "Lv " + std::to_string(m.level), Ink);
@@ -516,6 +537,49 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
     DrawHintBar(c, ui, sp, f, hints);
 }
 
+// The page of IVs and EVs, read from the Pokemon's data: each stat's IV (0-31) and EVs (0-252,
+// 510 in all), the Hidden Power it has and what its nature does. On a card at (rx, 130).
+inline void DrawIvEv(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const PartyMon& m, float rx, float rw)
+{
+    using namespace HudColour;
+    HudPanel(c, ui, sp, "panels/card", rx, 130, rw, 660);
+    FillRound(c, ui, rx + 22, 152, rw - 44, 48, 16, 0xFF2EC4C6);
+    HudText(c, ui, f, rx + 42, 160, 32, "INDIVIDUAL AND EFFORT VALUES", White);
+    HudText(c, ui, f, rx + 250, 208, 32, "IV, most 31", Muted);
+    HudText(c, ui, f, rx + 680, 208, 32, "EV, most 252", Muted);
+    static const char* names[6] = { "HP", "Attack", "Defense", "Speed", "Sp. Atk", "Sp. Def" };
+    static const int order[6] = { 0, 1, 2, 4, 5, 3 }; // the game's order
+    const int up = 1 + m.nature / 5, down = 1 + m.nature % 5;
+    int totalEv = 0;
+    for (int r = 0; r < 6; r++)
+    {
+        const int i = order[r];
+        totalEv += m.evs[i];
+        const float ry = 250 + 54 * r;
+        const bool u = i == up && up != down, d = i == down && up != down;
+        HudPanel(c, ui, sp, "panels/row", rx + 30, ry, rw - 60, 44);
+        TextArrow(c, ui, f, rx + 50, ry + 6, names[i], u ? 0xFFE04848 : d ? 0xFF3E7EE0 : Ink, 0, u ? 1 : d ? -1 : 0);
+        Bar(c, ui, sp, rx + 250, ry + 11, 290, m.ivs[i] / 31.0f, m.ivs[i] == 31 ? "bars/fill_green" : "bars/fill_blue");
+        HudText(c, ui, f, rx + 570, ry + 6, 32, std::to_string(m.ivs[i]), m.ivs[i] == 31 ? 0xFF2E9E4A : Ink);
+        Bar(c, ui, sp, rx + 680, ry + 11, rw - 680 - 140, m.evs[i] / 252.0f, m.evs[i] >= 252 ? "bars/fill_green" : "bars/fill_yellow");
+        HudText(c, ui, f, rx + rw - 50, ry + 6, 32, std::to_string(m.evs[i]), m.evs[i] >= 252 ? 0xFF2E9E4A : Ink, 2);
+    }
+    const float ty = 250 + 54 * 6 + 8;
+    HudText(c, ui, f, rx + 50, ty, 32, "Total EVs", Muted);
+    Bar(c, ui, sp, rx + 250, ty + 5, rw - 250 - 260, totalEv / 510.0f, totalEv >= 510 ? "bars/fill_green" : "bars/fill_yellow");
+    HudText(c, ui, f, rx + rw - 50, ty, 32, std::to_string(totalEv) + " / 510", Ink, 2);
+    // Hidden Power and the nature, side by side.
+    const float by = ty + 62;
+    HudText(c, ui, f, rx + 50, by + 6, 32, "Hidden Power", Muted);
+    const float pw = Pill(c, ui, f, rx + 290, by, 46, TypeName(m.hiddenType), TypeColour(m.hiddenType));
+    HudText(c, ui, f, rx + 290 + pw + 20, by + 6, 32, "Power " + std::to_string(m.hiddenPower), Ink);
+    HudText(c, ui, f, rx + 50, by + 62, 32, "Nature", Muted);
+    std::string effect = Party_Text(34, m.nature);
+    if (up == down) effect += ": no change";
+    else effect += ": " + std::string(names[up]) + " up, " + names[down] + " down";
+    HudText(c, ui, f, rx + 290, by + 62, 32, effect, Ink);
+}
+
 inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const SummaryScreen& s, const MonIconFn& icon,
     const std::vector<HudHint>& hints)
 {
@@ -556,6 +620,7 @@ inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     const float nw = HudTextWidth(ui, f, 48, m.name, true);
     HudText(c, ui, f, lx + lw / 2 - 16, 316, 48, m.name, Ink, 1, true);
     Gender(c, ui, lx + lw / 2 - 16 + nw / 2 + 14, 326, m.gender);
+    if (m.shiny) Star(c, ui, lx + lw / 2 - 16 - nw / 2 - 30, 342, 18);
     {
         // The level and types, centred.
         std::vector<std::pair<std::string, uint32_t>> pills = { { "Lv " + std::to_string(m.level), 0xFF2F3542 } };
@@ -588,24 +653,33 @@ inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
 
     // The pages' tabs.
     const float rx = 660, rw = (ui.W / ui.s) - 60 - rx;
-    static const char* tabs[3] = { "Info", "Skills", "Ribbons" };
+    static const char* tabs[4] = { "Info", "Skills", "Ribbons", "IV / EV" };
     float tx = rx;
     HudSprite(c, ui, sp, "buttons/button_dpad_left", tx, 46, 44, 44);
     tx += 60;
     for (int t = 0; t < 3; t++)
     {
         const float w = HudTextWidth(ui, f, 32, tabs[t]) + 64;
-        HudPanel(c, ui, sp, t == s.page ? "panels/button_yellow" : "panels/button_white", tx, 42, w, 52);
+        HudPanel(c, ui, sp, t == (s.ivev ? -1 : s.page) ? "panels/button_yellow" : "panels/button_white", tx, 42, w, 52);
         HudText(c, ui, f, tx + w / 2, 52, 32, tabs[t], Ink, 1);
         tx += w + 18;
     }
     HudSprite(c, ui, sp, "buttons/button_dpad_right", tx, 46, 44, 44);
+    tx += 62;
+    {
+        // The fourth tab is the frontend's: reached with its own button, not the pages' d-pad.
+        const float w = HudTextWidth(ui, f, 32, tabs[3]) + 64;
+        HudPanel(c, ui, sp, s.ivev ? "panels/button_yellow" : "panels/button_white", tx, 42, w, 52);
+        HudText(c, ui, f, tx + w / 2, 52, 32, tabs[3], Ink, 1);
+    }
     if (s.count > 1)
         HudText(c, ui, f, rx + rw, 52, 32, std::to_string(s.slot + 1) + " / " + std::to_string(s.count), Muted, 2);
 
     const float expK = m.expNext > m.expLevel ? (float)(m.exp - m.expLevel) / (m.expNext - m.expLevel) : 1.0f;
     const std::string toNext = m.expNext ? std::to_string(m.expNext - m.exp) + " to Lv " + std::to_string(m.level + 1) : "Top level";
-    if (s.page == 0)
+    if (s.ivev)
+        DrawIvEv(c, ui, sp, f, m, rx, rw);
+    else if (s.page == 0)
     {
         // The trainer memo and the experience, on a card ending where the left one does
         // (its content ends a little above), not at the screen's bottom with an empty half.
