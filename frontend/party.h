@@ -166,6 +166,8 @@ bool Party_GoToUnionRoom();
 void Party_LeftUnionRoom();
 // A map's place name ("Route 30"), from the ROM's text.
 std::string Party_PlaceName(int map);
+int Party_MapSec(int map); // the map header's place (the Nuzlocke's areas); -1 not known
+bool Party_SpeciesTypes(int species, int types[2]);
 // The name of a species (from the ROM's text), e.g. "Hoothoot".
 std::string Party_SpeciesName(int species);
 // A Pokemon of the party as the game holds it in memory, decoded, with what the ROM says
