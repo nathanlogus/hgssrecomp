@@ -3240,9 +3240,8 @@ int main(int argc, char** argv)
         resumeCoverUntil = frame + 10;
     }
     // Typing a text: the nickname, the server's address or a party's code.
-    enum { E_NAME, E_SERVER, E_CODE, E_CHAT };
+    enum { E_NAME, E_SERVER, E_CODE, E_CHAT, E_ACCOUNTURL };
     int quickSel = 0; // the quick line the menu says
-    enum { E_NAME, E_SERVER, E_CODE, E_ACCOUNTURL };
     struct TextEdit
     {
         int purpose = E_NAME;
@@ -3602,6 +3601,7 @@ int main(int argc, char** argv)
         {
             edit.charset = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?.,'-:)(";
             edit.max = 40;
+        }
         else if (purpose == E_ACCOUNTURL)
         {
             edit.text = cfg.accountServer;
