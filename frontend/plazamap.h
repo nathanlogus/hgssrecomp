@@ -252,7 +252,7 @@ inline bool Patch(std::vector<uint8_t>& rom)
     put16(warp + 8, ArriveZ + OffZ);
     for (const Text& t : rewritten)
     {
-        put32(bank + 4 + t.at, (uint32_t)t.codes.size() ^ t.keyed);
+        put32(bank + t.at, (uint32_t)t.codes.size() ^ t.keyed); // the line's length field (t.at is from the bank's start)
         const uint32_t i = (t.at - 8) / 8 + 1;
         uint16_t k = (uint16_t)(i * 596947);
         for (size_t c = 0; c < t.codes.size(); c++, k = (uint16_t)(k + 18749)) put16(bank + t.off + 2 * c, t.codes[c] ^ k);

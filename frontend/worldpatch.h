@@ -10,6 +10,8 @@
 //   - More Pokemon: the base forms of late-game and post-League species in a few rare
 //     places of earlier routes' encounter tables, at the level of the route.
 //   - Skip the tutorials (see SkipTutorials): scripts only.
+//   - Move Tutor (see MoveTutor): the receptionist at the left counter of every Pokemon Center
+//     teaches moves a Pokemon forgot and gives nicknames.
 // Nothing here is read from or written to anything but the player's own ROM at run time.
 #include <algorithm>
 #include <cstdint>
@@ -20,6 +22,7 @@
 #include <string>
 #include <vector>
 #include "ndsrom.h"
+#include "plazamap.h" // EncodeText
 
 namespace WorldPatch
 {
@@ -36,10 +39,11 @@ struct Options
     // IVs in its code when it makes the Pokemon in Elm's lab, and a script has no command for them.)
     int resolved[3] = { 152, 155, 158 }; // what Patch decided the three balls hold
     bool skipTutorials = false;
+    bool moveTutor = false;    // a Move Tutor and Name Rater in every Pokemon Center
     int dayLength = 0;         // 0 real clock, 1 a day in an hour, 2 a day in 20 minutes
 
     bool StartersChanged() const { return starters || (randomize && gifts); }
-    bool AnyData() const { return randomize || more || skipTutorials || starters; }
+    bool AnyData() const { return randomize || more || skipTutorials || starters || moveTutor; }
 
     // "key=value,key=value" (the config's world_* entries and SSR_WORLD use the same keys).
     void Set(const std::string& k, const std::string& v)
@@ -59,6 +63,7 @@ struct Options
         else if (k == "s2") chosen[1] = std::clamp(n, 1, 493);
         else if (k == "s3") chosen[2] = std::clamp(n, 1, 493);
         else if (k == "skip") skipTutorials = b;
+        else if (k == "tutor") moveTutor = b;
         else if (k == "day") dayLength = std::clamp(n, 0, 2);
     }
     void Parse(const std::string& s)
@@ -183,6 +188,192 @@ constexpr int LateSpecies[] = { 246, 147, 371, 374, 443, 447, 328, 333, 304, 280
     137, 123, 214, 207, 220, 227, 228, 231, 336, 337, 338, 345, 347, 352, 353, 417, 420, 425, 427, 431, 434, 436, 439, 441, 449, 451, 453, 459 };
 // The same for the water: surfing and fishing.
 constexpr int LateWater[] = { 131, 349, 320, 339, 341, 270, 418, 456, 458, 422, 363, 366, 369, 370, 120, 223 };
+}
+
+// The Move Tutor: the receptionist at the left counter of every Pokemon Center (the same one
+// everywhere: script 9017 of the Union Room scripts, who only explains the Trainer Card) runs
+// a script of ours: pick a Pokemon, then have it remember a move it forgot (the game's own
+// Move Relearner commands 466, 467 and 469, as in Blackthorn City) or give it a new nickname
+// (the Name Rater's command 173). Data only:
+//   - script bank 10300 (the game's script file 734, whose table is empty and which no map
+//     uses) gets the script. That file is 4 bytes, so its entry in the archive's table of
+//     members is pointed at the room of four dead files, 71 to 74 (the script of a Battle
+//     Tower room that no map has). The archive itself does not move or change size.
+//   - text bank 444 (28 blank lines, used by that script bank and nothing else) holds the lines.
+//   - the receptionists' event objects (script 9017) get script 10300 instead.
+namespace MoveTutor
+{
+constexpr int ScriptBank = 734, TextBank = 444, ReceptionScript = 9017;
+constexpr uint16_t Result = 0x800C, Slot = 0x8005;
+enum { Hello = 16, Bye = 17, Egg = 3, Teach = 14, None = 10, Rename = 24 }; // lines of text bank 444
+
+struct Line { int index; const char* text; };
+// {N}: the Pokemon's nickname, {?}: a Yes/No menu. Each line goes where a blank one at least as
+// long was.
+constexpr Line Lines[] = {
+    { Hello, "Hi! I'm the Move Tutor.\rI teach moves a Pok\xC3\xA9mon forgot\nand give new nicknames.\rWant some help? {?}" },
+    { Bye, "Come back any time!" },
+    { Egg, "That's an Egg!\nCome back once it has hatched." },
+    { Teach, "Should I teach {N}\na move it forgot? {?}" },
+    { None, "{N} has no moves\nit can remember." },
+    { Rename, "Give {N} a\nnew nickname? {?}" },
+};
+
+inline std::vector<uint16_t> Encode(const std::string& s)
+{
+    std::vector<uint16_t> out;
+    for (size_t i = 0; i < s.size();)
+    {
+        if (!s.compare(i, 3, "{N}")) { for (uint16_t c : { 0xFFFE, 0x0101, 2, 0, 0 }) out.push_back(c); i += 3; }
+        else if (!s.compare(i, 3, "{?}")) { for (uint16_t c : { 0xFFFE, 0x0200, 1, 0 }) out.push_back(c); i += 3; }
+        else if (!s.compare(i, 2, "\xC3\xA9")) { out.push_back(0x188); i += 2; }
+        else
+        {
+            const auto c = PlazaMap::EncodeText(std::string(1, s[i]).c_str());
+            if (c.empty()) return {};
+            out.push_back(c[0]);
+            i++;
+        }
+    }
+    out.push_back(0xFFFF);
+    return out;
+}
+
+// The script, from the game's command numbers (macros/script.inc has them).
+inline std::vector<uint8_t> Script()
+{
+    std::vector<uint8_t> b;
+    std::vector<std::pair<std::string, size_t>> labels, jumps;
+    auto w16 = [&](uint32_t v) { b.push_back((uint8_t)v); b.push_back((uint8_t)(v >> 8)); };
+    auto cmd = [&](uint16_t op, std::initializer_list<uint16_t> args = {}) { w16(op); for (uint16_t a : args) w16(a); };
+    auto msg = [&](int line) { w16(45); b.push_back((uint8_t)line); };           // NPCMsg
+    auto nick = [&]() { w16(199); b.push_back(0); w16(Slot); };                  // BufferPartyMonNick 0, slot
+    auto label = [&](const char* l) { labels.push_back({ l, b.size() }); };
+    auto jump = [&](int cond, const char* l) {                                   // GoTo, or GoToIf cond
+        if (cond < 0) w16(22); else { w16(28); b.push_back((uint8_t)cond); }
+        jumps.push_back({ l, b.size() });
+        for (int i = 0; i < 4; i++) b.push_back(0);
+    };
+    enum { Eq = 1, Ne = 5 };
+    auto choice = [&]() { cmd(746); cmd(748, { Result }); cmd(747); };           // the Yes/No answer into Result
+    auto fade = [&](int in) { cmd(174, { 6, 1, (uint16_t)in, 0 }); cmd(175); };
+    auto cmp = [&](uint16_t var, uint16_t v) { cmd(17, { var, v }); };
+    auto finish = [&]() { cmd(50); cmd(53); cmd(97); cmd(2); };                  // WaitButton, CloseMsg, ReleaseAll, End
+
+    cmd(73, { 1500 }); cmd(96); cmd(104);                                        // PlaySE, LockAll, FacePlayer
+    msg(Hello); choice(); cmp(Result, 0); jump(Ne, "bye");
+    cmd(53); fade(0); cmd(349); cmd(351, { Slot }); cmd(150); fade(1);           // pick a Pokemon
+    cmp(Slot, 255); jump(Eq, "bye");
+    cmd(354, { Slot, Result }); cmp(Result, 0); jump(Eq, "egg");                 // species 0: an Egg
+    nick(); msg(Teach); choice(); cmp(Result, 0); jump(Ne, "rename");
+    cmd(466, { Result, Slot }); cmp(Result, 0); jump(Eq, "none");                // is there a move to remember?
+    cmd(53); fade(0); cmd(467, { Slot }); cmd(469, { Result }); cmd(150); fade(1); jump(-1, "bye");
+    label("none"); nick(); msg(None); finish();
+    label("rename"); nick(); msg(Rename); choice(); cmp(Result, 0); jump(Ne, "bye");
+    cmd(53); cmd(41, { Result, 0 }); fade(0); cmd(173, { Slot, Result }); fade(1); jump(-1, "bye");
+    label("egg"); msg(Egg); finish();
+    label("bye"); msg(Bye); finish();
+    for (const auto& j : jumps)
+        for (const auto& l : labels)
+            if (l.first == j.first)
+            {
+                const uint32_t rel = (uint32_t)((int64_t)l.second - (int64_t)(j.second + 4));
+                for (int i = 0; i < 4; i++) b[j.second + i] = (uint8_t)(rel >> (8 * i));
+            }
+    return b;
+}
+
+// False (and nothing changed) when the files are not the ones of the US HeartGold/SoulSilver.
+inline bool Patch(uint8_t* r, size_t n)
+{
+    auto fail = [](const char* why) { fprintf(stderr, "[world] Move Tutor not set up: %s\n", why); return false; };
+    const auto scripts = NdsNarcFiles(r, n, "a/0/1/2");
+    const auto texts = NdsNarcFiles(r, n, "a/0/2/7");
+    uint32_t narc, narcSize;
+    if (scripts.size() <= (size_t)ScriptBank || texts.size() <= (size_t)TextBank || !NdsRomFile(r, n, "a/0/1/2", narc, narcSize))
+        return fail("not the expected files");
+
+    // The dead files 71 to 74, one after the other, and the empty script file (just the end mark).
+    const uint32_t room = scripts[71].first;
+    uint32_t roomEnd = room;
+    for (int i = 0; i < 4; i++)
+    {
+        if (scripts[71 + i].first != roomEnd || scripts[71 + i].second != (i ? 8u : 520u)) return fail("script files 71 to 74");
+        roomEnd += scripts[71 + i].second;
+    }
+    if (scripts[ScriptBank].second != 4 || RomGet16(r + scripts[ScriptBank].first) != 0xFD13) return fail("script file 734");
+    const std::vector<uint8_t> code = Script();
+    if (6 + code.size() > roomEnd - room) return fail("script too long");
+
+    // The people to give the script to: events (a/0/3/2) with an object whose script is 9017, who
+    // only explains the Trainer Card (the same sprite at the left counter of every Pokemon Center).
+    const auto events = NdsNarcFiles(r, n, "a/0/3/2");
+    std::vector<uint8_t*> receptionists;
+    for (const auto& e : events)
+    {
+        if (e.second < 8) continue;
+        uint8_t* d = r + e.first;
+        const uint32_t bgs = RomGet32(d);
+        if (bgs > 64 || 4 + 20 * bgs + 4 > e.second) continue;
+        const uint32_t objects = RomGet32(d + 4 + 20 * bgs);
+        if (objects > 64 || 8 + 20 * bgs + 32 * objects > e.second) continue;
+        for (uint32_t i = 0; i < objects; i++)
+        {
+            uint8_t* o = d + 8 + 20 * bgs + 32 * i; // id, sprite, movement, type, flag, script, facing...
+            if (RomGet16(o + 10) == ReceptionScript) receptionists.push_back(o + 10);
+        }
+    }
+    if (receptionists.size() < 20) return fail("receptionists");
+
+    // Text bank 444: blank lines (spaces and the end mark), long enough, each line with its own key.
+    uint8_t* bank = r + texts[TextBank].first;
+    const uint32_t bankSize = texts[TextBank].second, count = RomGet16(bank), key = RomGet16(bank + 2);
+    if (count != 28 || 4 + count * 8 > bankSize) return fail("text bank 444");
+    struct Text { uint32_t at, allocKey, off; std::vector<uint16_t> codes; };
+    std::vector<Text> lines;
+    for (const Line& l : Lines)
+    {
+        const uint32_t i = (uint32_t)l.index + 1;
+        uint32_t allocKey = (765 * i * key) & 0xFFFF;
+        allocKey |= allocKey << 16;
+        const uint32_t off = RomGet32(bank + 4 + l.index * 8) ^ allocKey, len = RomGet32(bank + 8 + l.index * 8) ^ allocKey;
+        std::vector<uint16_t> codes = Encode(l.text);
+        if (codes.empty() || (uint64_t)off + 2 * len > bankSize || codes.size() > len) return fail("text lines");
+        uint16_t k = (uint16_t)(i * 596947);
+        for (uint32_t c = 0; c < len; c++, k = (uint16_t)(k + 18749))
+            if ((RomGet16(bank + off + 2 * c) ^ k) != (c + 1 < len ? 0x1DE : 0xFFFF)) return fail("text lines not blank");
+        lines.push_back({ 8 + (uint32_t)l.index * 8, allocKey, off, codes });
+    }
+
+    // Everything checked: write.
+    for (const Text& t : lines)
+    {
+        const uint32_t i = (t.at - 8) / 8 + 1;
+        uint16_t k = (uint16_t)(i * 596947);
+        const uint32_t len = (uint32_t)t.codes.size() ^ t.allocKey;
+        for (int b = 0; b < 4; b++) bank[t.at + b] = (uint8_t)(len >> (8 * b)); // the line's length, after its offset
+        for (size_t c = 0; c < t.codes.size(); c++, k = (uint16_t)(k + 18749))
+        {
+            const uint32_t v = t.codes[c] ^ k;
+            bank[t.off + 2 * c] = (uint8_t)v;
+            bank[t.off + 2 * c + 1] = (uint8_t)(v >> 8);
+        }
+    }
+    uint8_t* file = r + room;
+    memset(file, 0, roomEnd - room);
+    file[0] = 2;       // the table: one script, at byte 6 (4 + 2)
+    file[4] = 0x13, file[5] = 0xFD;
+    memcpy(file + 6, code.data(), code.size());
+    // The archive's table of members (after its 16 bytes of header and 12 of the table's own).
+    const uint32_t fatSize = RomGet32(r + narc + 16 + 4), fnt = 16 + fatSize;
+    const uint32_t base = narc + fnt + RomGet32(r + narc + fnt + 4) + 8; // where the members' data starts
+    uint8_t* member = r + narc + 16 + 12 + 8 * ScriptBank;
+    const uint32_t from = room - base, to = roomEnd - base;
+    for (int b = 0; b < 4; b++) { member[b] = (uint8_t)(from >> (8 * b)); member[4 + b] = (uint8_t)(to >> (8 * b)); }
+    for (uint8_t* script : receptionists) { script[0] = 10300 & 255; script[1] = 10300 >> 8; }
+    fprintf(stderr, "[world] Move Tutor: %zu bytes of script in bank 10300, %zu receptionists\n", code.size(), receptionists.size());
+    return true;
+}
 }
 
 inline bool Patch(std::vector<uint8_t>& rom, Options& o)
@@ -392,6 +583,8 @@ inline bool Patch(std::vector<uint8_t>& rom, Options& o)
                 if (RomGet16(d + k) == 251 && RomGet16(d + k - 4) == 10 && RomGet16(d + k - 2) == 0x800C) { Put16(d + k, 0); scriptsChanged++; }
         }
     }
+
+    if (o.moveTutor && MoveTutor::Patch(r, n)) scriptsChanged++;
 
     fprintf(stderr, "[world] seed %06u: %d wild, %d trainer Pokemon, %d gifts, %d added to routes, %d scripts\n", seed, wildChanged,
         partiesChanged, giftsChanged, added, scriptsChanged);

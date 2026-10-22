@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Move Tutor** in the World section of the Game tab (off unless you choose it; applies at the next start): the
+  receptionist at the left counter of every Pokémon Center teaches a Pokémon a move it has forgotten (the game's own
+  Move Relearner) or gives it a new nickname. She no longer explains the Trainer Card.
 - **NUZLOCKE** in the Game tab (off unless you choose it): Nuzlocke, Hardlocke, Monolocke, Soul Link and Duallocke.
   The first wild Pokémon in each area is the only one you can catch; a catch that breaks the rules goes to the
   last PC box, renamed Graveyard, and so do Pokémon that faint (nothing is deleted). The Nuzlocke ledger shows each

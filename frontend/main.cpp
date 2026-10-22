@@ -1258,6 +1258,7 @@ struct Settings
         f << "world_starters=" << world.starters << "\n";
         for (int i = 0; i < 3; i++) f << "world_s" << i + 1 << "=" << world.chosen[i] << "\n";
         f << "world_skip=" << (world.skipTutorials ? 1 : 0) << "\n";
+        f << "world_tutor=" << (world.moveTutor ? 1 : 0) << "\n";
         f << "world_day=" << world.dayLength << "\n";
         f << "day_epoch=" << dayEpoch << "\n";
         qol.Save(f);
@@ -3133,7 +3134,7 @@ int main(int argc, char** argv)
         M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK, M_BUGREPORT, M_TALKBUBBLES,
         M_NUZRULE, M_NUZTYPE, M_NUZTYPE2, M_NUZBOOK,
         M_ACCOUNT, M_ACCOUNTURL,
-        M_W_RAND, M_W_SEED, M_W_WILD, M_W_TRAINERS, M_W_GIFTS, M_W_MOVES, M_W_ABILITIES, M_W_MORE, M_W_STARTERS, M_W_S1, M_W_S2, M_W_S3, M_W_SKIP, M_W_DAY,
+        M_W_RAND, M_W_SEED, M_W_WILD, M_W_TRAINERS, M_W_GIFTS, M_W_MOVES, M_W_ABILITIES, M_W_MORE, M_W_STARTERS, M_W_S1, M_W_S2, M_W_S3, M_W_SKIP, M_W_TUTOR, M_W_DAY,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
         // Comfort and accessibility (access.h), the sound tab and the keyboard.
         MA_FILTER, MA_STRENGTH, MA_CONTRAST, MA_FLASH, MA_MOTION, MA_TEXTSIZE, MA_FOEPCT, MA_BEEP, MA_VOLMUSIC, MA_VOLSFX, MA_VOLCRY,
@@ -3452,7 +3453,7 @@ int main(int argc, char** argv)
             const WorldPatch::Options& w = cfg.world;
             const bool same = w.randomize == world.randomize && w.seed == world.seed && w.wild == world.wild && w.trainers == world.trainers &&
                 w.gifts == world.gifts && w.moves == world.moves && w.abilities == world.abilities && w.more == world.more &&
-                w.starters == world.starters && w.skipTutorials == world.skipTutorials &&
+                w.starters == world.starters && w.skipTutorials == world.skipTutorials && w.moveTutor == world.moveTutor &&
                 (w.starters != 4 || (w.chosen[0] == world.chosen[0] && w.chosen[1] == world.chosen[1] && w.chosen[2] == world.chosen[2]));
             const std::string later = same ? "" : "  (next start)";
             char seedText[16];
@@ -3481,6 +3482,8 @@ int main(int argc, char** argv)
                         "Left and right change the Pok\xC3\xA9mon by one, A by ten.");
             add(T_GAME, M_W_SKIP, "World: Skip tutorials", onOff(w.skipTutorials) + later,
                 "Leaves out the catching demonstration on Route 29; you still get the Pok\xC3\xA9 Balls.");
+            add(T_GAME, M_W_TUTOR, "World: Move Tutor", onOff(w.moveTutor) + later,
+                "The receptionist at the left counter of every Pok\xC3\xA9mon Center teaches moves a Pok\xC3\xA9mon forgot and gives nicknames. She no longer explains the Trainer Card.");
             add(T_GAME, M_W_DAY, "World: Day length", dayNames[w.dayLength],
                 "How long a day lasts in the game, which sets the time of day. Real clock, or a whole day in an hour or in 20 minutes. At once.");
         }
@@ -5061,6 +5064,7 @@ int main(int argc, char** argv)
                 break;
             }
             case M_W_SKIP: cfg.world.skipTutorials = !cfg.world.skipTutorials; break;
+            case M_W_TUTOR: cfg.world.moveTutor = !cfg.world.moveTutor; break;
             case M_W_DAY:
                 cfg.world.dayLength = (cfg.world.dayLength + (dir < 0 ? 2 : 1)) % 3;
                 break;
