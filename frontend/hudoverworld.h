@@ -1,13 +1,13 @@
 #pragma once
 // The overworld HUD: shown while the player walks about freely, faded out for anything else
 // (messages, menus, battles, cutscenes, fades). Top left the party: icons, HP bars, status;
-// top right a round map of the area around the player drawn from the game's own map data
-// (each tile's permissions: grass, water, walls, doors), the place and the game's clock under
-// it, a few badges beside it (Repel steps left, an EXP. Share held) and the other players'
-// faces down the right edge; along the bottom quick buttons for the Bag, the Pokemon, the
-// menu and the friends. Everything is read from the game's memory and the ROM; nothing is
-// written to the game's memory. The Bag and Pokemon buttons open the game's own screens by
-// pressing its buttons for the player (X, then the cursor to the entry, then A).
+// top right a round map of the area around the player: its map blocks drawn from above with
+// the game's own textures (TopDown), or coloured by each tile's permissions (grass, water,
+// walls, doors) until they are; the place and the game's clock under it, a few badges
+// (Repel steps left, an EXP. Share held) and the other players' faces down the right edge;
+// along the bottom quick buttons for the Bag, the Pokemon, the menu and the friends (main.cpp
+// opens them as the pause menu does). Everything is read from the game's memory, video memory
+// and the ROM; nothing is written to the game's memory.
 //
 // The HUD is drawn into a canvas of its own and sent to the screen in a few small pieces
 // (the corners and the bottom row) with the fade as the texture's alpha, so it costs little
@@ -24,9 +24,6 @@
 namespace HudOverworld
 {
 using HudParty::Ram;
-
-// The DS buttons, as the key mask's bits (KEYINPUT, then X and Y).
-constexpr int kKeyA = 0, kKeyRight = 4, kKeyLeft = 5, kKeyUp = 6, kKeyDown = 7, kKeyX = 10;
 
 // The quick buttons along the bottom, and the map (for a click on it).
 enum Quick { Q_BAG, Q_PARTY, Q_MENU, Q_FRIENDS, Q_COUNT, Q_MAP = Q_COUNT };
@@ -263,66 +260,10 @@ public:
     void ZoomStep(int d) { Zoom = std::clamp(Zoom + d, 0, 2); }
     void ZoomCycle() { Zoom = (Zoom + 1) % 3; }
 
-    // Opens the Bag or the Pokemon through the game's own menu (see Keys).
-    void Open(int quick, uint32_t frame)
-    {
-        Want = quick == Q_BAG ? 2 : quick == Q_PARTY ? 1 : -1;
-        Since = frame;
-        Next = frame;
-        PressedX = false;
-        HeldLeft = 0;
-    }
-    bool Opening() const { return Want >= 0; }
-
     // The map blocks from above (WorldBlocks::BlockFromAbove: commands, or the key alone
     // without them) and the 3D engine's video memory, for the round map's pictures.
     std::function<bool(int x, int z, std::vector<uint32_t>* cmds, uint64_t& key)> BlockFromAbove;
     TopDown Painter;
-
-    // While opening the Bag or the Pokemon: the buttons for the game instead of the player's.
-    // X opens the menu; then the cursor goes to the entry (StartMenuTaskData's actions, as
-    // HudWorld::ReadXMenu reads them) and A opens it. Each button is held two frames and let go
-    // for three, so the game sees every press.
-    void Keys(const Ram& r, uint32_t& keys, uint32_t frame, bool idle)
-    {
-        if (Want < 0) return;
-        if (frame - Since > 300)
-        {
-            fprintf(stderr, "[hud] the game's menu did not open\n");
-            Want = -1;
-            return;
-        }
-        keys = 0;
-        if (HeldLeft > 0)
-        {
-            keys = Held;
-            if (--HeldLeft == 0 && Held == 1u << kKeyA) Want = -1;
-            return;
-        }
-        if (frame < Next) return;
-        auto press = [&](int key) {
-            Held = keys = 1u << key;
-            HeldLeft = 1; // this frame and the next
-            Next = frame + 5;
-        };
-        HudWorld::XMenu xm;
-        if (HudWorld::ReadXMenu(r, xm))
-        {
-            const auto it = std::find(xm.actions.begin(), xm.actions.end(), Want);
-            if (it == xm.actions.end())
-            {
-                Want = -1; // not in the menu yet (early in the game)
-                return;
-            }
-            const int at = (int)(it - xm.actions.begin());
-            press(xm.cursor == at ? kKeyA : at > xm.cursor ? kKeyDown : kKeyUp);
-        }
-        else if (!PressedX && idle)
-        {
-            press(kKeyX);
-            PressedX = true;
-        }
-    }
 
     // Reads the game and draws the HUD into its own canvas (Layer), the output's size.
     void Update(const Ram& r, const Input& in, uint32_t frame, int outW, int outH, const Ui& ui, Sprites& sp, const RomFont& f, RomArt& art)
@@ -401,10 +342,6 @@ private:
     bool Uploaded = false, Target = false;
     float Alpha = 0, PartyAlpha = 1;
     int Zoom = 1;
-    // Opening the Bag or the Pokemon (Keys): the menu's action wanted, -1 none.
-    int Want = -1, HeldLeft = 0;
-    uint32_t Since = 0, Next = 0, Held = 0;
-    bool PressedX = false;
 
     // The party and the save's numbers, read every few frames.
     int Count = 0, Repel = 0;

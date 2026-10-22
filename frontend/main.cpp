@@ -2994,6 +2994,12 @@ int main(int argc, char** argv)
         { "CONTROLS", "menu/menu_controls" }, { "ONLINE", "menu/menu_online" }, { "PROFILE", "menu/menu_profile" },
         { "STATES", "menu/menu_states" } };
     menu.tab = T_DISPLAY;
+    // The game's X menu inside the pause menu (hudworld.h XMenuDrive): opened from the overworld
+    // with + or X, its first page lists the game's own entries; choosing one drives the game's
+    // menu, out of sight, to open it.
+    constexpr int M_GAMEACT = 5000; // + the X menu's action
+    HudWorld::XMenuDrive xDrive;
+    bool menuFromField = false, xOpensMenu = false;
     // Screens of the online HUD over (or instead of) the pause menu.
     enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE, SCR_LOOK };
     int lookSel = 0; // the look chosen on SCR_LOOK (an index of worldBlocks.Looks())
@@ -3207,6 +3213,17 @@ int main(int argc, char** argv)
             menu.items.push_back(it);
             return &menu.items.back();
         };
+        if (menuFromField)
+            for (int a : HudWorld::UnlockedActions({ nds->MainRAM, nds->MainRAMMask + 1 }))
+            {
+                // (Actions 0-5, and 11 the Pokégear.)
+                static const char* desc[] = { "The Pok\xC3\xA9" "dex: the Pok\xC3\xA9mon you have seen and caught.",
+                    "Your party of Pok\xC3\xA9mon.", "Your bag and its items.", "Your trainer card.", "Save your progress in the game.",
+                    "The game's own options: text speed, battle style, sound." };
+                const std::string label = a == 0 ? "Pok\xC3\xA9" "dex" : a == 1 ? "Pok\xC3\xA9mon" : a == 2 ? "Bag" : a == 11 ? "Pok\xC3\xA9gear" :
+                    a == 3 ? trainerName() : a == 4 ? "Save" : "Options";
+                add(T_RESUME, M_GAMEACT + a, label, "", a == 11 ? "The Pok\xC3\xA9gear: phone, map and radio." : desc[a]);
+            }
         add(T_RESUME, M_RESUME, "Back to the game", "", "Close this menu and carry on playing.");
 
         add(T_GAME, M_FPS60, "60 fps", onOff(cfg.fps60), "Draws a picture between each two of the game's, so the world moves at 60 frames a second.");
@@ -3923,6 +3940,7 @@ int main(int argc, char** argv)
         auto pressed = [&](int b) { return ps.btn[b] && !prevPad.btn[b]; };
         bool comboMenu = ps.btn[PAD_START] && ps.btn[PAD_BACK];
         if (pressed(PAD_GUIDE) || (comboMenu && !prevComboMenu)) toggleMenu = true;
+        if (xOpensMenu) toggleMenu = !menu.open, xOpensMenu = false; // X on the overworld (below)
         // + (Start) opens and closes it too on the overworld, when nothing of the game is open
         // (the game does not use Start there); anywhere else it stays the game's Start.
         if (pressed(PAD_START) && !ps.btn[PAD_BACK] && !startOpen && remapping < 0 && screen == SCR_NONE && (menu.open || fieldIdle()))
@@ -3958,8 +3976,12 @@ int main(int argc, char** argv)
                 screen = SCR_FRIENDS;
                 uiSound(GameSfx::Confirm);
             }
-            else if (quick == HudOverworld::Q_BAG || quick == HudOverworld::Q_PARTY)
-                owHud.Open(quick, frame);
+            else if ((quick == HudOverworld::Q_BAG || quick == HudOverworld::Q_PARTY) && !xDrive.Busy() && !gameSave.Busy())
+            {
+                // As the pause menu's entries: the game's X menu driven to the entry (Bag 2, Pokemon 1).
+                xDrive.Start(quick == HudOverworld::Q_BAG ? 2 : 1, frame);
+                uiSound(GameSfx::Confirm);
+            }
         }
 
         MenuInput heldNow;
@@ -4182,6 +4204,9 @@ int main(int argc, char** argv)
             if (menu.open)
             {
                 menu.selected = 0;
+                // From the overworld (single-screen view, not the Plaza): the game's entries first.
+                menuFromField = layout.mode == LayoutMode::Merged && !onPlaza && fieldIdle() && !gameSave.Busy() && !xDrive.Busy();
+                if (menuFromField) menu.tab = T_RESUME;
                 buildMenu();
                 uiSound(GameSfx::Confirm);
             }
@@ -4226,6 +4251,14 @@ int main(int argc, char** argv)
             }
             int dir = 0;
             int hit = menuUpdate(menu, nav, dir);
+            if (hit >= M_GAMEACT && hit < M_GAMEACT + 16 && dir == 0)
+            {
+                menu.open = false;
+                swallowMenuButtons = true;
+                xDrive.Start(hit - M_GAMEACT, frame);
+                uiSound(GameSfx::Confirm);
+                hit = -1;
+            }
             if (hit >= M_REMAP && hit < M_REMAP + RemapCount && dir == 0)
             {
                 remapping = hit - M_REMAP;
@@ -4519,10 +4552,19 @@ int main(int argc, char** argv)
             }
             wheelPrev = emoteWheel ? dpad : 0;
         }
-        // A quick button of the overworld HUD opening the Bag or the Pokemon: the game's menu's
-        // buttons pressed for the player.
-        if (!uiOpen) owHud.Keys({ nds->MainRAM, nds->MainRAMMask + 1 }, keys, frame, fieldIdle());
-        else if (owHud.Opening()) owHud.Open(-1, frame);
+        // X on the overworld opens the pause menu (with the game's X menu entries) instead of
+        // the game's menu, in the single-screen view; the game's X menu, driven by the pause
+        // menu, takes the buttons meanwhile (xDrive).
+        {
+            static bool xHeld = false;
+            const bool xNow = keys & (1u << KEY_X);
+            if (xNow && !xHeld && !uiOpen && layout.mode == LayoutMode::Merged && !onPlaza && fieldIdle() && !gameSave.Busy() && !xDrive.Busy()) xOpensMenu = true;
+            xHeld = xNow;
+            if (xOpensMenu || xDrive.Busy()) keys &= ~(1u << KEY_X);
+            const std::string why = xDrive.Step({ nds->MainRAM, nds->MainRAMMask + 1 }, frame, probeActive(probeStartMenu), fieldIdle(), keys, KEY_A, KEY_B,
+                KEY_X, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT);
+            if (!why.empty()) say(why, "icons/icon_info");
+        }
         // The Union Room hand-off (an accepted battle or trade invite): first a save, as at a
         // Pokemon Center's counter (Autosave::GameSave, below), then the counter's own warp
         // (Party_GoToUnionRoom) once nothing runs on the overworld. There the one who invited
@@ -5643,7 +5685,7 @@ int main(int argc, char** argv)
                 else if (strip && merged) menuReturn = 30;
                 else if (menuReturn > 0) menuReturn--;
                 // (Also all through an autosave, whose menu task goes quiet while the save is written.)
-                bool menuOpen = merged && ((probeActive(probeStartMenu) && fieldActive()) || menuReturn > 0 || gameSave.Covering(frame));
+                bool menuOpen = merged && ((probeActive(probeStartMenu) && fieldActive()) || menuReturn > 0 || gameSave.Covering(frame) || xDrive.Covering(frame));
                 rc_hide_layers[topUnit] = menuOpen ? 0x18 : 0;
                 rc_hide_layers[1 - topUnit] = 0;
             }
@@ -5713,7 +5755,7 @@ int main(int argc, char** argv)
             // While an autosave runs the overworld's layout stays, with the pill over it: the X
             // menu and the save screen it goes through are not shown.
             static Scene beforeSave;
-            if (!gameSave.Covering(frame)) beforeSave = scene;
+            if (!gameSave.Covering(frame) && !xDrive.Covering(frame)) beforeSave = scene;
             else scene = beforeSave;
         }
         if (opt.logSections)
@@ -5857,7 +5899,7 @@ int main(int argc, char** argv)
             ui.Set(canvas.w, canvas.h);
             HudOverworld::Input oin;
             oin.show = cfg.overworldHud && spritesOk && merged && hudFree && !strcmp(scene.name, "top") && !scene.items.empty() &&
-                scene.items[0].screen == 0 && fieldIdle() && !fading && !gameSave.Covering(frame) && !emoteWheel && !appRunning("Battle");
+                scene.items[0].screen == 0 && fieldIdle() && !fading && !gameSave.Covering(frame) && !xDrive.Covering(frame) && !emoteWheel && !appRunning("Battle");
             oin.top = 32 + cornerY / ui.s;
             oin.partyTop = oin.top + (online ? 76 : 0);
             // Above the on-screen d-pad and buttons (their tops at 80% of the height).
@@ -6276,11 +6318,19 @@ int main(int argc, char** argv)
             // last page (the game lets go of it first): that page, while it is on the screen.
             // A question's answers (a list of the game's beside the box is allowed on BG3 then).
             HudWorld::Choice choice;
-            const bool asked = may && HudWorld::ReadChoice(ram, choice);
+            const bool asked = may && HudWorld::ReadChoice(ram, choice, rom.data(), rom.size());
             const int top = may ? HudWorld::BoxTop(screenImages[0].flags, choice.window) : -1;
             int slide = std::max(0, top - HudWorld::kBoxY - 1);
             HudWorld::Dialogue dlg;
-            bool shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
+            bool shown = false;
+            if (asked && !choice.about.empty() && top >= 0 && !slide)
+            {
+                // A list whose answers each have a text about them, which the game writes in the box.
+                dlg.lines = HudWrap(ui, font, 64, choice.about, HudWorld::kBoxW * view.unit / ui.s - 150);
+                shown = dlg.lines.size() <= 2;
+            }
+            else
+                shown = top >= 0 && HudWorld::ReadDialogue(ram, dlg) && (dlg.sign >= 0 || !slide);
             static HudWorld::Dialogue worldLast;
             static uint32_t worldLastAt = 0;
             // A script lets go of its box and leaves the last page on the screen (HoldMsg, before
@@ -6325,6 +6375,17 @@ int main(int argc, char** argv)
                     HudWorld::kBoxH * u - 6, frame, &choice);
                 worldFade(x0 + HudWorld::kBoxX * u, y0 + (HudWorld::kBoxY + slide) * u, HudWorld::kBoxW * u, HudWorld::kBoxH * u - 6);
                 overlayUsed = true;
+            }
+            // The game's X menu put back up after something opened from the pause menu: kept out
+            // of the picture while it is closed again (xDrive).
+            // (The overworld's own layout then, as it was last, not an application's on its way out.)
+            static Scene lastFieldScene;
+            if (!strcmp(scene.name, "top") && !scene.items.empty() && scene.items[0].screen == 0) lastFieldScene = scene;
+            if (xDrive.Hiding() && probeActive(probeStartMenu))
+            {
+                if (!lastFieldScene.items.empty()) scene = lastFieldScene;
+                else scene.items.erase(std::remove_if(scene.items.begin(), scene.items.end(), [](const Element& e) { return e.screen == 1; }),
+                    scene.items.end());
             }
             // The game's X menu, drawn where its touch-screen panel stands, which is left out;
             // as it was last while the game closes it or opens what was chosen (its panel stays
