@@ -260,6 +260,12 @@ friend shows as online only to people they have added too.
 `run.sh` also writes what the game prints to `game.log` next to it; a bug report
 about a controller should include it (it lists every controller SDL sees).
 
+**Reporting a bug:** check [KNOWN_BUGS.md](KNOWN_BUGS.md) first. In the game, the pause menu's
+GAME tab has **Report a bug** (F9 on a keyboard): it saves the latest messages, your settings
+(without your name or server) and a picture to a `reports` folder beside your save, opens it,
+and copies a one-line summary. It never includes your save, the ROM or chat; attach the files
+to an issue.
+
 **Steam Deck / SteamOS:** add `run.sh` to Steam as a non-Steam game. If a
 controller does nothing that way, setting the shortcut's compatibility tool to
 Proton Experimental (Properties → Compatibility) has been reported to make it

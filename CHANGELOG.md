@@ -3,6 +3,12 @@
 ## Unreleased
 
 - Online: sign in with Discord from the Online tab (it opens your browser and shows a short code to check), for servers that ask for an account. Your account name shows in the Profile tab. Servers that do not ask work as before.
+- **REPORT A BUG** in the Game tab of the pause menu (or F9): saves the latest messages, the version,
+  your system, your settings (without your name or server address), the party connection's state
+  and a picture of the game to a `reports` folder beside your save, opens the folder and copies a
+  one-line summary. Your save, the ROM and chat are never included. If the game crashes, it
+  writes the same report (without the picture) as far as it can. KNOWN_BUGS.md lists what is
+  already known.
 - New screens, tidier: items and Pokémon sit in the middle of their circles and cards and
   look the same size, the text beside them is centred against them, the L and R buttons
   keep their shape next to A and B, bold and plain text on one line share a baseline, and
