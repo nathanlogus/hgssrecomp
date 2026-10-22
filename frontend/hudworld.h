@@ -63,6 +63,9 @@ inline bool Page(const std::vector<uint16_t>& codes, size_t done, int state, Dia
         else if (c == 0x25BC) wait(false, i + 1);
         else if (c == 0x25BD) wait(true, i + 1);
         else if (c == 0xF0FD) i++;
+        // The pocket's little picture before its name ("in the [icon]MEDICINE Pocket"): a glyph
+        // of the game's font with no letter, left out (the name follows in letters).
+        else if (c >= 0x110 && c <= 0x120) {}
         else if (c == 0xFFFE)
         {
             // A control code: 0xFFFE, its kind, its number of fields, the fields.
