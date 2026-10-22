@@ -322,7 +322,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
     // A Pokemon's icon in a cell `size` wide, or an egg's word.
     auto iconIn = [&](const PartyMon& m, float x, float y, float size) {
         if (m.egg) HudText(c, ui, f, x + size / 2, y + size / 2 - 16, 32, "Egg", Muted, 1);
-        else HudPixelArt(c, ui, icon(m.species), x + size / 2 - 48, y + size / 2 - 48, 96, 96);
+        else HudPixelArtCentred(c, ui, icon(m.species), x + size / 2, y + size / 2, 0, 96);
     };
 
     // The party.
@@ -467,7 +467,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const S
         {
             const PartyMon& m = *shown;
             HudSprite(c, ui, sp, "people/chip_ring_grey", rx, y + 26, 180, 180);
-            if (!m.egg) HudPixelArt(c, ui, icon(m.species), rx + 10, y + 36, 160, 160);
+            if (!m.egg) HudPixelArtCentred(c, ui, icon(m.species), rx + 90, RingCentreY(y + 26, 180), 119, 160);
             const std::string name = m.egg ? "Egg" : m.name;
             const float nw = HudTextWidth(ui, f, 48, name, true);
             const std::string lv = m.egg ? "" : "Lv " + std::to_string(m.level);

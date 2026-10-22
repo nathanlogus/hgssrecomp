@@ -202,9 +202,10 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         if (here) HudSprite(c, ui, sp, "cursor/cursor_small", tx0 + 8, ty + th / 2 - 16, 30, 32);
         if (idx >= count) continue;
         const int id = st.items[idx];
-        HudPixelArt(c, ui, art.ItemIcon(id), tx0 + 40, ty + 27, 96, 96);
-        HudText(c, ui, f, tx0 + 152, ty + 34, 32, tx.Get(HudBag::kItemName, id), Ink);
-        HudText(c, ui, f, tx0 + 152, ty + 84, 32, price(id), Muted);
+        // The icon clear of the cursor; its middle and the two lines' middle on the card's.
+        HudPixelArtCentred(c, ui, art.ItemIcon(id), tx0 + 92, ty + th / 2, 76);
+        HudText(c, ui, f, tx0 + 152, ty + th / 2 - 39, 32, tx.Get(HudBag::kItemName, id), Ink);
+        HudText(c, ui, f, tx0 + 152, ty + th / 2 + 11, 32, price(id), Muted);
     }
     const int pages = (count + 5) / 6;
     const float by = fy + fh - 110;
@@ -234,7 +235,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         HudSprite(c, ui, sp, st.cursor == 8 ? "people/chip_ring_grey" : "people/chip_empty", cx + cw / 2 - 90, cy + 36, 180, 180);
         if (st.cursor == 8)
         {
-            HudSprite(c, ui, sp, "icons/icon_exit", cx + cw / 2 - 40, cy + 86, 80, 80);
+            HudSprite(c, ui, sp, "icons/icon_exit", cx + cw / 2 - 40, RingCentreY(cy + 36, 180) - 40, 80, 80);
             HudText(c, ui, f, cx + cw / 2, cy + 240, 48, "Cancel", Ink, 1, true);
             HudText(c, ui, f, cx + cw / 2, cy + 306, 32, "Done shopping", Muted, 1);
         }
@@ -242,7 +243,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         return;
     }
     HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cw / 2 - 90, cy + 36, 180, 180);
-    HudPixelArt(c, ui, art.ItemIcon(item), cx + cw / 2 - 64, cy + 62, 128, 128);
+    HudPixelArtCentred(c, ui, art.ItemIcon(item), cx + cw / 2, RingCentreY(cy + 36, 180), 100);
     HudText(c, ui, f, cx + cw / 2, cy + 240, 48, name(item), Ink, 1, true);
     if (st.Points())
         HudText(c, ui, f, cx + cw / 2, cy + 306, 32,
@@ -275,9 +276,10 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     const std::string desc = message.empty() ? tx.Get(HudBag::kItemDesc, item) : message;
     std::vector<std::string> lines = HudWrap(ui, f, 32, desc, cw - 72 - 60);
     lines.resize(std::min(lines.size(), (size_t)(below ? 3 : 5)));
+    // Down to what is under it, or the card's bottom margin, whatever the text's length.
     const float dy = cy + 370;
-    HudPanel(c, ui, sp, "panels/dialogue_box", cx + 36, dy, cw - 72, 40 + 50.0f * lines.size());
-    for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 66, dy + 22 + 50.0f * i, 32, lines[i], Ink);
+    HudPanel(c, ui, sp, "panels/dialogue_box", cx + 36, dy, cw - 72, below ? ch - 30 - 60 - 20 - 370 : ch - 30 - 370);
+    for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 66, dy + 28 + 50.0f * i, 32, lines[i], Ink);
 
     const float by0 = cy + ch - 30 - 60;
     if (quantity && st.yesNo < 0)

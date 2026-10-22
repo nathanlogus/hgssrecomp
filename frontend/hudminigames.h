@@ -218,12 +218,10 @@ inline void DrawVoltorb(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     DrawBackdrop(c, sp, "backgrounds/bg_lime", 0xFFFFFFFF);
     const float wd = ui.W / ui.s, x0 = wd / 2 - 960;
     const Image* voltorbIcon = art.PokemonIcon(100);
-    // The party icon's Voltorb fills only the lower middle of its 32 x 32: drawn larger, so
-    // that it fills the box (x, y, w, h) given.
+    // The party icon's Voltorb fills only the lower middle of its 32 x 32: drawn by its own
+    // pixels, filling the box (x, y, w, h) given and in its middle.
     auto voltorbAt = [&](float x, float y, float w, float h) {
-        if (!voltorbIcon) return;
-        const float s = w * 1.9f;
-        HudPixelArt(c, ui, voltorbIcon, x + w / 2 - s / 2, y + h / 2 - s * 0.66f, s, s);
+        HudPixelArtCentred(c, ui, voltorbIcon, x + w / 2, y + h / 2, std::min(w, h), 4 * std::min(w, h));
     };
 
     const float pitch = 150, cs = 128, bx = x0 + 80, by = 52;

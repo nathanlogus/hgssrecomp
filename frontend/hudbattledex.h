@@ -48,7 +48,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     HudText(c, ui, f, wd / 2, 64, 32, title, Ink, 1);
     HudPanel(c, ui, sp, "panels/card", cx, cy, cw, ch);
     HudSprite(c, ui, sp, "people/chip_ring_green", cx + 40, cy + 40, 300, 300);
-    if (const Image* ic = art.PokemonIcon(species)) Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(cx + 62), ui(cy + 62), ui(256), ui(256), false);
+    HudPixelArtCentred(c, ui, art.PokemonIcon(species), cx + 190, RingCentreY(cy + 40, 300), 198, 256);
     const auto& johto = JohtoNumbers(rom, romSize);
     const int number = species < (int)johto.size() && johto[species] ? johto[species] : species;
     const float rx = cx + 380;

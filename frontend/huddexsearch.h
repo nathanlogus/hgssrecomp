@@ -185,7 +185,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const V
     DrawBackdrop(c, sp, "backgrounds/bg_aqua", 0xFFFFFFFF);
     const float x0 = ui.W / ui.s / 2 - 960;
     HudSprite(c, ui, sp, "people/chip_ring_red", x0 + 60, 40, 96, 96);
-    HudSprite(c, ui, sp, "icons/icon_search", x0 + 84, 64, 48, 48);
+    HudSprite(c, ui, sp, "icons/icon_search", x0 + 84, RingCentreY(40, 96) - 24, 48, 48);
     HudText(c, ui, f, x0 + 176, 64, 48, "SEARCH", Ink, 0, true);
 
     // The menu: what to search by, with the values chosen; the one being chosen marked.
@@ -203,7 +203,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const V
         const std::string val = ValueOf(v, r);
         if (r == 6 && val.empty())
         {
-            if (const Image* s = shapes.Get((int)v.crit[9])) HudPixelArt(c, ui, s, lx + lw - 100, ry + 4, 60, 60);
+            if (const Image* s = shapes.Get((int)v.crit[9])) HudPixelArtCentred(c, ui, s, lx + lw - 70, ry + 34, 0, 60);
         }
         else
             HudText(c, ui, f, lx + lw - 50, ry + 18, 32, val, Ink, 2);
@@ -292,7 +292,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const V
             HudPanel(c, ui, sp, here ? "panels/button_yellow" : chosen ? "panels/button_lavender" : "panels/button_white", cx - bw / 2, cy - bh / 2, bw, bh,
                 on ? 0xFFFFFFFF : 0x80FFFFFF);
             if (v.page == Type && i < 17) HudParty::FillRound(c, ui, cx - bw / 2 + 14, cy - 8, 16, 16, 8, HudParty::TypeColour(GameType(i)));
-            if (pic) HudPixelArt(c, ui, pic, cx - 52, cy - 52, 104, 104);
+            if (pic) HudPixelArtCentred(c, ui, pic, cx, cy, 0, 104);
             else HudText(c, ui, f, cx + (v.page == Type && i < 17 ? 10 : 0), cy - 16, 32, label, ink, 1);
         }
     }

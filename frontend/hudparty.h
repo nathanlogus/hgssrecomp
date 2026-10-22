@@ -386,7 +386,7 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
     DrawBackdrop(c, sp, "backgrounds/bg_lime", 0xFFFFFFFF);
     const float wd = ui.W / ui.s;
     HudSprite(c, ui, sp, "people/chip_ring_green", 64, 44, 88, 88);
-    HudSprite(c, ui, sp, "icons/icon_party", 84, 64, 48, 48);
+    HudSprite(c, ui, sp, "icons/icon_party", 84, RingCentreY(44, 88) - 24, 48, 48);
     HudText(c, ui, f, 172, 64, 48, "POK\xC3\xA9MON", Ink, 0, true);
 
     // What the game asks, top right.
@@ -413,14 +413,15 @@ inline void DrawParty(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
         HudPanel(c, ui, sp, sel ? "panels/party_card_selected" : "panels/card", x, y, cw, ch);
         if (i == s.from) FillRound(c, ui, x + 4, y + 4, cw - 8, ch - 8, 28, 0x403E8EF0); // the one being moved
         HudSprite(c, ui, sp, sel ? "people/chip_ring_orange" : "people/chip_ring_green", x + 26, y + 35, 150, 150);
-        HudPixelArt(c, ui, icon(m), x + 37, y + 46, 128, 128);
+        HudPixelArtCentred(c, ui, icon(m), x + 26 + 75, RingCentreY(y + 35, 150), 99, 128); // inside the ring's disc
         float nx = x + 196;
         if (i == 0)
         {
             HudSprite(c, ui, sp, "people/crown_gold", nx, y + 40, 48, 44);
             nx += 56;
         }
-        HudText(c, ui, f, nx, y + 36, 48, m.egg ? "Egg" : m.name, Ink);
+        // (An egg has only its name: in the middle of the card's height.)
+        HudText(c, ui, f, nx, m.egg ? y + ch / 2 - 24 : y + 36, 48, m.egg ? "Egg" : m.name, Ink);
         if (m.egg) continue;
         Gender(c, ui, x + cw - 60, y + 48, m.gender);
         // The level and held item; the status at the right.
@@ -530,7 +531,7 @@ inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     {
         // An egg has only its memo: what "The Egg Watch" says (text bank 302) by the cycles
         // of steps left, as the game's FormatEggWatch picks it.
-        HudPixelArt(c, ui, icon(m), lx + lw / 2 - 96, 85, 192, 192);
+        HudPixelArtCentred(c, ui, icon(m), lx + lw / 2, RingCentreY(66, 230), 152, 192);
         HudText(c, ui, f, lx + lw / 2, 316, 48, "Egg", Ink, 1, true);
         std::string watch = Party_Text(302, m.friendship <= 5 ? 105 : m.friendship <= 10 ? 106 : m.friendship <= 40 ? 107 : 108);
         std::string head = "The Egg Watch";
@@ -551,7 +552,7 @@ inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
         DrawHintBar(c, ui, sp, f, hints);
         return;
     }
-    HudPixelArt(c, ui, icon(m), lx + lw / 2 - 96, 85, 192, 192);
+    HudPixelArtCentred(c, ui, icon(m), lx + lw / 2, RingCentreY(66, 230), 152, 192);
     const float nw = HudTextWidth(ui, f, 48, m.name, true);
     HudText(c, ui, f, lx + lw / 2 - 16, 316, 48, m.name, Ink, 1, true);
     Gender(c, ui, lx + lw / 2 - 16 + nw / 2 + 14, 326, m.gender);
@@ -606,8 +607,9 @@ inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     const std::string toNext = m.expNext ? std::to_string(m.expNext - m.exp) + " to Lv " + std::to_string(m.level + 1) : "Top level";
     if (s.page == 0)
     {
-        // The trainer memo and the experience.
-        HudPanel(c, ui, sp, "panels/card", rx, 130, rw, 830);
+        // The trainer memo and the experience, on a card ending where the left one does
+        // (its content ends a little above), not at the screen's bottom with an empty half.
+        HudPanel(c, ui, sp, "panels/card", rx, 130, rw, 660);
         FillRound(c, ui, rx + 22, 152, rw - 44, 48, 16, 0xFF2EC4C6);
         HudText(c, ui, f, rx + 42, 160, 32, "TRAINER MEMO", White);
         const std::string nature = Party_Text(34, m.nature);
@@ -703,18 +705,19 @@ inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     }
     else
     {
-        // Ribbons: how many, and a chip for each (up to a tray's worth).
-        HudPanel(c, ui, sp, "panels/card", rx, 130, rw, 830);
+        // Ribbons: how many, and a chip for each (up to a tray's worth), on a card as tall as
+        // they need, at least as tall as the left one.
+        const int perRow = (int)((rw - 92) / 104), shown = std::min(m.ribbons, perRow * 5);
+        HudPanel(c, ui, sp, "panels/card", rx, 130, rw, std::max(660.0f, 320 + 104.0f * ((shown + perRow - 1) / perRow) + 30 - 130));
         FillRound(c, ui, rx + 22, 152, rw - 44, 48, 16, 0xFF2EC4C6);
         HudText(c, ui, f, rx + 42, 160, 32, "RIBBONS", White);
         HudText(c, ui, f, rx + 46, 236, 48,
             m.ribbons == 0 ? "No ribbons yet." : m.ribbons == 1 ? "1 ribbon" : std::to_string(m.ribbons) + " ribbons", Ink);
-        const int perRow = (int)((rw - 92) / 104);
         for (int i = 0; i < std::min(m.ribbons, perRow * 5); i++)
         {
             const float bx = rx + 46 + (i % perRow) * 104, by = 320 + (i / perRow) * 104;
             HudSprite(c, ui, sp, "people/chip_ring_orange", bx, by, 88, 88);
-            HudSprite(c, ui, sp, "icons/icon_star", bx + 20, by + 20, 48, 48);
+            HudSprite(c, ui, sp, "icons/icon_star", bx + 20, RingCentreY(by, 88) - 24, 48, 48);
         }
     }
     DrawHintBar(c, ui, sp, f, hints);

@@ -81,7 +81,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         HudText(c, ui, f, x + w / 2, y + 24, 32, "Pot " + std::to_string(i + 1), Muted, 1);
         const float d = 200, cx = x + w / 2;
         HudSprite(c, ui, sp, p.stage == 5 ? "people/chip_ring_orange" : p.stage ? "people/chip_ring_grey" : "people/chip_empty", cx - d / 2, y + 70, d, d);
-        if (p.berry) HudPixelArt(c, ui, art.ItemIcon(p.berry), cx - 64, y + 70 + d / 2 - 64, 128, 128);
+        if (p.berry) HudPixelArtCentred(c, ui, art.ItemIcon(p.berry), cx, RingCentreY(y + 70, d), 100);
         HudText(c, ui, f, cx, y + 290, 32, p.berry ? tx.Get(HudBag::kItemName, p.berry) : "No Berry", p.berry ? Ink : Muted, 1);
         HudText(c, ui, f, cx, y + 332, 32, p.stage == 5 ? std::to_string(p.yield) + (p.yield == 1 ? " Berry to pick" : " Berries to pick") : stages[p.stage],
             p.stage == 5 ? Danger : Muted, 1);

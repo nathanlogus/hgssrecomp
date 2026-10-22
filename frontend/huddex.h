@@ -163,7 +163,7 @@ inline void Header(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomAr
 {
     using namespace HudColour;
     HudSprite(c, ui, sp, "people/chip_ring_red", x0 + 60, 40, 96, 96);
-    HudSprite(c, ui, sp, "icons/icon_dex", x0 + 84, 64, 48, 48);
+    HudSprite(c, ui, sp, "icons/icon_dex", x0 + 84, RingCentreY(40, 96) - 24, 48, 48);
     HudText(c, ui, f, x0 + 176, 64, 48, "POK\xC3\xA9" "DEX", Ink, 0, true);
     float px = x0 + 176 + HudTextWidth(ui, f, 48, "POK\xC3\xA9" "DEX", true) + 36;
     for (int k = 0; k < 2; k++)
@@ -171,7 +171,7 @@ inline void Header(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomAr
         const std::string s = (k ? "Caught " : "Seen ") + std::to_string(k ? v.caught : v.seen);
         const float w = HudTextWidth(ui, f, 32, s) + 100;
         HudPanel(c, ui, sp, "panels/button_white", px, 62, w, 56);
-        if (k) HudPixelArt(c, ui, art.ItemIcon(4), px + 14, 66, 48, 48);
+        if (k) HudPixelArtCentred(c, ui, art.ItemIcon(4), px + 38, 90, 36);
         else HudSprite(c, ui, sp, "icons/icon_eye", px + 20, 72, 36, 36);
         HudText(c, ui, f, px + 72, 74, 32, s, Ink);
         px += w + 20;
@@ -189,10 +189,12 @@ inline void DrawFront(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Ro
     DrawBackdrop(c, sp, "backgrounds/bg_aqua", 0xFFFFFFFF);
     const float x0 = ui.W / ui.s / 2 - 960;
     Header(c, ui, sp, f, art, v, x0);
-    const float cw = 900, cx = x0 + 960 - cw / 2, cy = 220, ch = 600;
+    // As tall as what is on it (the switch only when there are two Pokedexes), in the middle
+    // of the space between the header and the hint bar.
+    const float ry = v.canSwitch ? 430 : 340, cw = 900, ch = ry + 56 + 50, cx = x0 + 960 - cw / 2, cy = (118 + 1024) / 2 - ch / 2;
     HudPanel(c, ui, sp, "panels/card", cx, cy, cw, ch);
     HudSprite(c, ui, sp, "people/chip_ring_red", cx + cw / 2 - 90, cy + 40, 180, 180);
-    HudSprite(c, ui, sp, "icons/icon_dex", cx + cw / 2 - 48, cy + 82, 96, 96);
+    HudSprite(c, ui, sp, "icons/icon_dex", cx + cw / 2 - 48, RingCentreY(cy + 40, 180) - 48, 96, 96);
     HudText(c, ui, f, cx + cw / 2, cy + 250, 48, v.national ? "National Pok\xC3\xA9" "dex" : "Johto Pok\xC3\xA9" "dex", Ink, 1, true);
     if (v.canSwitch)
     {
@@ -206,9 +208,9 @@ inline void DrawFront(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Ro
             HudText(c, ui, f, bx + bw / 2, cy + 342, 32, names[k], Ink, 1);
         }
     }
-    const float rw = 360, ry = cy + 430;
-    HudScreens::StatRow(c, ui, sp, f, cx + cw / 2 - rw - 10, ry, rw, "Seen", std::to_string(v.seen));
-    HudScreens::StatRow(c, ui, sp, f, cx + cw / 2 + 10, ry, rw, "Caught", std::to_string(v.caught));
+    const float rw = 360;
+    HudScreens::StatRow(c, ui, sp, f, cx + cw / 2 - rw - 10, cy + ry, rw, "Seen", std::to_string(v.seen));
+    HudScreens::StatRow(c, ui, sp, f, cx + cw / 2 + 10, cy + ry, rw, "Caught", std::to_string(v.caught));
     DrawHintBar(c, ui, sp, f, hints);
 }
 
@@ -243,16 +245,14 @@ inline void DrawList(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Rom
             continue;
         }
         const float nx = tx + tw / 2 + (p.caught ? 18 : 0);
-        if (p.caught) HudPixelArt(c, ui, art.ItemIcon(4), nx - 72, ty + 10, 40, 40);
+        if (p.caught) HudPixelArtCentred(c, ui, art.ItemIcon(4), nx - 52, ty + 30, 30);
         HudText(c, ui, f, nx, ty + 16, 32, Number(p.number), p.species ? Ink : Muted, 1);
         if (!p.species)
         {
             HudText(c, ui, f, tx + tw / 2, ty + 110, 32, "---", Muted, 1);
             continue;
         }
-        if (const Image* ic = art.PokemonIcon(p.species))
-            Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(tx + tw / 2 - 56), ui(ty + 52), ui(112), ui(112), false,
-                p.caught ? 0xFFFFFFFF : 0x80FFFFFF);
+        HudPixelArtCentred(c, ui, art.PokemonIcon(p.species), tx + tw / 2, ty + 108, 0, 112, p.caught ? 0xFFFFFFFF : 0x80FFFFFF);
         std::string name = Party_SpeciesName(p.species);
         float px = 32;
         if (HudTextWidth(ui, f, px, name) > tw - 16) px = 24;
@@ -282,8 +282,7 @@ inline void DrawList(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Rom
     }
     HudSprite(c, ui, sp, "people/chip_ring_green", cx + 30, cy + 30, 250, 250);
     if (p.species)
-        if (const Image* ic = art.PokemonIcon(p.species))
-            Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(cx + 59), ui(cy + 59), ui(192), ui(192), false, p.caught ? 0xFFFFFFFF : 0xB0FFFFFF);
+        HudPixelArtCentred(c, ui, art.PokemonIcon(p.species), cx + 155, RingCentreY(cy + 30, 250), 165, 192, p.caught ? 0xFFFFFFFF : 0xB0FFFFFF);
     const float rx = cx + 310;
     HudText(c, ui, f, rx, cy + 50, 32, "No. " + Number(p.number), Muted);
     HudText(c, ui, f, rx, cy + 96, 48, p.species ? Party_SpeciesName(p.species) : "-----", Ink, 0, true);
@@ -313,7 +312,7 @@ inline void DrawList(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Rom
         if (lines.size() > 6) lines.resize(6);
         const float dy = cy + 390;
         HudPanel(c, ui, sp, "panels/dialogue_box", cx + 30, dy, cw - 60, 40 + 50.0f * lines.size());
-        for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 60, dy + 22 + 50.0f * i, 32, lines[i], Ink);
+        for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 60, dy + 28 + 50.0f * i, 32, lines[i], Ink);
     }
     else if (p.species)
     {

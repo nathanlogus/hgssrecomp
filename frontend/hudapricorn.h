@@ -64,7 +64,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
             HudPanel(c, ui, sp, on ? "panels/button_yellow" : n ? "panels/button_white" : "panels/row_disabled", x, y, w, h,
                 n || on ? 0xFFFFFFFF : 0x90FFFFFF);
             if (on) HudSprite(c, ui, sp, "cursor/cursor_small", x + 12, y + 14, 30, 32);
-            HudPixelArt(c, ui, art.ItemIcon(485 + a), x + 40, y + 21, 128, 128);
+            HudPixelArtCentred(c, ui, art.ItemIcon(485 + a), x + 104, y + 85, 100);
             HudText(c, ui, f, x + w - 40, y + 60, 48, n ? "\xC3\x97" + std::to_string(n) : "\xE2\x80\x94", n ? Ink : Muted, 2, true);
         }
     // The Apricorn under the cursor: what the game says about it (nothing when there is none).
@@ -72,7 +72,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     const float sx = x0 + 960, sw = 840;
     HudPanel(c, ui, sp, "panels/card", sx, by, sw, 520);
     HudOnline::TitledCard(c, ui, sp, f, sx + 24, by + 24, sw - 48, 60, "APRICORN", n ? std::to_string(n) + " in the box" : "None in the box");
-    HudPixelArt(c, ui, art.ItemIcon(485 + a), sx + 40, by + 110, 160, 160);
+    HudPixelArtCentred(c, ui, art.ItemIcon(485 + a), sx + 120, by + 190, 128);
     HudText(c, ui, f, sx + 230, by + 150, 48, tx.Get(HudBag::kItemName, 485 + a), n ? Ink : Muted, 0, true);
     if (n)
     {

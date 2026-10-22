@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- New screens, tidier: items and Pokémon sit in the middle of their circles and cards and
+  look the same size, the text beside them is centred against them, the L and R buttons
+  keep their shape next to A and B, bold and plain text on one line share a baseline, and
+  cards no longer leave large empty areas. On screens narrower than 16:9 (4:3, 16:10) the
+  bag, shops, Pokédex, Pokégear, PC and the other full screens are no longer cut off at
+  the sides.
 - Auto run (Settings, Game): once you have the Running Shoes, you run whenever you walk,
   and holding B makes you walk instead. Off unless you turn it on.
 - Online: choose your look (Profile, Look) from any of the game's people who walk all

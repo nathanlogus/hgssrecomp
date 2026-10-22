@@ -403,7 +403,9 @@ inline void DrawXMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
     using namespace HudColour;
     HudPanel(c, ui, sp, "panels/card", x, y, w, h);
     HudText(c, ui, f, x + w / 2, y + 22, 40, "Menu", Ink, 1, true);
-    const float gx = x + 24, gy = y + 90, cw = (w - 48 - 16) / 2, ch = std::min(150.0f, (h - 90 - 24 - 3 * 14) / 4);
+    const float cw = (w - 48 - 16) / 2, ch = std::min(150.0f, (h - 90 - 24 - 3 * 14) / 4);
+    // The grid in the middle of the room under the title when the rows do not fill it.
+    const float gx = x + 24, gy = y + 90 + std::max(0.0f, (h - 90 - 24 - (4 * ch + 3 * 14)) / 2);
     for (size_t i = 0; i < m.actions.size(); i++)
     {
         const int a = m.actions[i];

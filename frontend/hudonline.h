@@ -153,8 +153,11 @@ inline void TitledCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, f
     const std::string& right = "")
 {
     HudPanel(c, ui, sp, "panels/card_header_teal", x, y, w, h);
-    HudText(c, ui, f, x + 24, y + 13, 32, title, HudColour::White);
-    if (!right.empty()) HudText(c, ui, f, x + w - 24, y + 13, 32, right, HudColour::White, 2);
+    // The text on the teal band's middle line: the band is the top 52 of the box, less when
+    // the card is shorter than its 9-slice's corners (102 with the shadow) and they shrink.
+    const float band = 52 * std::min(1.0f, (h + 24) / 102), ty = y + band / 2 - 15;
+    HudText(c, ui, f, x + 24, ty, 32, title, HudColour::White);
+    if (!right.empty()) HudText(c, ui, f, x + w - 24, ty, 32, right, HudColour::White, 2);
 }
 
 // The session screen (06-lobby): the party's code and settings on the left, the players on

@@ -353,3 +353,32 @@ inline void HudPixelArt(Canvas& c, const Ui& ui, const Image* img, float x, floa
 {
     if (img) Blit(c, *img, 0, 0, (float)img->w, (float)img->h, ui(x), ui(y), ui(w), ui(h), false);
 }
+
+// Draws pixel art centred on the design point (cx, cy) by its visible pixels, not by its
+// picture's box (the game's icons sit anywhere in their cells, some small, some filling
+// them), zoomed so the larger side of the visible part is `size` design pixels: icons then
+// look alike in size and sit in the middle of what holds them. The zoom is never more than
+// the picture's box filling `most` design pixels (default 1.5 x `size`), so a tiny icon is
+// not blown up, and is a whole number of canvas pixels when it is close to one, to stay crisp.
+// A `size` of 0 keeps the zoom of the box filling `most` (Pokémon, whose sizes differ on purpose).
+inline void HudPixelArtCentred(Canvas& c, const Ui& ui, const Image* img, float cx, float cy, float size, float most = 0,
+    uint32_t tint = 0xFFFFFFFF)
+{
+    if (!img || img->px.empty()) return;
+    int x0 = img->w, y0 = img->h, x1 = 0, y1 = 0;
+    for (int y = 0; y < img->h; y++)
+        for (int x = 0; x < img->w; x++)
+            if ((img->px[(size_t)y * img->w + x] >> 24) >= 64)
+                x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x + 1), y1 = std::max(y1, y + 1);
+    if (x1 <= x0) return;
+    float k = ui(most > 0 ? most : 1.5f * size) / std::max(img->w, img->h);
+    if (size > 0) k = std::min(k, ui(size) / std::max(x1 - x0, y1 - y0));
+    if (std::round(k) >= 1 && std::fabs(k - std::round(k)) < 0.15f * k) k = std::round(k);
+    // On whole canvas pixels, so each picture pixel keeps its width.
+    const float dx = std::round(ui(cx) - (x0 + x1) * k / 2), dy = std::round(ui(cy) - (y0 + y1) * k / 2);
+    Blit(c, *img, 0, 0, (float)img->w, (float)img->h, dx, dy, img->w * k, img->h * k, false, tint);
+}
+
+// Where the inside of a "people/chip_ring_*" sprite drawn at (x, y), `d` design pixels
+// square, has its centre: its disc is the circle at (48, 46) of its 96 (a shadow below).
+inline float RingCentreY(float y, float d) { return y + d * 46 / 96; }

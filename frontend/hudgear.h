@@ -685,7 +685,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         const float cx = x0 + 130 + i * 170 + (i == 4 ? 40 : 0), d = cur ? 112 : 88, dy = 84 - d / 2;
         HudSprite(c, ui, sp, !has ? "people/chip_empty" : cur ? "people/chip_ring_orange" : "people/chip_ring_grey", cx - d / 2, dy, d, d,
             has ? 0xFFFFFFFF : 0x80FFFFFF);
-        if (has) HudSprite(c, ui, sp, icons[i], cx - 24, 84 - 24, 48, 48);
+        if (has) HudSprite(c, ui, sp, icons[i], cx - 24, RingCentreY(dy, d) - 24, 48, 48);
         HudText(c, ui, f, cx, 146, 32, labels[i], cur ? Yellow : has ? White : 0x80FFFFFF, 1);
         if (st.inTabs && st.tabCursor == i) HudSprite(c, ui, sp, "cursor/cursor_small", cx - d / 2 - 34, 68, 30, 32);
     }
@@ -703,7 +703,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         HudPanel(c, ui, sp, "panels/button_white", px, 52, pw, 72);
         HudSprite(c, ui, sp, "icons/icon_clock", px + 28, 64, 48, 48);
         HudText(c, ui, f, px + 100, 64, 48, time, Ink, 0, true);
-        HudText(c, ui, f, px + pw - 32, 74, 32, when, Muted, 2);
+        HudText(c, ui, f, px + pw - 32, 76, 32, when, Muted, 2); // on the time's baseline
     }
 
     // The other players of the session, for both tabs.
@@ -815,7 +815,8 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, HudBag:
         {
             const std::vector<std::string> t = HudWrap(ui, f, 48, r.title, tw);
             for (size_t i = 0; i < t.size() && i < 2; i++) HudText(c, ui, f, tx0, my + 160 + 60.0f * i, 48, t[i], Ink, 0, true);
-            HudText(c, ui, f, tx0, my + 300, 32, r.host, Muted);
+            // The host just under the title, however many lines it took.
+            HudText(c, ui, f, tx0, my + 160 + 60.0f * std::min<size_t>(std::max<size_t>(t.size(), 1), 2) + 10, 32, r.host, Muted);
         }
         else
             HudText(c, ui, f, tx0, my + 160, 32, "Move the dial to a station", Muted);

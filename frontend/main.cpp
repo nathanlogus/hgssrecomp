@@ -6093,7 +6093,7 @@ int main(int argc, char** argv)
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, st.screen == 2 ? "Use" : "Select" },
                     { { back }, st.screen == 0 ? "Close bag" : "Back" } };
-                HudBattleBag::Draw(canvas, ui, sprites, font, romArt, battleTexts, st, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudBattleBag::Draw(hc, hu, sprites, font, romArt, battleTexts, st, hints); });
                 overlayUsed = true;
             }
             else
@@ -6116,13 +6116,13 @@ int main(int argc, char** argv)
                         sv.slot = ps.chosen;
                         sv.count = ps.list.count;
                         std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Back" } };
-                        HudParty::DrawSummary(canvas, ui, sprites, font, sv, icon, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudParty::DrawSummary(hc, hu, sprites, font, sv, icon, hints); });
                     }
                     else
                     {
                         std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Back" } };
                         if (!ps.list.message.empty()) hints = { { { accept }, "Next" } };
-                        HudParty::DrawParty(canvas, ui, sprites, font, ps.list, icon, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudParty::DrawParty(hc, hu, sprites, font, ps.list, icon, hints); });
                     }
                     overlayUsed = true;
                 }
@@ -6140,7 +6140,7 @@ int main(int argc, char** argv)
             if (species >= 1 && species <= 493 && HudBattleDex::Shown(nds->GPU.Framebuffer[nds->GPU.FrontBuffer][0].get(), bright))
             {
                 const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B);
-                HudBattleDex::Draw(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), species, bright, { { { accept }, "Next" } });
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudBattleDex::Draw(hc, hu, sprites, font, romArt, rom.data(), rom.size(), species, bright, { { { accept }, "Next" } }); });
                 overlayUsed = true;
             }
         }
@@ -6437,7 +6437,7 @@ int main(int argc, char** argv)
                         if (bs.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "No" } };
                         if (bs.picking) hints = { { { "buttons/button_dpad" }, "How many" }, { { accept }, "Sell" }, { { back }, "Cancel" } };
                         if (bs.selling) bs.money = HudShop::SellingMoney(readRam);
-                        HudBag::Draw(canvas, ui, sprites, font, romArt, bagTexts, bs, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudBag::Draw(hc, hu, sprites, font, romArt, bagTexts, bs, hints); });
                         overlayUsed = true;
                     }
                     break;
@@ -6463,7 +6463,7 @@ int main(int argc, char** argv)
                 if (ss.step == 5 || ss.step == 7) hints = { { { "buttons/button_dpad" }, "How many" }, { { a }, "Buy" }, { { b }, "Cancel" } };
                 else if (ss.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "No" } };
                 else if (ss.step >= 10 && ss.step <= 15) hints = { { { a }, "Next" } };
-                HudShop::Draw(canvas, ui, sprites, font, romArt, bagTexts, ss, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudShop::Draw(hc, hu, sprites, font, romArt, bagTexts, ss, hints); });
                 overlayUsed = true;
             }
         }
@@ -6477,8 +6477,8 @@ int main(int argc, char** argv)
             {
                 const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
-                HudFrontier::DrawSwap(canvas, ui, sprites, font, sv,
-                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudFrontier::DrawSwap(hc, hu, sprites, font, sv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints); });
                 overlayUsed = true;
             }
             else if (HudFrontier::ReadFactory({ nds->MainRAM, nds->MainRAMMask + 1 }, factoryAt, fv))
@@ -6487,8 +6487,8 @@ int main(int argc, char** argv)
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" } };
                 if (fv.menu || fv.step == 4) hints.push_back({ { b }, "Back" });
                 else if (fv.numChosen) hints.push_back({ { b }, "Undo" });
-                HudFrontier::DrawFactory(canvas, ui, sprites, font, fv,
-                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudFrontier::DrawFactory(hc, hu, sprites, font, fv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints); });
                 overlayUsed = true;
             }
         }
@@ -6502,8 +6502,8 @@ int main(int argc, char** argv)
                 const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" } };
                 if (hv.yesNo >= 0) hints.push_back({ { b }, "No" });
-                HudFrontier::DrawHall(canvas, ui, sprites, font, hv,
-                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudFrontier::DrawHall(hc, hu, sprites, font, hv,
+                    [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints); });
                 overlayUsed = true;
             }
         }
@@ -6516,9 +6516,9 @@ int main(int argc, char** argv)
             {
                 const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                 const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
-                HudFrontier::DrawCastle(canvas, ui, sprites, font, cv,
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudFrontier::DrawCastle(hc, hu, sprites, font, cv,
                     [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); },
-                    [&](int item) { return romArt.ItemIcon(item); }, hints);
+                    [&](int item) { return romArt.ItemIcon(item); }, hints); });
                 overlayUsed = true;
             }
         }
@@ -6535,8 +6535,8 @@ int main(int argc, char** argv)
                         const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B);
                         std::vector<HudHint> hints;
                         if (!av.stopping) hints.push_back({ { a }, "Stop" });
-                        HudFrontier::DrawArcade(canvas, ui, sprites, font, av,
-                            [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudFrontier::DrawArcade(hc, hu, sprites, font, av,
+                            [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints); });
                         overlayUsed = true;
                     }
                     break;
@@ -6553,8 +6553,8 @@ int main(int argc, char** argv)
                     {
                         const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         const std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Back" } };
-                        HudFrontier::DrawEntry(canvas, ui, sprites, font, ev,
-                            [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudFrontier::DrawEntry(hc, hu, sprites, font, ev,
+                            [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints); });
                         overlayUsed = true;
                     }
                     break;
@@ -6581,7 +6581,7 @@ int main(int argc, char** argv)
                         // (A Voltorb's message passes by itself; a number's waits for a button.)
                         else if (v.message.more || (v.workflow == HudMinigames::WF_FLIP && v.messageShown && v.task == 4 && v.type[v.focus] != 4))
                             hints = { { { a }, "Next" } };
-                        HudMinigames::DrawVoltorb(canvas, ui, sprites, font, romArt, v, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudMinigames::DrawVoltorb(hc, hu, sprites, font, romArt, v, hints); });
                         overlayUsed = true;
                     }
                     break;
@@ -6626,7 +6626,7 @@ int main(int argc, char** argv)
             if (alphState.step == 6) hints.clear();
             if (spritesOk && cfg.redrawn)
             {
-                HudMinigames::DrawAlph(canvas, ui, sprites, font, alphState, alphPad, bot, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudMinigames::DrawAlph(hc, hu, sprites, font, alphState, alphPad, bot, hints); });
                 overlayUsed = true;
             }
             else if (alphState.step <= 4)
@@ -6688,7 +6688,7 @@ int main(int argc, char** argv)
                 else if (gs.app == HudGear::APP_RADIO && !gs.inTabs)
                     hints = { { { "buttons/button_dpad" }, "Tune" }, { { accept }, "Next station" }, { { back }, "Back" } };
                 else if (gs.moving >= 0) hints = { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Put here" }, { { back }, "Cancel" } };
-                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, gs, env, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudGear::Draw(hc, hu, sprites, font, bagTexts, gearBook, gs, env, hints); });
                 overlayUsed = true;
             }
         }
@@ -6721,7 +6721,7 @@ int main(int argc, char** argv)
                 if (fs.mode == 1) hints.push_back({ { accept }, "Fly here" });
                 hints.push_back({ { back }, "Close" });
                 if (!fs.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
-                HudGear::Draw(canvas, ui, sprites, font, bagTexts, gearBook, fs, env, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudGear::Draw(hc, hu, sprites, font, bagTexts, gearBook, fs, env, hints); });
                 overlayUsed = true;
             }
         }
@@ -6741,9 +6741,9 @@ int main(int argc, char** argv)
                     {
                         optionsNow = true;
                         const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
-                        HudOptions::Draw(canvas, ui, sprites, font, os,
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudOptions::Draw(hc, hu, sprites, font, os,
                             os.row == 6 ? std::vector<HudHint>{ { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Quit" } }
-                                        : std::vector<HudHint>{ { { "buttons/button_dpad" }, "Change" }, { { back }, "Quit" } });
+                                        : std::vector<HudHint>{ { { "buttons/button_dpad" }, "Change" }, { { back }, "Quit" } }); });
                         overlayUsed = true;
                     }
                     break;
@@ -6764,9 +6764,9 @@ int main(int argc, char** argv)
                     {
                         namingNow = true;
                         const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
-                        HudNaming::Draw(canvas, ui, sprites, font, ns.type == 1 ? romArt.PokemonIcon(ns.species, ns.form) : nullptr, ns,
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudNaming::Draw(hc, hu, sprites, font, ns.type == 1 ? romArt.PokemonIcon(ns.species, ns.form) : nullptr, ns,
                             { { { "buttons/button_dpad" }, "Move" }, { { accept }, "Type" }, { { back }, "Delete" },
-                                { { PadGlyph(PAD_BACK) }, "Next page" }, { { PadGlyph(PAD_START) }, "To OK" } });
+                                { { PadGlyph(PAD_BACK) }, "Next page" }, { { PadGlyph(PAD_START) }, "To OK" } }); });
                         overlayUsed = true;
                     }
                     break;
@@ -6789,7 +6789,7 @@ int main(int argc, char** argv)
                         std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose a pot" }, { { accept }, "Select" }, { { back }, "Close" } };
                         if (!ps.menu.items.empty()) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Cancel" } };
                         else if (ps.step >= 3) hints = { { { accept }, "OK" } };
-                        HudPots::Draw(canvas, ui, sprites, font, romArt, bagTexts, ps, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudPots::Draw(hc, hu, sprites, font, romArt, bagTexts, ps, hints); });
                         overlayUsed = true;
                     }
                     break;
@@ -6805,7 +6805,7 @@ int main(int argc, char** argv)
                     if (HudApricorn::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, apricornAt, as))
                     {
                         const std::string back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
-                        HudApricorn::Draw(canvas, ui, sprites, font, romArt, bagTexts, as, { { { "buttons/button_dpad" }, "Choose" }, { { back }, "Close" } });
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudApricorn::Draw(hc, hu, sprites, font, romArt, bagTexts, as, { { { "buttons/button_dpad" }, "Choose" }, { { back }, "Close" } }); });
                         overlayUsed = true;
                     }
                     break;
@@ -6820,9 +6820,9 @@ int main(int argc, char** argv)
                     if (HudPalPad::ReadState(readRam, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, palPadAt, pp))
                     {
                         const std::string accept = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), back = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
-                        HudPalPad::Draw(canvas, ui, sprites, font, bagTexts, trainerName(), pp,
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudPalPad::Draw(hc, hu, sprites, font, bagTexts, trainerName(), pp,
                             pp.screen == 0 ? std::vector<HudHint>{ { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "Close" } }
-                                           : std::vector<HudHint>{ { { accept }, "Back" } });
+                                           : std::vector<HudHint>{ { { accept }, "Back" } }); });
                         overlayUsed = true;
                     }
                     break;
@@ -6849,8 +6849,8 @@ int main(int argc, char** argv)
                     int theirs = 1;
                     for (int p = 0; p < 4; p++)
                         if (p != Party_Me() && Party_Peers()[p].present && Party_Peers()[p].name == v.partner) theirs = Party_Peers()[p].colour;
-                    HudTrade::Draw(canvas, ui, sprites, font, v, cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me()), theirs,
-                        [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints);
+                    DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudTrade::Draw(hc, hu, sprites, font, v, cfg.onlineColour >= 0 ? cfg.onlineColour : std::max(0, Party_Me()), theirs,
+                        [&](const PartyMon& m) { return romArt.PokemonIcon(m.species, m.form, m.egg); }, hints); });
                     overlayUsed = true;
                     break;
                 }
@@ -6882,7 +6882,7 @@ int main(int argc, char** argv)
                     { { accept }, partyView.items.empty() && partyView.context == 0 ? "Options" : "Select" }, { { back }, "Back" } };
                 if (!partyView.message.empty()) hints = { { { accept }, "Next" } };
                 if (partyView.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { accept }, "Select" }, { { back }, "No" } };
-                HudParty::DrawParty(canvas, ui, sprites, font, partyView, partyIcon, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudParty::DrawParty(hc, hu, sprites, font, partyView, partyIcon, hints); });
                 overlayUsed = true;
             }
             else if (sa && appRunning("PokemonSummary") && frame - summaryGood <= 3)
@@ -6891,7 +6891,7 @@ int main(int argc, char** argv)
                 if (!summaryView.mon.egg) hints.push_back({ { "buttons/button_dpad_left", "buttons/button_dpad_right" }, "Page" });
                 if (summaryView.count > 1) hints.push_back({ { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Next Pok\xC3\xA9mon" });
                 hints.push_back({ { back }, "Back" });
-                HudParty::DrawSummary(canvas, ui, sprites, font, summaryView, partyIcon, hints);
+                DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudParty::DrawSummary(hc, hu, sprites, font, summaryView, partyIcon, hints); });
                 overlayUsed = true;
             }
         }
@@ -6936,8 +6936,8 @@ int main(int argc, char** argv)
                             }
                         }
                         hints.push_back({ { b }, "Back" });
-                        HudDexInfo::Draw(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), v, trainerArt.px.empty() ? nullptr : &trainerArt,
-                            Party_MyCard().gender, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudDexInfo::Draw(hc, hu, sprites, font, romArt, rom.data(), rom.size(), v, trainerArt.px.empty() ? nullptr : &trainerArt,
+                            Party_MyCard().gender, hints); });
                         dexNow = 3;
                         overlayUsed = true;
                     }
@@ -6966,7 +6966,7 @@ int main(int argc, char** argv)
                         const std::string a = PadGlyph(cfg.byLabel ? PAD_A : PAD_B), b = PadGlyph(cfg.byLabel ? PAD_B : PAD_A);
                         std::vector<HudHint> hints = { { { "buttons/button_dpad" }, "Choose" }, { { a }, "Select" }, { { b }, "Cancel" } };
                         if (v.message >= 0) hints.clear();
-                        HudDexSearch::Draw(canvas, ui, sprites, font, v, shapes, hints);
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudDexSearch::Draw(hc, hu, sprites, font, v, shapes, hints); });
                         dexNow = 5;
                         overlayUsed = true;
                     }
@@ -6990,7 +6990,7 @@ int main(int argc, char** argv)
                             hints.push_back({ { x }, "Cry" });
                             if (!dv.results) hints.push_back({ { y }, "Search" });
                             hints.push_back({ { b }, dv.results ? "Back" : "Close" });
-                            HudDex::DrawList(canvas, ui, sprites, font, romArt, rom.data(), rom.size(), dv, hints);
+                            DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudDex::DrawList(hc, hu, sprites, font, romArt, rom.data(), rom.size(), dv, hints); });
                         }
                         else
                         {
@@ -6999,7 +6999,7 @@ int main(int argc, char** argv)
                             hints.push_back({ { a }, "Open" });
                             hints.push_back({ { y }, "Search" });
                             hints.push_back({ { b }, "Close" });
-                            HudDex::DrawFront(canvas, ui, sprites, font, romArt, dv, hints);
+                            DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudDex::DrawFront(hc, hu, sprites, font, romArt, dv, hints); });
                         }
                         dexNow = dv.results ? 4 : dv.list ? 2 : 1;
                         overlayUsed = true;
@@ -7019,8 +7019,8 @@ int main(int argc, char** argv)
                     HudReports::Unown u;
                     if (HudReports::ReadUnown(ram, unownAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, u))
                     {
-                        HudReports::DrawUnown(canvas, ui, sprites, font, romArt, u,
-                            { { { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Page" }, { { b }, "Close" } });
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudReports::DrawUnown(hc, hu, sprites, font, romArt, u,
+                            { { { "buttons/button_dpad_up", "buttons/button_dpad_down" }, "Page" }, { { b }, "Close" } }); });
                         overlayUsed = true;
                     }
                 }
@@ -7030,7 +7030,7 @@ int main(int argc, char** argv)
                     HudReports::Certificate ct;
                     if (HudReports::ReadCertificate(ram, certAt, rc_apps[i].initAddr, rc_apps[i].execAddr, rc_apps[i].exitAddr, ct))
                     {
-                        HudReports::DrawCertificate(canvas, ui, sprites, font, romArt, ct, trainerName(), { { { a }, "Close" } });
+                        DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudReports::DrawCertificate(hc, hu, sprites, font, romArt, ct, trainerName(), { { { a }, "Close" } }); });
                         overlayUsed = true;
                     }
                 }
@@ -7139,8 +7139,8 @@ int main(int argc, char** argv)
             if (pc.yesNo >= 0) hints = { { { "buttons/button_dpad" }, "Choose" }, { { ds(0) }, "Select" }, { { ds(1) }, "No" } };
             else if (!pc.message.empty()) hints = { { { ds(0) }, "Next" } };
             const HudOnline::IconFn itemIcon = [&](int item) { return romArt.ItemIcon(item); };
-            HudPcBox::Draw(canvas, ui, sprites, font, pc, monIcon, itemIcon, trainerName(), Party_MyCard().id, hints,
-                pcSlide, pcSlideTo, pcGlideFrom, pcGlide, &pcScrollFrom, pcScroll);
+            DrawFitted(canvas, [&](Canvas& hc, const Ui& hu) { HudPcBox::Draw(hc, hu, sprites, font, pc, monIcon, itemIcon, trainerName(), Party_MyCard().id, hints,
+                pcSlide, pcSlideTo, pcGlideFrom, pcGlide, &pcScrollFrom, pcScroll); });
             overlayUsed = true;
             pcShownAt = frame;
         }

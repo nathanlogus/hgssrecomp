@@ -209,7 +209,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     DrawBackdrop(c, sp, "backgrounds/bg_aqua", 0xFFFFFFFF);
     const float x0 = ui.W / ui.s / 2 - 960;
     HudSprite(c, ui, sp, "people/chip_ring_red", x0 + 60, 40, 96, 96);
-    HudSprite(c, ui, sp, "icons/icon_dex", x0 + 84, 64, 48, 48);
+    HudSprite(c, ui, sp, "icons/icon_dex", x0 + 84, RingCentreY(40, 96) - 24, 48, 48);
     HudText(c, ui, f, x0 + 176, 64, 48, "POK\xC3\xA9" "DEX", Ink, 0, true);
     Tabs(c, ui, sp, f, x0 + 1860 - 4 * 216 + 16, 62, v.page == Compare ? Forms : v.page);
 
@@ -218,9 +218,8 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     HudPanel(c, ui, sp, "panels/card", lx, ly, lw, lh);
     HudSprite(c, ui, sp, "people/chip_ring_green", lx + lw / 2 - 150, ly + 40, 300, 300);
     const int iconForm = (v.page == Forms || v.page == Compare) && (v.forms[v.form] & 0x80) ? v.forms[v.form] & 0x7F : 0;
-    if (const Image* ic = art.PokemonIcon(v.species, iconForm))
-        Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(lx + lw / 2 - 116), ui(ly + 74), ui(232), ui(232), false,
-            v.caught ? 0xFFFFFFFF : 0xB0FFFFFF);
+    HudPixelArtCentred(c, ui, art.PokemonIcon(v.species, iconForm), lx + lw / 2, RingCentreY(ly + 40, 300), 198, 256,
+        v.caught ? 0xFFFFFFFF : 0xB0FFFFFF);
     HudText(c, ui, f, lx + lw / 2, ly + 370, 32, "No. " + HudDex::Number(v.number), Muted, 1);
     HudText(c, ui, f, lx + lw / 2, ly + 414, 48, Party_SpeciesName(v.species), Ink, 1, true);
     HudText(c, ui, f, lx + lw / 2, ly + 480, 32, v.caught ? Party_Text(HudDex::kCategory, v.species) : "????? Pok\xC3\xA9mon", Ink, 1);
@@ -361,8 +360,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         const float cw = 620;
         HudOnline::TitledCard(c, ui, sp, f, px, py, cw, ph, "FORM", FormName(v.species, v.forms[v.form]));
         HudSprite(c, ui, sp, "people/chip_ring_green", px + cw / 2 - 220, py + 160, 440, 440);
-        if (const Image* ic = art.PokemonIcon(v.species, iconForm))
-            Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(px + cw / 2 - 170), ui(py + 210), ui(340), ui(340));
+        HudPixelArtCentred(c, ui, art.PokemonIcon(v.species, iconForm), px + cw / 2, RingCentreY(py + 160, 440), 290, 352);
         HudText(c, ui, f, px + cw / 2, py + 660, 48, FormName(v.species, v.forms[v.form]), Ink, 1, true);
         const float rx = px + cw + 30, rw = pw - cw - 30;
         const int n = (int)v.forms.size(), rows = 8;
@@ -374,8 +372,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
             const float ry = py + 90 + k * 86;
             HudPanel(c, ui, sp, i == v.form ? "panels/row_selected" : "panels/row", rx + 24, ry, rw - 48, 72);
             if (i == v.form) HudSprite(c, ui, sp, "cursor/cursor_small", rx + 30, ry + 20, 30, 32);
-            if (const Image* ic = art.PokemonIcon(v.species, v.forms[i] & 0x80 ? v.forms[i] & 0x7F : 0))
-                Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(rx + 66), ui(ry + 4), ui(64), ui(64));
+            HudPixelArtCentred(c, ui, art.PokemonIcon(v.species, v.forms[i] & 0x80 ? v.forms[i] & 0x7F : 0), rx + 98, ry + 36, 0, 64);
             HudText(c, ui, f, rx + 146, ry + 20, 32, FormName(v.species, v.forms[i]), Ink);
         }
         if (first > 0) HudSprite(c, ui, sp, "icons/icon_arrow_up", rx + rw - 64, py + 76, 32, 32);
@@ -392,8 +389,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
             HudOnline::TitledCard(c, ui, sp, f, cx, py, cw, ph, k ? "RIGHT" : "LEFT", FormName(v.species, v.forms[i]));
             if (v.forms.size() >= 3 && k == v.side) HudPanel(c, ui, sp, "panels/frame_yellow", cx + 20, py + 90, cw - 40, ph - 110);
             HudSprite(c, ui, sp, "people/chip_ring_green", cx + cw / 2 - 220, py + 160, 440, 440);
-            if (const Image* ic = art.PokemonIcon(v.species, v.forms[i] & 0x80 ? v.forms[i] & 0x7F : 0))
-                Blit(c, *ic, 0, 0, (float)ic->w, (float)ic->h, ui(cx + cw / 2 - 170), ui(py + 210), ui(340), ui(340));
+            HudPixelArtCentred(c, ui, art.PokemonIcon(v.species, v.forms[i] & 0x80 ? v.forms[i] & 0x7F : 0), cx + cw / 2, RingCentreY(py + 160, 440), 290, 352);
             HudText(c, ui, f, cx + cw / 2, py + 660, 48, FormName(v.species, v.forms[i]), Ink, 1, true);
         }
     }

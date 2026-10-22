@@ -67,11 +67,12 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const I
     const float wd = ui.W / ui.s, cw = 1500, cx = wd / 2 - cw / 2;
 
     // The question and the name: a box for each letter, the next one to fill marked.
-    HudPanel(c, ui, sp, "panels/card", cx, 50, cw, 250);
-    if (icon) HudPixelArt(c, ui, icon, cx + 40, 70, 128, 128);
+    // (Both cards end 30 above the hint bar, the same space inside them above and below.)
+    HudPanel(c, ui, sp, "panels/card", cx, 40, cw, 240);
+    if (icon) HudPixelArtCentred(c, ui, icon, cx + 104, 160, 0, 128);
     const float tx0 = cx + (icon ? 200 : 50);
-    HudText(c, ui, f, tx0, 80, 48, st.prompt, Ink, 0, true);
-    const float bw = 64, gap = 10, bx0 = tx0, by = 170;
+    HudText(c, ui, f, tx0, 70, 48, st.prompt, Ink, 0, true);
+    const float bw = 64, gap = 10, bx0 = tx0, by = 160;
     for (int i = 0; i < st.maxLen; i++)
     {
         const float x = bx0 + i * (bw + gap);
@@ -81,7 +82,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const I
     }
 
     // The buttons: the three pages, Back and OK, each as wide as the keys it covers.
-    HudPanel(c, ui, sp, "panels/card", cx, 340, cw, 680);
+    HudPanel(c, ui, sp, "panels/card", cx, 310, cw, 674);
     const float kx0 = cx + 40, kw = (cw - 80) / 13;
     const uint16_t page = st.keys[1][0] == 0x145 ? kLower : st.keys[1][0] == 0x12B ? kUpper : kSymbols;
     for (int k = 0; k < 13;)
@@ -94,8 +95,8 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const I
             const bool on = st.y == 0 && st.x >= k && st.x < k + n;
             const char* label = b == kUpper ? "ABC" : b == kLower ? "abc" : b == kSymbols ? "?!&" : b == kBack ? "Delete" : "OK";
             const float x = kx0 + k * kw + 4, w = n * kw - 8;
-            HudPanel(c, ui, sp, on ? "panels/button_yellow" : b == page ? "panels/button_lavender" : "panels/button_white", x, 370, w, 70);
-            HudText(c, ui, f, x + w / 2, 388, 32, label, Ink, 1);
+            HudPanel(c, ui, sp, on ? "panels/button_yellow" : b == page ? "panels/button_lavender" : "panels/button_white", x, 340, w, 70);
+            HudText(c, ui, f, x + w / 2, 359, 32, label, Ink, 1);
         }
         k += n;
     }
@@ -105,7 +106,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const I
         {
             const uint16_t key = st.keys[r][k];
             if (key == kSkip) continue;
-            const float x = kx0 + k * kw + 4, y = 470 + (r - 1) * 106, w = kw - 8;
+            const float x = kx0 + k * kw + 4, y = 440 + (r - 1) * 106, w = kw - 8;
             const bool on = st.y == r && st.x == k;
             const bool blank = key == 0x1DE || key == 0x3000 || key == 1;
             HudPanel(c, ui, sp, on ? "panels/button_yellow" : "panels/button_white", x, y, w, 90, blank && !on ? 0x60FFFFFF : 0xFFFFFFFF);

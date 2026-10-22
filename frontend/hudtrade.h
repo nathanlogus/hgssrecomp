@@ -166,7 +166,7 @@ inline void Row(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float x,
     HudParty::FillRound(c, ui, x, y, w, h, 14, edge);
     HudParty::FillRound(c, ui, x + 3, y + 3, w - 6, h - 6, 12, fill);
     if (look == 1) HudSprite(c, ui, sp, "cursor/cursor", x + 14, y + 16, 36, 40);
-    HudPixelArt(c, ui, icon(*m), x + 56, y + 4, 64, 64);
+    HudPixelArtCentred(c, ui, icon(*m), x + 88, y + 36, 0, 64);
     HudText(c, ui, f, x + 130, y + 20, 32, m->egg ? "Egg" : m->name, Ink);
     if (!m->egg) HudText(c, ui, f, x + w - 24, y + 20, 32, "Lv " + std::to_string(m->level), Muted, 2);
 }
@@ -180,7 +180,7 @@ inline void Offer(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, float 
     HudParty::FillRound(c, ui, x + 5, y + 5, w - 10, h - 10, 20, 0xFFFFFFFF);
     HudText(c, ui, f, x + w / 2, y + 24, 32, label, Muted, 1);
     if (!m) return;
-    HudPixelArt(c, ui, icon(*m), x + w / 2 - 64, y + 60, 128, 128);
+    HudPixelArtCentred(c, ui, icon(*m), x + w / 2, y + 124, 0, 128);
     const std::string name = m->egg ? "Egg" : m->name, lv = m->egg ? "" : "  Lv " + std::to_string(m->level);
     const float nw = HudTextWidth(ui, f, 48, name) + HudTextWidth(ui, f, 48, lv);
     HudText(c, ui, f, x + w / 2 - nw / 2, y + 190, 48, name, Ink);

@@ -398,7 +398,7 @@ inline void DrawAll(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Move
         auto icon = [&](int species) {
             if (const Image* im = art.PokemonIcon(species); im && lx + 64 < bx + bw - 20)
             {
-                HudPixelArt(c, ui, im, lx, ly - 18, 64, 64);
+                HudPixelArtCentred(c, ui, im, lx + 32, ly + 15, 0, 64); // on the text's middle line
                 lx += 70;
             }
         };
@@ -511,7 +511,7 @@ inline void DrawAll(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, Move
                 const bool on = s.hit[i] && (s.multi || i == sel);
                 GridButton(c, ui, x, y, w, h, s.hit[i] ? colour : Mix(colour, 0xFFC8CDD4, 170), on);
                 const Image* im = art.PokemonIcon(m.species);
-                if (im) HudPixelArt(c, ui, im, x + 14, y + 11, 64, 64);
+                if (im) HudPixelArtCentred(c, ui, im, x + 46, y + h / 2, 0, 64);
                 const uint32_t ink = s.hit[i] ? White : 0xFF6E7684;
                 HudText(c, ui, f, x + 88, y + 10, 32, m.name, ink);
                 HudText(c, ui, f, x + w - 24, y + 10, 32, "Lv " + std::to_string(m.level), ink, 2);

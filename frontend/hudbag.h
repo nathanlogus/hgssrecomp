@@ -348,18 +348,21 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
 
     // The pockets: the one shown on an orange ring, the cursor beside the one under it.
     HudText(c, ui, f, x0 + 60, 66, 48, st.selling ? "SELL" : "BAG", Ink, 0, true);
-    HudSprite(c, ui, sp, "buttons/button_l", x0 + 250, 73, 52, 38);
+    // L and R as tall as the discs' insides and on their middle line (the insides sit a
+    // little above the boxes' middle, over the discs' shadow).
+    const float mid = RingCentreY(92 - 52, 104);
+    HudSprite(c, ui, sp, "buttons/button_l", x0 + 240, mid - 25, 70, 50);
     float px = x0 + 330;
     for (int i = 0; i < 8; i++)
     {
         const bool cur = i == st.pocket;
         const float d = cur ? 104 : 84, dx = px + (104 - d) / 2, dy = 92 - d / 2;
         HudSprite(c, ui, sp, !st.present[i] ? "people/chip_empty" : cur ? "people/chip_ring_orange" : "people/chip_ring_grey", dx, dy, d, d);
-        if (st.present[i]) HudPixelArt(c, ui, art.ItemIcon(kPocketItem[i]), dx + d / 2 - 32, dy + d / 2 - 32, 64, 64);
-        if (st.cursor == i) HudSprite(c, ui, sp, "cursor/cursor_small", dx - 28, 76, 30, 32);
+        if (st.present[i]) HudPixelArtCentred(c, ui, art.ItemIcon(kPocketItem[i]), dx + d / 2, RingCentreY(dy, d), d * 0.46f);
+        if (st.cursor == i) HudSprite(c, ui, sp, "cursor/cursor_small", dx - 28, mid - 16, 30, 32);
         px += 116;
     }
-    HudSprite(c, ui, sp, "buttons/button_r", px + 4, 73, 52, 38);
+    HudSprite(c, ui, sp, "buttons/button_r", px + 2, mid - 25, 70, 50);
     const std::string pocketLabel = std::string(kPocketName[st.pocket]) + " \xC2\xB7 " + std::to_string(count) + (count == 1 ? " kind" : " kinds");
     float right = x0 + 1860;
     if (st.selling && st.money >= 0)
@@ -392,11 +395,12 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         if (here) HudSprite(c, ui, sp, "cursor/cursor_small", tx0 + 8, ty + th / 2 - 16, 30, 32);
         if (idx >= count) continue;
         const int id = st.items[idx].first, qty = st.items[idx].second;
-        HudPixelArt(c, ui, art.ItemIcon(id), tx0 + 40, ty + 27, 96, 96);
+        // The icon clear of the cursor; its middle and the two lines' middle on the card's.
+        HudPixelArtCentred(c, ui, art.ItemIcon(id), tx0 + 92, ty + th / 2, 76);
         const int move = art.TmMove(id);
-        HudText(c, ui, f, tx0 + 152, ty + 34, 32, move ? tx.Get(kMoveName, move) : tx.Get(kItemName, id), Ink);
+        HudText(c, ui, f, tx0 + 152, ty + th / 2 - 39, 32, move ? tx.Get(kMoveName, move) : tx.Get(kItemName, id), Ink);
         const std::string q = "\xC3\x97" + std::to_string(qty);
-        HudText(c, ui, f, tx0 + 152, ty + 84, 32, move ? tx.Get(kItemName, id) + "  " + q : q, Muted);
+        HudText(c, ui, f, tx0 + 152, ty + th / 2 + 11, 32, move ? tx.Get(kItemName, id) + "  " + q : q, Muted);
     }
     const int pages = std::max(1, (count + 5) / 6);
     const float by = fy + fh - 110;
@@ -426,7 +430,7 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
         if (it.first == item) have = it.second;
     const int shownPocket = st.cursor < 8 ? st.cursor : st.pocket;
     HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cw / 2 - 90, cy + 36, 180, 180);
-    HudPixelArt(c, ui, art.ItemIcon(item ? item : kPocketItem[shownPocket]), cx + cw / 2 - 64, cy + 62, 128, 128);
+    HudPixelArtCentred(c, ui, art.ItemIcon(item ? item : kPocketItem[shownPocket]), cx + cw / 2, RingCentreY(cy + 36, 180), 100);
     std::string title, sub, desc;
     if (item)
     {
@@ -456,9 +460,11 @@ inline void Draw(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, RomArt&
     {
         std::vector<std::string> lines = HudWrap(ui, f, 32, desc, cw - 72 - 60);
         lines.resize(std::min(lines.size(), (size_t)(below ? 2 : 5)));
+        // With nothing under it, the box reaches the card's bottom margin, whatever the
+        // description's length, so the card has no empty band and does not change size.
         const float dy = cy + 370;
-        HudPanel(c, ui, sp, "panels/dialogue_box", cx + 36, dy, cw - 72, 40 + 50.0f * lines.size());
-        for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 66, dy + 22 + 50.0f * i, 32, lines[i], Ink);
+        HudPanel(c, ui, sp, "panels/dialogue_box", cx + 36, dy, cw - 72, below ? 40 + 50.0f * lines.size() : ch - 370 - 30);
+        for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 66, dy + 28 + 50.0f * i, 32, lines[i], Ink);
     }
     auto button = [&](float x, float y, float w, const std::string& label, bool on, bool empty, uint32_t ink) {
         HudPanel(c, ui, sp, on ? "panels/button_yellow" : empty ? "panels/row_disabled" : "panels/button_white", x, y, w, 60,

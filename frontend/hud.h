@@ -337,7 +337,34 @@ public:
         auto m = meta.find(name);
         s.w = m != meta.end() ? m->second.w : (float)img.w;
         s.h = m != meta.end() ? m->second.h : (float)img.h;
-        s.img = img;
+        s.img = FitPicture(img, s.w / s.h);
+    }
+
+    // `img` cut to its visible pixels with a margin of a sixteenth of its larger side, then
+    // widened or heightened with transparent pixels, centred, to the width/height `aspect`:
+    // a square button picture in place of the set's wide L button keeps its shape instead of
+    // being stretched, and pictures with different empty borders come out the same size.
+    static Image FitPicture(const Image& img, float aspect)
+    {
+        int x0 = img.w, y0 = img.h, x1 = 0, y1 = 0;
+        for (int y = 0; y < img.h; y++)
+            for (int x = 0; x < img.w; x++)
+                if ((img.px[(size_t)y * img.w + x] >> 24) >= 32)
+                    x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x + 1), y1 = std::max(y1, y + 1);
+        if (x1 <= x0 || aspect <= 0) return img;
+        const int m = std::max(1, std::max(x1 - x0, y1 - y0) / 16);
+        int w = x1 - x0 + 2 * m, h = y1 - y0 + 2 * m;
+        if (w < h * aspect) w = (int)std::lround(h * aspect);
+        else h = (int)std::lround(w / aspect);
+        Image o;
+        o.w = w;
+        o.h = h;
+        o.px.assign((size_t)w * h, 0);
+        const int ox = (w - (x1 - x0)) / 2 - x0, oy = (h - (y1 - y0)) / 2 - y0;
+        for (int y = 0; y < img.h; y++)
+            for (int x = 0; x < img.w; x++)
+                if (x + ox >= 0 && x + ox < w && y + oy >= 0 && y + oy < h) o.px[(size_t)(y + oy) * w + x + ox] = img.px[(size_t)y * img.w + x];
+        return o;
     }
 
     const Sprite* Get(const std::string& name)
@@ -651,6 +678,9 @@ public:
         }
         int pen = 0; // in font pixels, so rounding does not add up along the line
         const Face& f = faces[bold];
+        // The bold face's letters stand one font pixel lower in their cells than the regular
+        // one's: raised, so bold and regular text drawn at the same y share a baseline.
+        if (bold) y -= (int)std::lround(scale);
         for (uint32_t cp : Utf8(text))
         {
             const int g = Glyph(cp);
@@ -760,3 +790,57 @@ struct Ui
     float Right(float design) const { return W - design * s; }
     float Bottom(float design) const { return H - design * s; }
 };
+
+// Draws a full screen laid out on the whole 1920 x 1080 design canvas (`draw(canvas, ui)`)
+// on a canvas narrower than 16:9 (4:3, 16:10), where its sides would be cut off: drawn into
+// a 16:9 picture as wide as the canvas, then spread over the canvas's height, its bottom
+// `bottom` design pixels (the hint bar) along the canvas's bottom, the rest in the middle of
+// what is left, and the bands between in the average colour of the rows they continue.
+template <class F> inline void DrawFitted(Canvas& c, F&& draw, float bottom = 59)
+{
+    Ui u;
+    if ((int64_t)c.w * 9 >= (int64_t)c.h * 16)
+    {
+        u.Set(c.w, c.h);
+        draw(c, u);
+        return;
+    }
+    static Canvas t;
+    t.Resize(c.w, c.w * 9 / 16);
+    t.Clear();
+    u.Set(t.w, t.h);
+    draw(t, u);
+    const int hb = std::min(t.h, (int)std::lround(bottom * u.s)), body = t.h - hb, top = (c.h - t.h) / 2;
+    auto average = [&](int y0, int y1) {
+        uint64_t sum[4] = { 0, 0, 0, 0 }, n = 0;
+        for (int y = std::max(0, y0); y < std::min(t.h, y1); y++)
+            for (int x = 0; x < t.w; x++, n++)
+                for (int k = 0; k < 4; k++) sum[k] += t.px[(size_t)y * t.w + x] >> (8 * k) & 0xFF;
+        uint32_t out = 0;
+        for (int k = 0; k < 4 && n; k++) out |= (uint32_t)(sum[k] / n) << (8 * k);
+        return out;
+    };
+    const uint32_t above = average(0, 4), below = average(body - 4, body);
+    for (int y = 0; y < c.h; y++)
+    {
+        uint32_t* d = &c.px[(size_t)y * c.w];
+        const int src = y < top ? -1 : y < top + body ? y - top : y < c.h - hb ? -2 : y - (c.h - hb) + body;
+        if (src >= 0) std::copy(&t.px[(size_t)src * t.w], &t.px[(size_t)src * t.w] + t.w, d);
+        else std::fill(d, d + c.w, src == -1 ? above : below);
+        // The picture's first and last rows (the backdrop there) fade into the bands' colour
+        // over a few rows, so there is no hard edge.
+        const int fade = std::max(1, c.h / 48), in = src < 0 ? fade : std::min(src, src < body ? body - 1 - src : fade);
+        if (in < fade)
+        {
+            const uint32_t to = src < body / 2 ? above : below, k = 256 * in / fade;
+            for (int x = 0; x < c.w; x++)
+            {
+                uint32_t o = 0;
+                for (int sh = 0; sh <= 24; sh += 8)
+                    o |= (((d[x] >> sh & 0xFF) * k + (to >> sh & 0xFF) * (256 - k)) >> 8) << sh;
+                d[x] = o;
+            }
+        }
+    }
+    c.Mark(0, 0, c.w, c.h);
+}

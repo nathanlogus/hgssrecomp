@@ -114,7 +114,7 @@ inline void DrawFactory(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
         const float tw = 420, th = 150, tx = fx + 50 + (k % 2) * (tw + 20), ty = fy + 90 + (k / 2) * 166;
         HudPanel(c, ui, sp, here ? "panels/row_selected" : "panels/row", tx, ty, tw, th);
         if (here) HudSprite(c, ui, sp, "cursor/cursor_small", tx + 8, ty + th / 2 - 16, 30, 32);
-        HudPixelArt(c, ui, icon(m), tx + 40, ty + 11, 128, 128);
+        HudPixelArtCentred(c, ui, icon(m), tx + 104, ty + th / 2, 0, 128);
         HudText(c, ui, f, tx + 172, ty + 34, 32, m.name, Ink);
         HudParty::Gender(c, ui, tx + 172 + HudTextWidth(ui, f, 32, m.name) + 10, ty + 38, m.gender, 26);
         HudText(c, ui, f, tx + 172, ty + 84, 32, "Lv " + std::to_string(m.level), Muted);
@@ -135,7 +135,7 @@ inline void DrawFactory(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
         const PartyMon& m = s.mons[s.chosen[n]];
         HudPanel(c, ui, sp, "panels/row", sx, sy, sw, 150);
         Badge(c, ui, f, sx + 14, sy + 14, 40, n + 1);
-        HudPixelArt(c, ui, icon(m), sx + sw / 2 - 48, sy + 6, 96, 96);
+        HudPixelArtCentred(c, ui, icon(m), sx + sw / 2, sy + 54, 0, 96);
         HudText(c, ui, f, sx + sw / 2, sy + 102, 32, m.name, Ink, 1);
     }
 
@@ -146,7 +146,7 @@ inline void DrawFactory(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, 
     const int shown = s.shown;
     const PartyMon& m = s.mons[s.step == 4 ? s.chosen[2] : shown];
     HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cw / 2 - 90, cy + 26, 180, 180);
-    HudPixelArt(c, ui, icon(m), cx + cw / 2 - 64, cy + 52, 128, 128);
+    HudPixelArtCentred(c, ui, icon(m), cx + cw / 2, RingCentreY(cy + 26, 180), 0, 128);
     const float nw = HudTextWidth(ui, f, 48, m.name, true);
     HudText(c, ui, f, cx + cw / 2 - 16, cy + 220, 48, m.name, Ink, 1, true);
     HudParty::Gender(c, ui, cx + cw / 2 - 16 + nw / 2 + 14, cy + 230, m.gender);
@@ -279,7 +279,7 @@ inline void MonCard(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, cons
 {
     using namespace HudColour;
     HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cw / 2 - 90, cy + 26, 180, 180);
-    HudPixelArt(c, ui, icon(m), cx + cw / 2 - 64, cy + 52, 128, 128);
+    HudPixelArtCentred(c, ui, icon(m), cx + cw / 2, RingCentreY(cy + 26, 180), 0, 128);
     const float nw = HudTextWidth(ui, f, 48, m.name, true);
     HudText(c, ui, f, cx + cw / 2 - 16, cy + 220, 48, m.name, Ink, 1, true);
     HudParty::Gender(c, ui, cx + cw / 2 - 16 + nw / 2 + 14, cy + 230, m.gender);
@@ -343,7 +343,7 @@ inline void DrawSwap(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, con
             HudPanel(c, ui, sp, here ? "panels/row_selected" : active || given ? "panels/row" : "panels/row_disabled", tx, ty, tw, 220,
                 active || given ? 0xFFFFFFFF : 0xA0FFFFFF);
             if (here) HudSprite(c, ui, sp, "cursor/cursor_small", tx + 8, ty + 20, 30, 32);
-            HudPixelArt(c, ui, icon(m), tx + tw / 2 - 64, ty + 10, 128, 128);
+            HudPixelArtCentred(c, ui, icon(m), tx + tw / 2, ty + 74, 0, 128);
             HudText(c, ui, f, tx + tw / 2, ty + 140, 32, m.name, Ink, 1);
             HudText(c, ui, f, tx + tw / 2, ty + 180, 32, "Lv " + std::to_string(m.level), Muted, 1);
             if (given) HudParty::Pill(c, ui, f, tx + 10, ty + 10, 40, "Giving", 0xFFF08A24);
@@ -458,7 +458,7 @@ inline void DrawArcade(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
         {
             const PartyMon& m = side ? s.foes[k] : s.mine[k];
             HudSprite(c, ui, sp, side ? "people/chip_ring_orange" : "people/chip_ring_green", px + 10, 200 + k * 170, 140, 140);
-            HudPixelArt(c, ui, icon(m), px + 16, 206 + k * 170, 128, 128);
+            HudPixelArtCentred(c, ui, icon(m), px + 80, RingCentreY(200 + k * 170, 140), 92, 128);
         }
     }
 
@@ -626,7 +626,7 @@ inline void DrawCastle(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
         const bool here = s.cursor == i || ((!s.menu.empty() || s.grid) && s.shown == i);
         HudPanel(c, ui, sp, here ? "panels/party_card_selected" : "panels/card", lx, y, lw, h);
         HudSprite(c, ui, sp, here ? "people/chip_ring_orange" : "people/chip_ring_green", lx + 22, y + 15, 130, 130);
-        HudPixelArt(c, ui, icon(m), lx + 23, y + 16, 128, 128);
+        HudPixelArtCentred(c, ui, icon(m), lx + 87, RingCentreY(y + 15, 130), 86, 128);
         HudText(c, ui, f, lx + 176, y + 24, 32, m.name, Ink);
         HudParty::Gender(c, ui, lx + 176 + HudTextWidth(ui, f, 32, m.name) + 10, y + 28, m.gender, 26);
         HudText(c, ui, f, lx + lw - 30, y + 24, 32, "Lv " + std::to_string(m.level), Muted, 2);
@@ -664,7 +664,7 @@ inline void DrawCastle(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
             const float tx = cx + 30 + (k % 2) * (tw + 20), ty = cy + 100 + (k / 2) * (th + 14);
             HudPanel(c, ui, sp, on ? "panels/row_selected" : "panels/row", tx, ty, tw, th);
             if (on) HudSprite(c, ui, sp, "cursor/cursor_small", tx + 8, ty + th / 2 - 16, 30, 32);
-            HudPixelArt(c, ui, itemIcon(s.items[k]), tx + 44, ty + 15, 80, 80);
+            HudPixelArtCentred(c, ui, itemIcon(s.items[k]), tx + 84, ty + th / 2, 64);
             HudText(c, ui, f, tx + 140, ty + 20, 32, Party_Text(222, s.items[k]), Ink);
             HudText(c, ui, f, tx + 140, ty + 62, 32, std::to_string(s.costs[k]) + " CP", s.costs[k] > s.cp ? Danger : Muted);
         }
@@ -688,7 +688,7 @@ inline void DrawCastle(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
     else
     {
         HudSprite(c, ui, sp, "people/chip_ring_orange", cx + 30, cy + 30, 180, 180);
-        HudPixelArt(c, ui, icon(m), cx + 56, cy + 56, 128, 128);
+        HudPixelArtCentred(c, ui, icon(m), cx + 120, RingCentreY(cy + 30, 180), 0, 128);
         HudText(c, ui, f, cx + 240, cy + 40, 48, m.name, Ink, 0, true);
         {
             float px = cx + 240;
@@ -732,7 +732,7 @@ inline void DrawCastle(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, c
     std::vector<std::string> lines = HudWrap(ui, f, 32, s.message, bw - 60);
     lines.resize(std::min(lines.size(), (size_t)4));
     HudPanel(c, ui, sp, "panels/dialogue_box", cx, by, bw, 40 + 50.0f * std::max<size_t>(2, lines.size()));
-    for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 30, by + 22 + 50.0f * i, 32, lines[i], Ink);
+    for (size_t i = 0; i < lines.size(); i++) HudText(c, ui, f, cx + 30, by + 28 + 50.0f * i, 32, lines[i], Ink);
     for (size_t k = 0; k < menu.size(); k++)
     {
         const bool on = (int)k == sel;
@@ -827,7 +827,7 @@ inline void DrawEntry(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, co
         const bool here = s.cursor == i;
         HudPanel(c, ui, sp, here ? "panels/party_card_selected" : "panels/card", x, y, cw, ch);
         HudSprite(c, ui, sp, here ? "people/chip_ring_orange" : "people/chip_ring_green", x + 26, y + 35, 150, 150);
-        HudPixelArt(c, ui, icon(m), x + 37, y + 46, 128, 128);
+        HudPixelArtCentred(c, ui, icon(m), x + 101, RingCentreY(y + 35, 150), 99, 128);
         HudText(c, ui, f, x + 196, y + 36, 48, m.egg ? "Egg" : m.name, Ink);
         HudText(c, ui, f, x + 196, y + 108, 32, "Lv " + std::to_string(m.level), Muted);
         if (m.item)
@@ -933,7 +933,7 @@ inline void DrawHall(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, con
                 continue;
             }
             const PartyMon& m = s.mons[s.mon];
-            HudPixelArt(c, ui, icon(m), x + 44, y + 11, 128, 128);
+            HudPixelArtCentred(c, ui, icon(m), x + 108, y + 75, 0, 128);
             HudText(c, ui, f, x + 190, y + 36, 32, m.name, Ink);
             HudText(c, ui, f, x + 190, y + 84, 32, "Summary", Muted);
             continue;
@@ -953,7 +953,7 @@ inline void DrawHall(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, con
     HudPanel(c, ui, sp, "panels/card", cx, cy, cwd, ch);
     const PartyMon& m = s.mons[s.mon];
     HudSprite(c, ui, sp, "people/chip_ring_orange", cx + cwd / 2 - 90, cy + 26, 180, 180);
-    HudPixelArt(c, ui, icon(m), cx + cwd / 2 - 64, cy + 52, 128, 128);
+    HudPixelArtCentred(c, ui, icon(m), cx + cwd / 2, RingCentreY(cy + 26, 180), 0, 128);
     const float nw = HudTextWidth(ui, f, 48, m.name, true);
     HudText(c, ui, f, cx + cwd / 2 - 16, cy + 220, 48, m.name, Ink, 1, true);
     HudParty::Gender(c, ui, cx + cwd / 2 - 16 + nw / 2 + 14, cy + 230, m.gender);
