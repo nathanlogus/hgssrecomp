@@ -131,6 +131,57 @@ public:
         if (!drawn) out.resize(start);
     }
 
+    // The commands that draw map block (x, z) of the map the player is on as Build does (the
+    // ground and its props), but with no camera: in world coordinates, for a picture from
+    // above (the overworld HUD's map). `key` changes with the block, its height and the
+    // textures bound (only the key without `out`). False when it cannot be drawn now.
+    bool BlockFromAbove(melonDS::NDS& nds, int x, int z, std::vector<uint32_t>* out, uint64_t& key)
+    {
+        if (Land.empty()) return false;
+        Ram = nds.MainRAM;
+        RamMask = nds.MainRAMMask;
+        const uint32_t fs = Read32(FieldSystemPtr);
+        if (!InRam(fs)) return false;
+        const uint32_t loader = Read32(fs + 0x2C), matrix = Read32(fs + 0x30), area = Read32(fs + 0x34);
+        if (!InRam(loader) || !InRam(matrix) || !InRam(area) || Read32(fs + 0x70) > 1) return false;
+        const bool props = Read32(fs + 0x70) == 0;
+        const int width = Read8(matrix), height = Read8(matrix + 1);
+        if (width < 1 || height < 1 || width * height > 799 || x < 0 || z < 0 || x >= width || z >= height) return false;
+        const uint32_t altitudes = matrix + 4 + 2 + 799 * 2, models = (altitudes + 799 + 1) & ~1u;
+        uint32_t propModels = 0;
+        for (int k = 0; k < 4 && !propModels; k++)
+        {
+            const uint32_t slot = Read32(loader + 0x90 + 4 * k);
+            const uint32_t mgr = InRam(slot) ? Read32(slot + 0x868) : 0;
+            if (InRam(mgr) && InRam(Read32(mgr + 0x700))) propModels = Read32(mgr + 0x700);
+        }
+        const uint32_t tex0 = Read32(area + 0x8A4);
+        if (!InRam(tex0) || memcmp(&Ram[tex0 & RamMask], "TEX0", 4) != 0 || !BindTextures(tex0)) return false;
+        if (propModels != PropManager)
+        {
+            PropManager = propModels;
+            Props.clear();
+        }
+        const int cell = z * width + x;
+        const uint16_t id = Read16(models + 2 * cell);
+        const Block* b = GetBlock(id);
+        if (!b) return false;
+        key = (uint64_t)id | (uint64_t)Read8(altitudes + cell) << 16 | (uint64_t)BoundKeys << 24 ^ (uint64_t)PropManager << 32;
+        if (!out) return true;
+        const int32_t bx = x * 0x200000 + 0x100000, bz = z * 0x200000 + 0x100000;
+        // EmitPlaced starts with the camera (MTX_LOAD_4x3): made the identity.
+        auto place = [&](const Model& m, int32_t px, int32_t py, int32_t pz, const uint32_t* scale) {
+            const size_t at = out->size();
+            EmitPlaced(m, px, py, pz, scale, *out);
+            for (int i = 0; i < 12; i++) (*out)[at + 1 + i] = i % 4 == 0 ? 0x1000 : 0;
+        };
+        place(b->ground, bx, Read8(altitudes + cell) << 15, bz, nullptr);
+        if (props && PropManager)
+            for (const PropPlace& p : b->props)
+                if (const Model* m = GetProp(p.buildModel)) place(*m, bx + p.pos[0], p.pos[1], bz + p.pos[2], p.scale);
+        return true;
+    }
+
     // Fireflies over tall grass and woods around the camera, placed in the world (so they
     // stay where they are while the view moves) and given as places in the wide picture,
     // whose view is `viewWidth` DS pixels wide and zoomed by `zoom` (see WideState).

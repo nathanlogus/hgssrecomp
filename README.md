@@ -216,6 +216,8 @@ Everything can be done from a controller:
 | Fast forward (4x) | hold left trigger | hold Left Shift |
 | Swap the large screen | click right stick (only with "Stick touch cursor" on) | F1 |
 | Next layout | click left stick (only with "Stick touch cursor" on) | Tab |
+| Your Pokémon / Bag / Friends (while walking around) | click left stick / click right stick / right trigger (not with "Stick touch cursor" on) | click the buttons at the bottom |
+| Zoom the map (while walking around) | right stick up and down (not with "Stick touch cursor" on) | click the map |
 | Quick save / load state | pause menu | F5 / F8 |
 | Fullscreen | pause menu | F11 |
 
