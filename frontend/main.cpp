@@ -60,6 +60,7 @@
 #include "hudbattledex.h"
 #include "hudbag.h"
 #include "hudparty.h"
+#include "hudtogether.h"
 #include "hudtrade.h"
 #include "huddex.h"
 #include "huddexinfo.h"
@@ -1088,6 +1089,8 @@ struct Settings
     std::string friendLooks; // friends' looks: "id:look," ... (apart from `friends`, which older versions read)
     bool showPing = true;
     bool onlineToasts = true;
+    bool hideCode = true;    // the session code shown as stars (for streamers)
+    bool practice = false;   // battles with friends are practice: nothing is saved
     bool startScreen = true; // the frontend's own start screen before the game
     bool autosave = true;    // resume points (autosave.h): kept in the background, never a freeze
     bool autosaveGame = false; // also the game's own save at calm moments (it stops the game while it writes)
@@ -1121,6 +1124,8 @@ struct Settings
             else if (k == "friend_looks") friendLooks = v;
             else if (k == "show_ping") showPing = v == "1";
             else if (k == "online_toasts") onlineToasts = v == "1";
+            else if (k == "hide_code") hideCode = v == "1";
+            else if (k == "practice_battles") practice = v == "1";
             else if (k == "start_screen") startScreen = v == "1";
             else if (k == "autosave") autosave = v == "1";
             else if (k == "autosave_game") autosaveGame = v == "1";
@@ -1179,6 +1184,8 @@ struct Settings
         f << "player_id=" << playerId << "\n";
         f << "show_ping=" << (showPing ? 1 : 0) << "\n";
         f << "online_toasts=" << (onlineToasts ? 1 : 0) << "\n";
+        f << "hide_code=" << (hideCode ? 1 : 0) << "\n";
+        f << "practice_battles=" << (practice ? 1 : 0) << "\n";
         f << "start_screen=" << (startScreen ? 1 : 0) << "\n";
         f << "autosave=" << (autosave ? 1 : 0) << "\n";
         f << "autosave_game=" << (autosaveGame ? 1 : 0) << "\n";
@@ -1465,6 +1472,9 @@ int main(int argc, char** argv)
         for (int i = 0; i < 16; i++) cfg.playerId += "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[rd() % 32];
     }
     Party_SetId(cfg.playerId);
+    {
+        Party_HideCode(cfg.hideCode);
+    }
     Party_SetProfile(onlineName(), cfg.onlineColour);
     Party_SetPartner(cfg.onlinePartner);
     if (!opt.party.empty())
@@ -2775,6 +2785,8 @@ int main(int argc, char** argv)
     FlushView flushViews[4];
     FlushView shownView; // for the picture on the screen
     bool emoteWheel = false;
+    uint32_t padKeys = 0;    // the DS buttons held, before the emote wheel took some
+    int facingNow = -1;      // the player standing in front of this one (facingPeer)
     melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
         if (cfg.farMap) worldBlocks.Build(*nds, commands);
         worldBlocks.EmitPlaza(*nds, commands);
@@ -2986,6 +2998,7 @@ int main(int argc, char** argv)
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
         M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK,
+        M_SHOWCODE, M_COPYCODE, M_LOCK, M_CHAT, M_QUICK, M_PRACTICE,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -3001,7 +3014,7 @@ int main(int argc, char** argv)
     HudWorld::XMenuDrive xDrive;
     bool menuFromField = false, xOpensMenu = false;
     // Screens of the online HUD over (or instead of) the pause menu.
-    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE, SCR_LOOK };
+    enum { SCR_NONE, SCR_SESSION, SCR_SUMMARY, SCR_EDIT, SCR_FRIENDS, SCR_INVITE, SCR_LOOK, SCR_CHALLENGE };
     int lookSel = 0; // the look chosen on SCR_LOOK (an index of worldBlocks.Looks())
     int screen = SCR_NONE;
     Menu sessionMenu;
@@ -3067,7 +3080,7 @@ int main(int argc, char** argv)
     std::vector<HudOnline::FriendRow> friendRows;
     // What each row's button does, changed with left and right: the session's players
     // (battle, trade, add as a friend), the friends online (invite, join), requests (yes, no).
-    constexpr int PF_ADD = 0x100, PF_WATCH = 0x200;
+    constexpr int PF_ADD = 0x100, PF_WATCH = 0x200, PF_REMOVE = 0x300, PF_FLY = 0x400;
     int inviteChoice[4] = { PI_BATTLE, PI_BATTLE, PI_BATTLE, PI_BATTLE };
     std::map<std::string, int> friendChoice; // id -> 0 invite, 1 join
     std::vector<std::string> friendRowIds;   // the Friends tab's rows' ids
@@ -3103,6 +3116,8 @@ int main(int argc, char** argv)
     } hand;
     uint32_t handTapAt = 0, handKey = 0; // a press of the hand-off's, held three frames
     bool unionWarped = false; // in the Union Room by the hand-off: Party_LeftUnionRoom once out
+    int flyMap = -1; uint32_t flyAt = 0; // Fly to a friend: the town's map, waiting for the overworld to be idle
+    bool practiceActive = false; // a practice battle's hand-off (Practice battles): nothing is saved until it is over
     int partyMap = -1; // this player's map, as last given to the party
     Image trainerArt;  // this player's trainer, for the trainer card
     // The frontend's own start screen, before the game runs (not for tests or a party or
@@ -3174,7 +3189,8 @@ int main(int argc, char** argv)
         resumeCoverUntil = frame + 10;
     }
     // Typing a text: the nickname, the server's address or a party's code.
-    enum { E_NAME, E_SERVER, E_CODE };
+    enum { E_NAME, E_SERVER, E_CODE, E_CHAT };
+    int quickSel = 0; // the quick line the menu says
     struct TextEdit
     {
         int purpose = E_NAME;
@@ -3296,14 +3312,27 @@ int main(int argc, char** argv)
         }
         else
         {
-            add(T_ONLINE, M_SESSION, "Session", Party_Code().empty() ? "Joining..." : Party_Code(),
+            add(T_ONLINE, M_SESSION, "Session", Party_Code().empty() ? "Joining..." : Party_CodeShown(),
                 "Who is here, and the code to give to anyone who wants to join.");
+            add(T_ONLINE, M_SHOWCODE, "Show code", onOff(!cfg.hideCode),
+                "Shows the session's code instead of stars everywhere, which is safer while streaming. Copy code works either way.");
+            add(T_ONLINE, M_COPYCODE, "Copy code", "", "Puts the session's code on the clipboard, to paste it to a friend.");
+            if (Party_Me() >= 0 && Party_Peers()[Party_Me()].host)
+                add(T_ONLINE, M_LOCK, "Lock session", onOff(Party_Locked()),
+                    "No new players can join while it is locked. Those already here stay, and you can still remove one from Friends.");
+            else if (Party_Locked())
+                add(T_ONLINE, M_LOCK, "Session locked", "", "The host is not taking new players.")->disabled = true;
+            add(T_ONLINE, M_CHAT, "Chat", "", "Type a line for the others to see over your trainer (a keyboard also works: press / while you walk).");
+            add(T_ONLINE, M_QUICK, "Quick line", Party_QuickLine(quickSel),
+                "Left and right choose a line, A says it. On the field, hold R and press A, B, X or Y (with L as well for the second pair).");
             add(T_ONLINE, M_LEAVE, "Leave session", "", "Leaves the session and plays on alone. Your game is not affected.")->danger = true;
         }
         add(T_ONLINE, M_FRIENDS, "Friends", friends.empty() ? "" : std::to_string(friends.size()),
             "The players here now (a battle, a trade, watching their battle, being friends), your friends online and friend requests.");
         add(T_ONLINE, M_SERVER, "Server", server,
             "The address of the party server everyone uses (it runs tools/party_server.py), e.g. 203.0.113.5 or play.example.org:7373.");
+        add(T_ONLINE, M_PRACTICE, "Practice battles", onOff(cfg.practice),
+            "Battles with friends in the Union Room count as practice: nothing is saved before, during or after them. Off: the game saves first, as at a Pok\xC3\xA9mon Center.");
         add(T_ONLINE, M_SHOWPING, "Show ping", onOff(cfg.showPing), "Shows the time a message takes to the server and back, beside the session badge.");
         add(T_ONLINE, M_TOASTS, "Activity toasts", onOff(cfg.onlineToasts),
             "Messages when someone joins, leaves, catches a Pok\xC3\xA9mon or earns a badge. They wait until you are not busy.");
@@ -3344,6 +3373,8 @@ int main(int argc, char** argv)
         if (p.state == PS_BATTLE) return std::vector<int> { PF_WATCH };
         std::vector<int> c = { PI_BATTLE, PI_TRADE };
         if (!p.uid.empty() && !friends.count(p.uid)) c.push_back(PF_ADD);
+        if (p.walk.shown && Party_IsFlyPoint(p.walk.map)) c.push_back(PF_FLY);
+        if (Party_Me() >= 0 && Party_Peers()[Party_Me()].host) c.push_back(PF_REMOVE);
         return c;
     };
     auto buildFriends = [&]() {
@@ -3377,7 +3408,7 @@ int main(int argc, char** argv)
                     (p.state == PS_BATTLE ? " \xC2\xB7 in a battle" : p.rtt >= 0 ? " \xC2\xB7 " + std::to_string(p.rtt) + " ms" : "");
                 const std::vector<int> c = sessionChoices(i);
                 if (std::find(c.begin(), c.end(), inviteChoice[i]) == c.end()) inviteChoice[i] = c[0];
-                r.action = inviteChoice[i] == PF_WATCH ? (watching == i ? "Stop watching" : "Watch") : inviteChoice[i] == PF_ADD ? "Add friend"
+                r.action = inviteChoice[i] == PF_WATCH ? (watching == i ? "Stop watching" : "Watch") : inviteChoice[i] == PF_REMOVE ? "Remove" : inviteChoice[i] == PF_FLY ? "Fly there" : inviteChoice[i] == PF_ADD ? "Add friend"
                     : inviteChoice[i] == PI_TRADE ? "Trade" : "Battle";
                 addRow(r, M_FRIEND + i);
             }
@@ -3439,6 +3470,11 @@ int main(int argc, char** argv)
             edit.charset = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.'";
             edit.max = 10;
         }
+        else if (purpose == E_CHAT)
+        {
+            edit.charset = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?.,'-:)(";
+            edit.max = 40;
+        }
         else if (purpose == E_SERVER)
         {
             edit.text = cfg.onlineServer;
@@ -3479,8 +3515,39 @@ int main(int argc, char** argv)
         hand.name = Party_Peers()[peer].name;
         hand.asker = asker;
         hand.start = hand.since = frame;
+        practiceActive = cfg.practice && kind == PI_BATTLE;
+        if (practiceActive)
+        {
+            Party_PracticeBegin();
+            say("Practice battle: nothing will be saved", "icons/icon_info", 240);
+        }
         fprintf(stderr, "[handoff] frame %u: to the Union Room with player %d (%s), %s\n", frame, peer + 1,
             kind == PI_TRADE ? "trade" : "battle", asker ? "asking" : "answering");
+    };
+    // The player standing right in front of this one, both facing each other on the overworld
+    // (their positions are the game's world units: a tile is 0x10000), else -1.
+    Menu challengeMenu;
+    challengeMenu.open = true;
+    int challengePeer = -1;
+    auto facingPeer = [&]() {
+        const int me = Party_Me();
+        if (Party_Link() != PartyLink::Online || me < 0) return -1;
+        const PartyPeer* peers = Party_Peers();
+        const PartyWalker& m = peers[me].walk;
+        if (!m.shown) return -1;
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == me || !peers[i].present) continue;
+            const PartyWalker& o = peers[i].walk;
+            if (!o.shown || o.map != m.map || o.matrix != m.matrix || Party_Now() - o.at > 1500) continue;
+            const int64_t dx = (int64_t)o.x - m.x, dz = (int64_t)o.z - m.z;
+            const int64_t tol = 0x3000;
+            int mine = -1, theirs = -1; // the directions each must face: 0 north, 1 south, 2 west, 3 east
+            if (std::llabs(dz) < tol && std::llabs(std::llabs(dx) - 0x10000) < tol) mine = dx > 0 ? 3 : 2, theirs = dx > 0 ? 2 : 3;
+            else if (std::llabs(dx) < tol && std::llabs(std::llabs(dz) - 0x10000) < tol) mine = dz > 0 ? 1 : 0, theirs = dz > 0 ? 0 : 1;
+            if (mine >= 0 && m.facing == mine && o.facing == theirs) return i;
+        }
+        return -1;
     };
     auto answerInvite = [&](bool yes) {
         if (inviteKind == PI_SESSION)
@@ -3631,6 +3698,7 @@ int main(int argc, char** argv)
                         else if (!typing && k == SDLK_q) nav.tabPrev = true;
                         else if (!typing && k == SDLK_w) nav.tabNext = true;
                     }
+                    else if (k == SDLK_SLASH && Party_Link() == PartyLink::Online && fieldActive()) startEdit(E_CHAT); // (the slash is not typed: it is not a chat letter)
                     else if (k == SDLK_TAB) layout = LayoutNext(layout);
                     else if (k == SDLK_F1) focus.manualFlip = !focus.manualFlip;
                     else if (k == SDLK_F2) focus.mode = (focus.mode + 1) % 3;
@@ -4012,6 +4080,10 @@ int main(int argc, char** argv)
                 cfg.onlineName = name;
                 Party_SetProfile(onlineName(), cfg.onlineColour);
             }
+            else if (edit.purpose == E_CHAT)
+            {
+                if (!t.empty()) Party_SendChat(t);
+            }
             else if (edit.purpose == E_SERVER)
                 cfg.onlineServer = t;
             else if (t.size() == 4)
@@ -4056,6 +4128,25 @@ int main(int argc, char** argv)
             if (hit >= 0 && dir == 0) answerInvite(hit == M_ACCEPT);
             else if (nav.back) answerInvite(false), uiSound(GameSfx::Cancel);
         }
+        else if (screen == SCR_CHALLENGE && (Party_Link() != PartyLink::Online || challengePeer < 0 || facingPeer() != challengePeer))
+            screen = SCR_NONE; // they walked away or turned, or the session ended
+        else if (screen == SCR_CHALLENGE && !toggleMenu)
+        {
+            int dir = 0;
+            const int hit = menuUpdate(challengeMenu, nav, dir);
+            if (hit >= 0 && dir == 0)
+            {
+                const PartyPeer& p = Party_Peers()[challengePeer];
+                if (hit == PI_BATTLE || hit == PI_TRADE)
+                {
+                    Party_SendInvite(challengePeer, hit);
+                    say("Asked " + p.name + (hit == PI_TRADE ? " for a trade" : " for a battle"), "icons/icon_wifi");
+                }
+                screen = SCR_NONE;
+                swallowMenuButtons = true;
+            }
+            else if (nav.back) screen = SCR_NONE, swallowMenuButtons = true, uiSound(GameSfx::Cancel);
+        }
         else if (screen == SCR_FRIENDS && !toggleMenu)
         {
             buildFriends();
@@ -4075,6 +4166,26 @@ int main(int argc, char** argv)
                     screen = SCR_NONE;
                     menu.open = false;
                     swallowMenuButtons = true;
+                }
+                else if (inviteChoice[who] == PF_FLY)
+                {
+                    const std::string why = Party_FlyWhy(Party_Peers()[who].walk.map);
+                    if (!why.empty()) say(why, "icons/icon_info");
+                    else
+                    {
+                        flyMap = Party_Peers()[who].walk.map;
+                        flyAt = frame;
+                        say("Flying to " + Party_Peers()[who].name + "\xE2\x80\xA6", "icons/icon_wifi");
+                        screen = SCR_NONE;
+                        menu.open = false;
+                        swallowMenuButtons = true;
+                    }
+                }
+                else if (inviteChoice[who] == PF_REMOVE)
+                {
+                    say("Removed " + Party_Peers()[who].name + " from the session", "icons/icon_wifi");
+                    Party_Remove(who);
+                    inviteChoice[who] = PI_BATTLE;
                 }
                 else if (inviteChoice[who] == PF_ADD)
                 {
@@ -4414,6 +4525,27 @@ int main(int argc, char** argv)
             case M_SESSION:
                 screen = SCR_SESSION;
                 break;
+            case M_SHOWCODE:
+                cfg.hideCode = !cfg.hideCode;
+                Party_HideCode(cfg.hideCode);
+                break;
+            case M_COPYCODE:
+                SDL_SetClipboardText(Party_Code().c_str());
+                say("Session code copied", "icons/icon_wifi");
+                break;
+            case M_LOCK:
+                Party_SetLocked(!Party_Locked());
+                break;
+            case M_CHAT:
+                startEdit(E_CHAT);
+                break;
+            case M_QUICK:
+                if (dir) quickSel = (quickSel + (dir < 0 ? Party_QuickLines() - 1 : 1)) % Party_QuickLines();
+                else Party_SendChat(std::to_string(quickSel), true);
+                break;
+            case M_PRACTICE:
+                cfg.practice = !cfg.practice;
+                break;
             case M_FRIENDS:
                 friendsMenu.tab = !requests.empty() ? 2 : Party_Link() == PartyLink::Off && !friends.empty() ? 1 : 0;
                 friendsMenu.selected = 0;
@@ -4551,6 +4683,46 @@ int main(int argc, char** argv)
                 keys &= ~dpad;
             }
             wheelPrev = emoteWheel ? dpad : 0;
+            padKeys = keys;
+            facingNow = uiOpen ? -1 : facingPeer();
+            // R with a face button says a quick line (L as well: the second pair).
+            static uint32_t quickPrev = 0;
+            const uint32_t faces = keys & ((1u << KEY_A) | (1u << KEY_B) | (1u << KEY_X) | (1u << KEY_Y));
+            if (emoteWheel)
+            {
+                const uint32_t down = faces & ~quickPrev;
+                const int base = (keys & (1u << KEY_L)) ? 4 : 0;
+                if (down & (1u << KEY_A)) Party_SendChat(std::to_string(base), true);
+                else if (down & (1u << KEY_B)) Party_SendChat(std::to_string(base + 1), true);
+                else if (down & (1u << KEY_X)) Party_SendChat(std::to_string(base + 2), true);
+                else if (down & (1u << KEY_Y)) Party_SendChat(std::to_string(base + 3), true);
+                keys &= ~(faces | (1u << KEY_L));
+            }
+            quickPrev = emoteWheel ? faces : 0;
+            // A in front of a friend who faces this player: the challenge card.
+            static bool challengeA = false;
+            const bool aNow = keys & (1u << KEY_A);
+            if (aNow && !challengeA && !uiOpen && fieldIdle() && !gameSave.Busy() && !xDrive.Busy() && hand.phase == H_OFF)
+                if (const int who = facingPeer(); who >= 0)
+                {
+                    challengePeer = who;
+                    challengeMenu.items.clear();
+                    MenuItem b, t, no;
+                    b.id = PI_BATTLE;
+                    b.label = "Battle";
+                    b.desc = cfg.practice ? "practice: nothing saved" : "";
+                    t.id = PI_TRADE;
+                    t.label = "Trade";
+                    no.id = 0x7F;
+                    no.label = "Not now";
+                    no.danger = true;
+                    challengeMenu.items = { b, t, no };
+                    challengeMenu.selected = 0;
+                    screen = SCR_CHALLENGE;
+                    uiSound(GameSfx::Confirm);
+                    keys &= ~(1u << KEY_A);
+                }
+            challengeA = aNow;
         }
         // X on the overworld opens the pause menu (with the game's X menu entries) instead of
         // the game's menu, in the single-screen view; the game's X menu, driven by the pause
@@ -4587,6 +4759,7 @@ int main(int argc, char** argv)
                     if (tell) Party_SendInvite(hand.peer, PI_NO | hand.kind);
                     if (!why.empty()) say(why, "icons/icon_wifi", 240);
                     hand.phase = H_OFF;
+                    if (!unionWarped) practiceActive = false;
                 };
                 // A press, held three frames (the overworld reads the buttons every other one),
                 // at most one every 14 frames.
@@ -4614,6 +4787,8 @@ int main(int argc, char** argv)
                 case H_SAVE:
                     // As at the counter, a save first: a link that breaks restarts the game from it.
                     if (hmap == 2) go(H_ROOM);
+                    // A practice battle goes without it: no save is made, and none is wanted.
+                    else if (practiceActive) go(H_WARP);
                     // None in the Wi-Fi Plaza: the game has no menu there (a "Mystery Zone");
                     // a broken link restarts from the receptionist's save on the way in.
                     else if (hmap == PlazaMap::MapId) go(H_WARP);
@@ -4717,17 +4892,36 @@ int main(int argc, char** argv)
                 }
             }
             if (frame - handTapAt < 3) keys |= handKey;
+            // Fly to a friend, once the overworld is idle (the game's own Fly, party.cpp).
+            if (flyMap >= 0)
+            {
+                if (frame - flyAt > 60 * 5) flyMap = -1, say("Could not fly: the game is busy", "icons/icon_info");
+                else if (fieldIdle() && !uiOpen && !gameSave.Busy() && hand.phase == H_OFF && Party_FlyTo(flyMap)) flyMap = -1;
+            }
             // Back out of a Union Room visit of the hand-off's.
             if (unionWarped && hmap >= 0 && hmap != 2 && fieldIdle())
             {
                 Party_LeftUnionRoom();
                 unionWarped = false;
+                if (practiceActive)
+                {
+                    practiceActive = false;
+                    if (Party_PracticeEnd()) say("Practice battle over: your Pok\xC3\xA9mon are as they were", "icons/icon_info", 240);
+                }
                 fprintf(stderr, "[handoff] frame %u: back from the Union Room (map %d)\n", frame, hmap);
             }
             // Test aid: SSR_INVITE=<frame>,<player 0-3>,<1 battle, 2 trade> sends an invite then.
             static const char* inviteEnv = getenv("SSR_INVITE");
             unsigned invF, invP, invK;
             if (inviteEnv && sscanf(inviteEnv, "%u,%u,%u", &invF, &invP, &invK) == 3 && frame == invF) Party_SendInvite((int)invP, (int)invK);
+            // Test aids: SSR_CHAT=<frame>,<text> says it then; SSR_FLY=<frame>,<map> starts a fly to that town.
+            static const char* chatEnv = getenv("SSR_CHAT");
+            unsigned chatF;
+            char chatText[64];
+            if (chatEnv && sscanf(chatEnv, "%u,%63[^\n]", &chatF, chatText) == 2 && frame == chatF) Party_SendChat(chatText);
+            static const char* flyEnv = getenv("SSR_FLY");
+            unsigned flyF, flyM;
+            if (flyEnv && sscanf(flyEnv, "%u,%u", &flyF, &flyM) == 2 && frame == flyF) flyMap = (int)flyM, flyAt = frame;
         }
         // Autosave (autosave.h): the game's own save at calm moments, and resume points.
         {
@@ -4743,7 +4937,7 @@ int main(int argc, char** argv)
             }
             wasWriting = writingNow;
             if (bootMode == BOOT_NONE && !startOpen && fieldActive()) played = true;
-            const bool on = autosaveOk && cfg.autosave && bootMode == BOOT_NONE && !startOpen;
+            const bool on = autosaveOk && cfg.autosave && bootMode == BOOT_NONE && !startOpen && !practiceActive;
             // Test aid: SSR_AUTOSAVE_AT=<frame> asks for a save then.
             static const char* saveAt = getenv("SSR_AUTOSAVE_AT");
             if (saveAt && frame == (uint32_t)atoi(saveAt)) gameSave.Want(frame, true);
@@ -5395,7 +5589,7 @@ int main(int argc, char** argv)
                 announcedCode = Party_Code();
                 // On this computer's own server, friends need its address on the network too.
                 const std::string lan = Party_IsLocalServer(cfg.onlineServer) ? Party_LanAddress() : "";
-                say("Your session is " + announcedCode + (lan.empty() ? ": share the code to play together"
+                say("Your session is " + Party_CodeShown() + (lan.empty() ? ": share the code to play together"
                     : ": friends join with it on server " + lan), "icons/icon_wifi", 480);
             }
             if (frame % 60 == 0) Party_SetLook(myLook(Party_MyCard().gender));
@@ -5453,6 +5647,18 @@ int main(int argc, char** argv)
                     t = Toast();
                     t.text = "Back online";
                     t.lead = "icons/icon_wifi";
+                    break;
+                case PartyEvent::Version:
+                    t.frames = 420;
+                    t.text = pe.arg < 0 ? " has an older version: they need to update before you can play together"
+                        : " has a newer version: update Johto Online to play together";
+                    t.trail = "emotes/emote_sweat";
+                    break;
+                case PartyEvent::Removed:
+                    t = Toast();
+                    t.text = "The host removed you from the session";
+                    t.lead = "icons/icon_wifi";
+                    t.frames = 300;
                     break;
                 case PartyEvent::Failed:
                     t = Toast();
@@ -6008,7 +6214,11 @@ int main(int argc, char** argv)
                 const PartyPeer& p = peers[i];
                 const bool seen = headAt(at[0], at[1], at[2], u, v);
                 if (seen && u > 0.03f && u < 0.97f && v > 0.08f && v < 0.97f)
+                {
                     HudOnline::NamePill(cv, ui, sprites, font, u * W, v * H, p, emoteOf(p));
+                    if (const std::string say = HudTogether::Saying(p, now); !say.empty())
+                        HudTogether::Bubble(cv, ui, sprites, font, u * W, v * H - 56, say);
+                }
                 else if (me >= 0)
                 {
                     // On the edge of the screen, the way they are from this player (the camera
@@ -6024,8 +6234,24 @@ int main(int argc, char** argv)
             }
             if (me >= 0 && peers[me].walk.shown && headAt(mine[0], mine[1], mine[2], u, v))
             {
-                if (emoteWheel) HudOnline::EmoteWheel(cv, ui, sprites, u * W, v * H - 40);
-                else HudOnline::NamePill(cv, ui, sprites, font, u * W, v * H, peers[me], emoteOf(peers[me]));
+                if (emoteWheel)
+                {
+                    HudOnline::EmoteWheel(cv, ui, sprites, u * W, v * H - 40);
+                    HudTogether::QuickKeys(cv, ui, sprites, font, u * W + 180, v * H - 150, padKeys & (1u << KEY_L));
+                }
+                else
+                {
+                    HudOnline::NamePill(cv, ui, sprites, font, u * W, v * H, peers[me], emoteOf(peers[me]));
+                    if (const std::string say = HudTogether::Saying(peers[me], now); !say.empty())
+                        HudTogether::Bubble(cv, ui, sprites, font, u * W, v * H - 56, say);
+                }
+                if (facingNow >= 0 && screen == SCR_NONE && !menu.open)
+                    HudTogether::FacePrompt(cv, ui, sprites, font, peers[facingNow].name, v * H + 190);
+            }
+            if (online && !Party_Chat().empty())
+            {
+                // The chat log, above the buttons along the bottom.
+                HudTogether::Log(cv, ui, sprites, font, Party_Chat(), now, H - 130);
             }
         };
         tagCanvas.Resize(outW, outH);
@@ -7337,6 +7563,9 @@ int main(int argc, char** argv)
                 hints.push_back({ { back }, "Close" });
                 HudOnline::FriendsPanel(canvas, ui, sprites, font, friendsMenu, friendRows, hints);
             }
+            else if (screen == SCR_CHALLENGE && challengePeer >= 0)
+                HudTogether::ChallengeCard(canvas, ui, sprites, font, challengeMenu, Party_Peers()[challengePeer],
+                    { { { accept }, "Choose" }, { { back }, "Not now" } });
             else if (screen == SCR_INVITE && (inviteFrom >= 0 || inviteKind == PI_SESSION))
             {
                 const float left = 20 - (Party_Now() - inviteAt) / 1000.0f;
@@ -7367,8 +7596,9 @@ int main(int argc, char** argv)
                     DrawHintBar(canvas, ui, sprites, font, hints);
                 }
                 else
-                    HudOnline::TextEntry(canvas, ui, sprites, font, edit.purpose == E_NAME ? "Nickname" : "Party server", edit.text, edit.cursor,
-                        edit.purpose == E_NAME ? "Up and down change the letter, or type it." : "Its address, and :port if not 7373. Up and down change the letter, or type it.",
+                    HudOnline::TextEntry(canvas, ui, sprites, font, edit.purpose == E_NAME ? "Nickname" : edit.purpose == E_CHAT ? "Chat" : "Party server", edit.text, edit.cursor,
+                        edit.purpose == E_NAME ? "Up and down change the letter, or type it." : edit.purpose == E_CHAT ? "Up and down change the letter, or type it. Done sends it."
+                            : "Its address, and :port if not 7373. Up and down change the letter, or type it.",
                         hints);
             }
             else
@@ -7414,7 +7644,7 @@ int main(int argc, char** argv)
                         haveResume && cfg.autosave ? Autosave::ResumeLine(resumeInfo.place, resumeInfo.time) : "");
                 };
                 const PartyLink link = Party_Link();
-                std::string footer = onlineName() + (link == PartyLink::Online ? " \xC2\xB7 online, " + Party_Code() : link == PartyLink::Connecting ? " \xC2\xB7 joining..." : "");
+                std::string footer = onlineName() + (link == PartyLink::Online ? " \xC2\xB7 online, " + Party_CodeShown() : link == PartyLink::Connecting ? " \xC2\xB7 joining..." : "");
                 // HeartGold's game codes are IPK*, SoulSilver's IPG*.
                 const bool heartGold = rom.size() > 0x10 && rom[0x0C] == 'I' && rom[0x0D] == 'P' && rom[0x0E] == 'K';
                 HudOnline::StartScreen(canvas, ui, sprites, font, items, startSel, logo.px.empty() ? nullptr : &logo,

@@ -82,7 +82,7 @@ inline void SessionBadge(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f,
     const std::string label = link == PartyLink::Connecting ? "JOINING" : lost ? "OFFLINE" : "ONLINE";
     // The session's code too, while there is room for more: it is what others need to join.
     const std::string count = std::to_string(Party_Count()) + "/" + std::to_string(Party_Max()) +
-        (link == PartyLink::Online && Party_Count() < Party_Max() && !Party_Code().empty() ? "  " + Party_Code() : "");
+        (link == PartyLink::Online && Party_Count() < Party_Max() && !Party_Code().empty() ? "  " + Party_CodeShown() : "");
     const int rtt = Party_RttMs();
     const std::string ms = !showPing ? "" : lost ? "- -" : rtt < 0 ? "..." : std::to_string(rtt) + " ms";
     float w = 20 + HudTextWidth(ui, f, 32, label) + 14 + HudTextWidth(ui, f, 32, count) + 14 + 40 + (ms.empty() ? 0 : 14 + HudTextWidth(ui, f, 32, ms)) + 20;
@@ -190,7 +190,7 @@ inline void SessionScreen(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
     const float cy = ry + 6;
     FillBlend(c, ui(lx + 23), ui(cy), ui(lw - 46), ui(60), 0xFF1C2A44);
     HudText(c, ui, f, lx + 45, cy + 14, 32, "Code", 0xFFC8D0E0);
-    HudText(c, ui, f, lx + 130, cy + 4, 48, Party_Code().empty() ? "..." : Party_Code(), 0xFFFFD75E);
+    HudText(c, ui, f, lx + 130, cy + 4, 48, Party_Code().empty() ? "..." : Party_CodeShown(), 0xFFFFD75E);
 
     // Right: the players.
     const PartyPeer* peers = Party_Peers();
@@ -520,7 +520,7 @@ inline void FriendsPanel(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f,
     // The session's code, on navy.
     FillBlend(c, ui(x + 24), ui(ry + 12), ui(w - 48), ui(64), 0xFF1C2A44);
     HudText(c, ui, f, x + 52, ry + 28, 32, Party_Link() == PartyLink::Off ? "Not in a session" : "Your session code", 0xFFC8D0E0);
-    if (Party_Link() != PartyLink::Off) HudText(c, ui, f, x + 340, ry + 18, 48, Party_Code().empty() ? "..." : Party_Code(), 0xFFFFD75E);
+    if (Party_Link() != PartyLink::Off) HudText(c, ui, f, x + 340, ry + 18, 48, Party_Code().empty() ? "..." : Party_CodeShown(), 0xFFFFD75E);
     DrawHintBar(c, ui, sp, f, hints);
 }
 

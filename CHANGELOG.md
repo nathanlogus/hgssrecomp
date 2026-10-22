@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Playing together: stand facing a friend (both of you facing each other) and press A to
+  offer a battle or a trade, with no trip to a Pokémon Center first. In Friends, "Fly there"
+  takes you to the town your friend is in by the game's own Fly, if one of your Pokémon
+  knows it, you have the Storm Badge and you have been to that town. The session's code
+  shows as stars (Online: Show code, Copy code), the host can lock the session to new
+  players (Online: Lock session) and remove a player (Friends: Remove). Players on an older
+  version are told they must update. Chat with the keyboard (press /) or from Online:
+  Chat, and say a quick line (HI!, THIS WAY!, WAIT!, THANKS!, BATTLE?, TRADE?) by holding
+  R and pressing A, B, X or Y (with L as well for the last two): it appears over the
+  trainer and in a short log. Practice battles (Online): a battle with a friend saves
+  nothing, and your Pokémon are as they were afterwards.
 - New screens, tidier: items and Pokémon sit in the middle of their circles and cards and
   look the same size, the text beside them is centred against them, the L and R buttons
   keep their shape next to A and B, bold and plain text on one line share a baseline, and

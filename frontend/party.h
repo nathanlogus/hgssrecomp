@@ -5,6 +5,7 @@
 // See party.cpp.
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -28,6 +29,8 @@ struct PartyWalker
     uint32_t at = 0;       // when it was heard (Ms clock)
     int emote = -1;        // the emote shown (EmoteNames index) and since when
     uint32_t emoteAt = 0;
+    std::string say;       // the last words (chat or a quick line) and since when
+    uint32_t sayAt = 0;
 };
 
 // A battle as its player sees it, sent to the others each turn (for spectators and the
@@ -55,6 +58,8 @@ struct PartyPeer
     int badges = 0;
     int rtt = -1;          // their round trip to the server, ms
     uint32_t sinceMs = 0;  // when they joined (Ms clock)
+    std::string version;   // their game version ("" not sent: an older game)
+    int versionCmp = 0;    // -1 theirs is older than this game's, 1 newer, 0 the same or not known
     std::string uid;       // their player id (empty: not sent, an older game)
     int look = -1;         // their look: a member of the ROM's overworld sprites (-1: not known)
     PartyWalker walk;
@@ -64,9 +69,9 @@ struct PartyPeer
 // What happened in the party, for the HUD's toasts.
 struct PartyEvent
 {
-    enum Kind { Joined, Left, Caught, Badge, Reconnecting, Reconnected, Failed, Invite, Friend, SessionInvite } kind;
+    enum Kind { Joined, Left, Caught, Badge, Reconnecting, Reconnected, Failed, Invite, Friend, SessionInvite, Version, Removed } kind;
     int player = -1;
-    int arg = 0;           // Caught: species; Badge: badges now; Invite: PartyInvite; Friend: PartyFriend
+    int arg = 0;           // Version: -1 older, 1 newer; Caught: species; Badge: badges now; Invite: PartyInvite; Friend: PartyFriend
     std::string text;      // Failed: why; SessionInvite: the session's code
     std::string from, name; // SessionInvite: the friend's player id and name
 };
@@ -140,6 +145,9 @@ PartyLink Party_Link();
 int Party_Me();                  // this player's number (0-3), or -1
 int Party_Max();                 // players the party allows
 std::string Party_Code();        // the party's code or name
+// The code as the screens show it: SSR-**** while hidden (for streamers), else the code.
+std::string Party_CodeShown();
+void Party_HideCode(bool hide);
 int Party_RttMs();               // round trip to the server, ms (-1 not known yet)
 float Party_LostSeconds();       // how long the connection has been lost
 const PartyPeer* Party_Peers();  // 4 entries
@@ -162,8 +170,21 @@ uint32_t Party_Now();                // the clock of PartyWalker::at (ms)
 // where they stand), at the game's next communication update. Only while online and with
 // nothing running on the overworld; false if it cannot.
 bool Party_GoToUnionRoom();
+// Fly to a friend's town by the game's own Fly (with its cry and flight): `map` is the town's
+// map, which must be a fly point this player has been to. Party_FlyWhy says in a sentence why
+// not (empty if it can be done); Party_FlyTo starts it at the game's next communication update
+// (only with nothing running on the overworld). Party_IsFlyPoint: a town, not a route, building or cave.
+bool Party_IsFlyPoint(int map);
+std::string Party_FlyWhy(int map);
+bool Party_FlyTo(int map);
+int Party_FlyMon();  // the party slot of a Pokemon that knows Fly, or -1
 // Back from a Union Room visit started by Party_GoToUnionRoom: clears what it set.
 void Party_LeftUnionRoom();
+// Practice battles: remembers this player's party as the game holds it in memory, and puts it
+// back (HP, PP, status, experience as they were) once the battle is over, as long as the same
+// Pokemon are in it (a trade is a trade). Both only touch memory, never the save file.
+void Party_PracticeBegin();
+bool Party_PracticeEnd();  // true if it put anything back
 // A map's place name ("Route 30"), from the ROM's text.
 std::string Party_PlaceName(int map);
 // The name of a species (from the ROM's text), e.g. "Hoothoot".
@@ -199,3 +220,20 @@ std::string Party_Text(int bank, int index);
 void Party_SetRom(const uint8_t* rom, size_t size);
 // This player's save file (as loaded at start): finds their save data in memory.
 void Party_SetSave(const uint8_t* sav, size_t size);
+
+// Playing together. The online protocol's revision (raise it when what players send each other
+// changes in a way older games cannot follow): sent to the others, who compare it with theirs
+// (PartyPeer::versionCmp, and a Version event). Games before revision 2 send none.
+constexpr int PartyProtocol = 2;
+// The host closes the session to new players (and opens it again); everyone sees whether it is.
+bool Party_Locked();
+void Party_SetLocked(bool lock);
+// The host removes a player from the session (the server enforces that only the host can).
+void Party_Remove(int player);
+// Chat: typed words (up to 60 letters), or quick line `Party_SendChat("2", true)` by its number.
+// Both show over the player for a few seconds (PartyWalker::say) and go into the log.
+struct PartyChatLine { int player; std::string name, text; uint32_t at; int colour; };
+void Party_SendChat(const std::string& text, bool quick = false);
+const std::deque<PartyChatLine>& Party_Chat();
+int Party_QuickLines();
+std::string Party_QuickLine(int i);  // HI!, THIS WAY!, WAIT!, THANKS!, BATTLE?, TRADE?

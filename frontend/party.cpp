@@ -126,6 +126,10 @@ int Rtt = -1;
 PartyPeer Peers[4];
 bool PendingJoin[4] = {};
 std::deque<PartyEvent> Events;
+// Playing together: versions, locking, removing, chat (party.h).
+std::string MyVersion = std::to_string(PartyProtocol);
+bool CodeHidden = false, Locked = false, RemovedByHost = false, VersionWarned[4] = {};
+std::deque<PartyChatLine> ChatLog;
 std::string MyName = "Trainer";
 int MyPartner = 0; // species shown with this player (0 none)
 int MyLook = -1;   // this player's look (Party_SetLook)
@@ -208,6 +212,7 @@ struct Call
     std::function<bool(u32* args)> ready; // just before it: false skips it (else it may set the arguments)
 };
 std::deque<Call> Calls;
+u32 LastReturn = 0; // what the call before returned (r0), for the `ready` of the next
 bool InChain = false, SkipUpdate = false;
 u32 Saved[6]; // r0-r3, lr and the entry (with the Thumb bit) of the interrupted update
 
@@ -376,7 +381,35 @@ void SendHello()
     b.insert(b.end(), MyName.begin(), MyName.end());
     Send('N', b);
     if (MyId.size() == 16) Send('U', std::vector<u8>(MyId.begin(), MyId.end()));
+    if (!MyVersion.empty()) Send('v', std::vector<u8>(MyVersion.begin(), MyVersion.end()));
     LastPresence = 0; // and the friends again, at once
+}
+
+// -1 if version a is older than b, 1 if newer, 0 if the same or not known: numbers like 2 or 1.2.3.
+int CompareVersions(const std::string& a, const std::string& b)
+{
+    if (a.empty() || b.empty()) return 0;
+    const char *x = a.c_str(), *y = b.c_str();
+    while (*x || *y)
+    {
+        char *ex, *ey;
+        const long u = strtol(x, &ex, 10), v = strtol(y, &ey, 10);
+        if (u != v) return u < v ? -1 : 1;
+        if (ex == x && ey == y) break; // not numbers
+        x = *ex == '.' ? ex + 1 : ex;
+        y = *ey == '.' ? ey + 1 : ey;
+    }
+    return 0;
+}
+
+// Words someone said (or a quick line), for the bubble over them and the log.
+void AddChat(int player, const std::string& text)
+{
+    PartyPeer& q = Peers[player];
+    q.walk.say = text;
+    q.walk.sayAt = Ms();
+    ChatLog.push_back({ player, q.name, text, Ms(), q.colour });
+    while (ChatLog.size() > 30) ChatLog.pop_front();
 }
 
 void Message(char kind, const u8* p, size_t n)
@@ -389,6 +422,8 @@ void Message(char kind, const u8* p, size_t n)
             Me = p[0];
             Dial = 0;
             for (PartyPeer& q : Peers) q = PartyPeer();
+            Locked = false;
+            for (bool& w : VersionWarned) w = false;
             Peers[Me].present = true;
             Peers[Me].sinceMs = Ms();
             if (Link == PartyLink::Lost) Events.push_back({ PartyEvent::Reconnected, Me });
@@ -408,7 +443,9 @@ void Message(char kind, const u8* p, size_t n)
         }
         break;
     case 'F':
-        Fail(Hosting ? "The server could not make a party" : "That party is full, or there is no party with that code");
+        // (A newer server says why in the message; an older one sends nothing.)
+        Fail(n ? std::string((const char*)p, std::min<size_t>(n, 80))
+            : Hosting ? "The server could not make a party" : "That party is full, or there is no party with that code");
         break;
     case 'K':
         Code.assign((const char*)p, n);
@@ -423,6 +460,7 @@ void Message(char kind, const u8* p, size_t n)
             Peers[p[0]].present = true;
             Peers[p[0]].sinceMs = Ms();
             PendingJoin[p[0]] = true;
+            VersionWarned[p[0]] = false;
         }
         break;
     case 'l': // a player left
@@ -538,6 +576,30 @@ void Message(char kind, const u8* p, size_t n)
         {
             Peers[p[0]].walk.emote = p[1];
             Peers[p[0]].walk.emoteAt = Ms();
+        }
+        break;
+    case 'v': // a player's game version: player, text
+        if (n >= 2 && p[0] < 4 && p[0] != Me)
+        {
+            PartyPeer& q = Peers[p[0]];
+            const std::string was = q.version;
+            q.version.assign((const char*)p + 1, std::min<size_t>(n - 1, 20));
+            q.versionCmp = CompareVersions(q.version, MyVersion);
+            if (q.versionCmp && q.version != was) Events.push_back({ PartyEvent::Version, p[0], q.versionCmp });
+        }
+        break;
+    case 'a': // the host locked (1) or opened (0) the party
+        Locked = n >= 1 && p[0];
+        break;
+    case 'x': // the host removed this player
+        RemovedByHost = true;
+        break;
+    case 'c': // chat: player, kind (0 text, 1 a quick line's number), text
+        if (n >= 3 && p[0] < 4 && p[0] != Me && Peers[p[0]].present)
+        {
+            const std::string text((const char*)p + 2, std::min<size_t>(n - 2, 60));
+            const std::string shown = p[1] == 1 ? Party_QuickLine(atoi(text.c_str())) : text;
+            if (!shown.empty()) AddChat(p[0], shown);
         }
         break;
     case 'E': // an event: player, kind, argument (u16)
@@ -791,6 +853,7 @@ bool Hook(ARMv5* cpu, u32 addr)
     {
     case Pad:
         if (!InChain) return false;
+        LastReturn = r[0];
         NextCall(cpu);
         return true;
 
@@ -1248,6 +1311,21 @@ void Party_Process(int state, int map)
     shownCount = Party_Count();
     if (Dial) DialStep();
     Receive();
+    // A game that sends no version is older than this feature: it is behind too.
+    for (int i = 0; i < 4 && Link == PartyLink::Online; i++)
+        if (i != Me && Peers[i].present && Peers[i].version.empty() && !VersionWarned[i] && Ms() - Peers[i].sinceMs > 4000)
+        {
+            VersionWarned[i] = true;
+            Peers[i].versionCmp = -1;
+            Events.push_back({ PartyEvent::Version, i, -1 });
+        }
+    if (RemovedByHost)
+    {
+        RemovedByHost = false;
+        Party_Leave();
+        Events.push_back({ PartyEvent::Removed, -1 });
+        return;
+    }
     // (After reading: what was heard is never later than `now`.)
     const u32 now = Ms();
     // This player's save, also offline (for the profile's numbers).
@@ -1426,6 +1504,7 @@ void Party_Leave()
     DropLink();
     Link = PartyLink::Off;
     Me = -1;
+    Locked = false;
     Code.clear();
     Rtt = -1;
     FriendsOn.clear();
@@ -1438,6 +1517,39 @@ void Party_SetMax(int maxPlayers)
 {
     if (Link == PartyLink::Online) Send('M', { (u8)std::max(2, std::min(4, maxPlayers)) });
 }
+
+bool Party_Locked() { return Link == PartyLink::Online && Locked; }
+
+void Party_SetLocked(bool lock)
+{
+    if (Link == PartyLink::Online && Me >= 0 && Peers[Me].host) Send('a', { (u8)lock });
+}
+
+void Party_Remove(int player)
+{
+    if (Link == PartyLink::Online && Me >= 0 && Peers[Me].host && player >= 0 && player < 4 && player != Me) Send('k', { (u8)player });
+}
+
+static const char* const QuickLines[] = { "HI!", "THIS WAY!", "WAIT!", "THANKS!", "BATTLE?", "TRADE?" };
+
+std::string Party_QuickLine(int i)
+{
+    return i >= 0 && i < Party_QuickLines() ? QuickLines[i] : "";
+}
+
+int Party_QuickLines() { return (int)(sizeof(QuickLines) / sizeof(QuickLines[0])); }
+
+void Party_SendChat(const std::string& text, bool quick)
+{
+    if (Link != PartyLink::Online || Me < 0 || text.empty()) return;
+    std::vector<u8> b = { (u8)(quick ? 1 : 0) };
+    const std::string t = text.substr(0, 60);
+    b.insert(b.end(), t.begin(), t.end());
+    Send('c', b);
+    AddChat(Me, quick ? Party_QuickLine(atoi(t.c_str())) : t);
+}
+
+const std::deque<PartyChatLine>& Party_Chat() { return ChatLog; }
 
 void Party_SendEmote(int emote)
 {
@@ -1557,6 +1669,99 @@ bool Party_GoToUnionRoom()
     return true;
 }
 
+// Fly to a friend (party.h). The game's own Fly (the start menu's, field_move.c) opens the
+// fly map, then runs a task with an environment of 0x1C bytes (unk_02067A60.c: sub_02067BF8
+// makes it, sub_02067C30 is the task): the Pokemon's cry, the trainer flying off and the warp
+// to the fly point of the chosen town (GetFlyWarpData, sSpawnMaps). Here the same task is made
+// for the friend's town without the map: allocated with the game's own allocator (found from
+// the call in sub_02067BF8), filled in, then run as a task of the field.
+namespace
+{
+constexpr u32 FlyEnvMaker = 0x02067BF8, FlyTask = 0x02067C30, FlyWarpData = 0x0203BA74, MoveFly = 19, HeapField2 = 11;
+
+// sSpawnMaps, from the literal GetFlyWarpData loads it with (the table's address + 6); 0 if the code is not as expected.
+u32 SpawnTable()
+{
+    if (R16(FlyWarpData) != 0xB510) return 0;
+    const u32 at = R32(0x0203BAA0);
+    return at >= 0x02000000 && at < 0x02400000 ? at - 6 : 0;
+}
+
+// The allocator sub_02067BF8 calls (a Thumb BL at +0xA), or 0.
+u32 AllocAtEnd()
+{
+    const u32 hi = R16(FlyEnvMaker + 0xA), lo = R16(FlyEnvMaker + 0xC);
+    if (R16(FlyEnvMaker) != 0xB570 || R16(FlyTask) != 0xB5F0 || (hi & 0xF800) != 0xF000 || (lo & 0xF800) != 0xF800) return 0;
+    int32_t off = (int32_t)(((hi & 0x7FF) << 12) | ((lo & 0x7FF) << 1));
+    if (off & 0x400000) off -= 0x800000;
+    return FlyEnvMaker + 0xA + 4 + off;
+}
+
+// The spawn table's entry of a fly point on that map: its index, or -1 (not a town to fly to).
+int FlyEntry(int map)
+{
+    const u32 t = SpawnTable();
+    if (!t) return -1;
+    for (int k = 0; k < 30; k++)
+        if ((int)R16(t + 0x12 * k + 6) == map && (R16(t + 0x12 * k) >> 9 & 1)) return k;
+    return -1;
+}
+
+u32 MonAddr(int slot) { return 0x02000000 + ProfileAt - 0x64 + 0x90 + 8 + slot * 236; }
+}
+
+int Party_FlyMon()
+{
+    if (!Nds || !ProfileAt) return -1;
+    const u32 count = std::min<u32>(R32(MonAddr(0) - 4), 6);
+    for (u32 i = 0; i < count; i++)
+    {
+        PartyMon m;
+        if (Party_ReadMon(MonAddr(i), m) && !m.egg && std::find(m.moves, m.moves + 4, (int)MoveFly) != m.moves + 4) return (int)i;
+    }
+    return -1;
+}
+
+bool Party_IsFlyPoint(int map) { return FlyEntry(map) >= 0; }
+
+std::string Party_FlyWhy(int map)
+{
+    const u32 fs = Nds ? R32(FieldSystemPtr) : 0;
+    const int entry = FlyEntry(map);
+    if (!Hooked || !fs || !AllocAtEnd() || entry < 0) return "That is not a town you can fly to";
+    const u32 here = R32(R32(fs + 0x20));
+    if (here == (u32)map) return "You are already there";
+    if (!(R8(0x02000000 + ProfileAt + 0x1A) >> 4 & 1)) return "You need the Storm Badge to use Fly";
+    if (!(R32(MapHeaders + 24 * here + 0x14) >> 28 & 1)) return "You cannot fly from here";
+    if (Party_FlyMon() < 0) return "None of your Pok\xC3\xA9mon knows Fly";
+    const u32 flag = 0x9B0 + (R16(SpawnTable() + 0x12 * entry) & 0xFF); // FLAG_SYS_FLYPOINT_*: been there
+    if (const u32 b = FlagByte(fs, flag))
+        if (!(R8(b) >> (flag % 8) & 1)) return "You have not been to " + Party_PlaceName(map) + " yet";
+    return "";
+}
+
+bool Party_FlyTo(int map)
+{
+    const u32 fs = Nds ? R32(FieldSystemPtr) : 0;
+    const int slot = Party_FlyMon();
+    if (!Party_FlyWhy(map).empty() || !fs || R32(fs + 0x10) || slot < 0) return false;
+    const u32 alloc = AllocAtEnd();
+    Queue(alloc | 1, HeapField2, 0x1C).ready = [fs](u32*) { return R32(FieldSystemPtr) == fs && !R32(fs + 0x10); };
+    Queue(CreateTask | 1, fs, FlyTask | 1, 0, 0).ready = [fs, map, slot](u32* args) {
+        const u32 env = LastReturn;
+        if (!env || R32(FieldSystemPtr) != fs || R32(fs + 0x10)) return false;
+        for (u32 i = 0; i < 0x1C; i += 4) W32(env + i, 0);
+        W32(env, fs);
+        W16(env + 8, (u16)map);                // the town (a fly point's map)
+        W16(env + 0xE, (u16)slot);             // the Pokemon that flies
+        W32(env + 0x10, MonAddr(slot));
+        args[2] = env;
+        fprintf(stderr, "[party] flying to map %d with party slot %d\n", map, slot);
+        return true;
+    };
+    return true;
+}
+
 void Party_LeftUnionRoom()
 {
     // As the counter's welcome back (std_union_room_return) does.
@@ -1598,6 +1803,33 @@ int Party_DexCount()
     return n;
 }
 
+static std::vector<u8> PracticeParty;
+static const u32 PartyBytes = 8 + 6 * 236; // the most, the count, six Pokemon (at 0x90 of the general block)
+
+void Party_PracticeBegin()
+{
+    PracticeParty.clear();
+    if (!Nds || !ProfileAt || ProfileAt - 0x64 + 0x90 + PartyBytes > Nds->MainRAMMask + 1) return;
+    const u8* p = Nds->MainRAM + ProfileAt - 0x64 + 0x90;
+    PracticeParty.assign(p, p + PartyBytes);
+}
+
+bool Party_PracticeEnd()
+{
+    std::vector<u8> was;
+    was.swap(PracticeParty);
+    if (was.empty() || !Nds || !ProfileAt) return false;
+    u8* p = Nds->MainRAM + ProfileAt - 0x64 + 0x90;
+    // The same Pokemon (their personality values) in the same places, else leave it alone.
+    if (memcmp(p, was.data(), 8)) return false;
+    for (u32 i = 0; i < std::min<u32>(RomGet32(&was[4]), 6); i++)
+        if (memcmp(p + 8 + i * 236, &was[8 + i * 236], 4)) return false;
+    if (!memcmp(p, was.data(), PartyBytes)) return false;
+    memcpy(p, was.data(), PartyBytes);
+    fprintf(stderr, "[party] practice battle: the party is as it was before\n");
+    return true;
+}
+
 std::vector<int> Party_MySpecies()
 {
     if (!Nds || !ProfileAt || ProfileAt - 0x64 + 0x90 + 8 + 6 * 236 > Nds->MainRAMMask + 1) return {};
@@ -1609,6 +1841,16 @@ PartyLink Party_Link() { return Link; }
 int Party_Me() { return Me; }
 int Party_Max() { return MaxPlayers; }
 std::string Party_Code() { return Code; }
+
+std::string Party_CodeShown()
+{
+    if (!CodeHidden) return Code;
+    std::string s = Code;
+    for (size_t i = Code.compare(0, 4, "SSR-") == 0 ? 4 : 0; i < s.size(); i++) s[i] = '*';
+    return s;
+}
+
+void Party_HideCode(bool hide) { CodeHidden = hide; }
 int Party_RttMs() { return Rtt; }
 float Party_LostSeconds() { return Link == PartyLink::Lost ? (Ms() - LostAt) / 1000.0f : 0; }
 const PartyPeer* Party_Peers() { return Peers; }
