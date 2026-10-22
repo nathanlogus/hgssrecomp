@@ -87,6 +87,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "autosave.h"
 #include "nuzlocke.h"
+#include "qol.h"
 #define DR_MP3_IMPLEMENTATION
 #include "songs.h"
 #include "gamesfx.h"
@@ -1132,6 +1133,7 @@ struct Settings
     bool practice = false;   // battles with friends are practice: nothing is saved
     bool startScreen = true; // the frontend's own start screen before the game
     bool autosave = true;    // resume points (autosave.h): kept in the background, never a freeze
+    Qol::Options qol;        // the Helpers of the Game tab (qol.h)
     bool autosaveGame = false; // also the game's own save at calm moments (it stops the game while it writes)
     AccessCfg acc;             // comfort and accessibility options (access.h)
     KeyBinds keyBinds;         // keyboard keys for the DS buttons (keybinds.h)
@@ -1180,6 +1182,7 @@ struct Settings
             else if (acc.Load(k, v) || keyBinds.Load(k, v)) {}
             else if (k.rfind("world_", 0) == 0) world.Set(k.substr(6), v);
             else if (k == "day_epoch") dayEpoch = atoll(v.c_str());
+            else if (qol.Load(k, v)) {}
             else if (k == "pad_map")
             {
                 std::istringstream ss(v);
@@ -1257,6 +1260,7 @@ struct Settings
         f << "world_skip=" << (world.skipTutorials ? 1 : 0) << "\n";
         f << "world_day=" << world.dayLength << "\n";
         f << "day_epoch=" << dayEpoch << "\n";
+        qol.Save(f);
         f << "pad_map=";
         for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
@@ -3148,6 +3152,18 @@ int main(int argc, char** argv)
     // with + or X, its first page lists the game's own entries; choosing one drives the game's
     // menu, out of sight, to open it.
     constexpr int M_GAMEACT = 5000; // + the X menu's action
+    constexpr int M_QOL = 6000;     // + a row of Qol::Helpers
+    Qol::Helpers qolHelpers;
+    auto qolEnv = [&]() {
+        Qol::Env e;
+        e.mem = { nds->MainRAM, ref ? ref->MainRAM : nullptr, nds->MainRAMMask };
+        e.frame = frame;
+        e.idle = fieldIdle();
+        e.rom = rom.data();
+        e.romSize = rom.size();
+        e.itemBytes = [&](int item, uint32_t& size) { return romArt.ItemBytes(item, size); };
+        return e;
+    };
     HudWorld::XMenuDrive xDrive;
     bool menuFromField = false, xOpensMenu = false;
     // Screens of the online HUD over (or instead of) the pause menu.
@@ -3471,6 +3487,8 @@ int main(int argc, char** argv)
                 "How long a day lasts in the game, which sets the time of day. Real clock, or a whole day in an hour or in 20 minutes. At once.");
         }
         add(T_GAME, M_BUGREPORT, "Report a bug", "", "Saves the latest messages, your settings and a picture of the game to a folder (reports) to attach to a bug report. No save, ROM or chat.");
+        for (const Qol::Helpers::Row& r : qolHelpers.Rows(cfg.qol, qolEnv()))
+            add(T_GAME, M_QOL + r.id, r.label, r.value, r.desc)->disabled = r.disabled;
         add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
         add(T_GAME, M_QUIT, "Quit", "", "Closes the game. The in-game save is kept; play since your last save is not.")->danger = true;
 
@@ -4680,6 +4698,13 @@ int main(int argc, char** argv)
             }
             int dir = 0;
             int hit = menuUpdate(menu, nav, dir);
+            if (hit >= M_QOL && hit < M_QOL + 16)
+            {
+                std::string said;
+                if (qolHelpers.Activate(hit - M_QOL, dir, cfg.qol, qolEnv(), said)) buildMenu();
+                if (!said.empty()) say(said, "icons/icon_info");
+                hit = -1;
+            }
             if (hit >= M_GAMEACT && hit < M_GAMEACT + 16 && dir == 0)
             {
                 menu.open = false;
@@ -6039,6 +6064,29 @@ int main(int argc, char** argv)
         }
         perfMark(1);
         updateShownView();
+        {
+            // The Helpers (qol.h), between two frames, the same on both consoles under --lockstep.
+            Qol::Env qe = qolEnv();
+            Qol::FixedHpBars = cfg.qol.fixedHp;
+            static uint32_t partyAt = 0;
+            const RcApp* pa = nullptr;
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (!strcmp(rc_apps[i].name, "PartyMenu")) pa = &rc_apps[i];
+            if (pa && cfg.qol.infTm && appRunning("PartyMenu"))
+            {
+                const HudParty::Ram ram{ nds->MainRAM, nds->MainRAMMask + 1 };
+                const uint32_t fsp = ram.R32(0x021D4158);
+                const uint32_t mgr = HudParty::FindApp(ram, partyAt, pa->initAddr, pa->execAddr, pa->exitAddr, [&](uint32_t m) {
+                    const uint32_t pm = ram.R32(m + 0x1C), args = ram.R32(m + 0x18);
+                    return ram.Ok(pm, 0xCA8) && ram.R32(pm + 0x654) == args && fsp && ram.R32(args + 0x1C) == fsp;
+                });
+                if (mgr && ram.R8(ram.R32(mgr + 0x18) + 0x24) == 5) qe.partyItem = ram.R16(ram.R32(mgr + 0x18) + 0x28);
+            }
+            qolHelpers.Tick(cfg.qol, qe);
+            std::string said;
+            qolHelpers.TestActions(cfg.qol, qe, said);
+            if (!said.empty()) say(said, "icons/icon_info");
+        }
         {
             int pmap = -1, px = 0, pz = 0;
             if (!playerPos(pmap, px, pz)) pmap = -1;
