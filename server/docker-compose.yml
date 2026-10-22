@@ -1,0 +1,43 @@
+# Run from the repository root:  docker compose -f server/docker-compose.yml up -d --build
+# Settings go in a file named .env next to this one (never commit it); see SERVER.md.
+services:
+  relay:
+    build: { context: .., dockerfile: server/Dockerfile }
+    restart: unless-stopped
+    ports: ["7373:7373"]            # the game connects here
+    environment:
+      RELAY_MAX_CONNECTIONS: ${RELAY_MAX_CONNECTIONS:-200}
+      RELAY_MAX_SESSIONS: ${RELAY_MAX_SESSIONS:-50}
+      RELAY_IDLE_SECONDS: ${RELAY_IDLE_SECONDS:-120}
+      RELAY_REQUIRE_ACCOUNT: ${RELAY_REQUIRE_ACCOUNT:-0}
+      ACCOUNT_SECRET: ${ACCOUNT_SECRET:-}
+      ACCOUNT_URL: http://accounts:7380   # lets bans take effect at once
+    stop_grace_period: 10s
+    read_only: true
+    cap_drop: [ALL]
+    # The health port (7374) is left inside; reach it with `docker compose exec relay ...` or publish it on 127.0.0.1.
+
+  accounts:
+    build: { context: .., dockerfile: server/Dockerfile }
+    command: ["python", "server/account_server.py", "serve"]
+    restart: unless-stopped
+    profiles: ["accounts"]          # only with: --profile accounts
+    ports: ["127.0.0.1:7380:7380"]  # for the reverse proxy, never open to the internet directly
+    environment:
+      ACCOUNT_SECRET: ${ACCOUNT_SECRET:?set ACCOUNT_SECRET in .env}
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      DISCORD_BETA_ROLE_ID: ${DISCORD_BETA_ROLE_ID:-}
+      TRUST_PROXY: "1"
+    volumes: ["accounts-data:/data"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:7380/token/verify', timeout=2)"]
+      interval: 30s
+      # (The relay's own check is in the Dockerfile.)
+
+volumes:
+  accounts-data:

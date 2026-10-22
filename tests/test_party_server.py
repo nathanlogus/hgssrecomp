@@ -149,6 +149,38 @@ class PartyServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await a.until('y'), b'')
         self.assertNotIn(b_id.decode(), self.relay.online)
 
+    async def test_version_chat_lock_and_remove(self):
+        host = await self.connect()
+        host.send('H', bytes([4]))
+        await host.until('I')
+        code = (await host.until('K')).decode()
+        host.send('v', b'1.2.3')
+        guest = await self.connect()
+        guest.send('J', code.encode())
+        await guest.until('I')
+        # A newcomer is told the versions already here, and the others hear theirs.
+        self.assertEqual(await guest.until('v'), bytes([0]) + b'1.2.3')
+        guest.send('v', b'1.0.0')
+        self.assertEqual(await host.until('v'), bytes([1]) + b'1.0.0')
+        # Chat and quick lines go to the others only, with the sender's number.
+        guest.send('c', bytes([0]) + b'hello')
+        self.assertEqual(await host.until('c'), bytes([1, 0]) + b'hello')
+        # Only the host locks; a locked party turns newcomers away with a reason.
+        guest.send('a', bytes([1]))
+        host.send('a', bytes([1]))
+        self.assertEqual(await guest.until('a'), bytes([1]))
+        late = await self.connect()
+        late.send('J', code.encode())
+        self.assertIn(b'locked', await late.until('F'))
+        host.send('a', bytes([0]))
+        await host.until('a')
+        # Only the host removes someone.
+        host.send('k', bytes([0]))
+        guest.send('k', bytes([0]))
+        host.send('k', bytes([1]))
+        await guest.until('x')
+        self.assertEqual(await host.until('l'), bytes([1]))
+
     async def test_lag_keeps_order(self):
         # Messages held back by --lag leave in the order they came, even when many are due at
         # the same moment (timers due together run in any order).

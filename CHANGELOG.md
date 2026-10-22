@@ -7,6 +7,18 @@
   last PC box, renamed Graveyard, and so do Pokémon that faint (nothing is deleted). The Nuzlocke ledger shows each
   area's first encounter, the Graveyard and your lives. Hardlocke also blocks the Bag in battle (with the buttons).
   Soul Link plays as a plain Nuzlocke for now: the partner's deaths are not shared yet.
+- Playing together: stand facing a friend (both of you facing each other) and press A to
+  offer a battle or a trade, with no trip to a Pokémon Center first. In Friends, "Fly there"
+  takes you to the town your friend is in by the game's own Fly, if one of your Pokémon
+  knows it, you have the Storm Badge and you have been to that town. The session's code
+  shows as stars (Online: Show code, Copy code), the host can lock the session to new
+  players (Online: Lock session) and remove a player (Friends: Remove). Players on an older
+  version are told they must update. Chat with the keyboard (press /) or from Online:
+  Chat, and say a quick line (HI!, THIS WAY!, WAIT!, THANKS!, BATTLE?, TRADE?) by holding
+  R and pressing A, B, X or Y (with L as well for the last two): it appears over the
+  trainer and in a short log. Practice battles (Online): a battle with a friend saves
+  nothing, and your Pokémon are as they were afterwards.
+- Online: sign in with Discord from the Online tab (it opens your browser and shows a short code to check), for servers that ask for an account. Your account name shows in the Profile tab. Servers that do not ask work as before.
 - **REPORT A BUG** in the Game tab of the pause menu (or F9): saves the latest messages, the version,
   your system, your settings (without your name or server address), the party connection's state
   and a picture of the game to a `reports` folder beside your save, opens the folder and copies a

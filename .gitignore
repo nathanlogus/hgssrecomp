@@ -51,3 +51,6 @@ __pycache__/
 .DS_Store
 # Claude Code's settings and worktrees
 .claude/
+
+.env
+accounts.db
