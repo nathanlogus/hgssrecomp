@@ -1,0 +1,21 @@
+# /etc/systemd/system/johto-relay.service  (see SERVER.md)
+[Unit]
+Description=Johto Online relay
+After=network.target
+
+[Service]
+User=johto
+WorkingDirectory=/opt/johto-online
+EnvironmentFile=-/etc/johto-online/relay.env
+ExecStart=/usr/bin/python3 server/relay_service.py
+Restart=on-failure
+TimeoutStopSec=10
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

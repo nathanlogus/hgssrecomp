@@ -93,6 +93,7 @@
 #include "battlewide.h"
 #include "voidfill.h"
 #include "party.h"
+#include "accounts.h"
 #include "worldblocks.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
@@ -1083,6 +1084,8 @@ struct Settings
     int windowH = 0;      // window height chosen in the menu; 0 = from --scale
     // Playing online (party.cpp): the relay server, and who this player is to the others.
     std::string onlineServer;
+    std::string accountServer; // the account server (server/account_server.py); empty: no accounts
+    std::string accountToken, accountName; // the Discord sign-in it gave (a secret: never printed)
     std::string onlineName; // empty: the trainer's name
     std::string friends;    // friends: "id:name:colour:last seen (Unix time)," ... (older: without the id)
     std::string playerId;   // this player's id for friends (16 letters, made once)
@@ -1118,6 +1121,9 @@ struct Settings
             else if (k == "wide_lines") wideLines = std::clamp(atoi(v.c_str()), 192, 2160);
             else if (k == "buttons") byLabel = v != "positions";
             else if (k == "online_server") onlineServer = v;
+            else if (k == "account_server") accountServer = v;
+            else if (k == "account_token") accountToken = v;
+            else if (k == "account_name") accountName = v;
             else if (k == "online_name") onlineName = v.substr(0, 10);
             else if (k == "online_colour") onlineColour = std::clamp(atoi(v.c_str()), -1, 3);
             else if (k == "host_max") hostMax = std::clamp(atoi(v.c_str()), 2, 4);
@@ -1178,6 +1184,9 @@ struct Settings
         f << "wide_lines=" << wideLines << "\n";
         f << "buttons=" << (byLabel ? "labels" : "positions") << "\n";
         f << "online_server=" << onlineServer << "\n";
+        f << "account_server=" << accountServer << "\n";
+        f << "account_token=" << accountToken << "\n";
+        f << "account_name=" << accountName << "\n";
         f << "online_name=" << onlineName << "\n";
         f << "online_colour=" << onlineColour << "\n";
         f << "host_max=" << hostMax << "\n";
@@ -1487,6 +1496,8 @@ int main(int argc, char** argv)
     {
         Party_HideCode(cfg.hideCode);
     }
+    Accounts_SetServer(cfg.accountServer);
+    Accounts_Restore(cfg.accountToken, cfg.accountName);
     Party_SetProfile(onlineName(), cfg.onlineColour);
     Party_SetPartner(cfg.onlinePartner);
     if (!opt.party.empty())
@@ -3014,6 +3025,7 @@ int main(int argc, char** argv)
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
         M_SHOWCODE, M_COPYCODE, M_LOCK, M_CHAT, M_QUICK, M_PRACTICE,
         M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK, M_BUGREPORT,
+        M_ACCOUNT, M_ACCOUNTURL,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -3206,6 +3218,7 @@ int main(int argc, char** argv)
     // Typing a text: the nickname, the server's address or a party's code.
     enum { E_NAME, E_SERVER, E_CODE, E_CHAT };
     int quickSel = 0; // the quick line the menu says
+    enum { E_NAME, E_SERVER, E_CODE, E_ACCOUNTURL };
     struct TextEdit
     {
         int purpose = E_NAME;
@@ -3349,9 +3362,22 @@ int main(int argc, char** argv)
             "The address of the party server everyone uses (it runs tools/party_server.py), e.g. 203.0.113.5 or play.example.org:7373.");
         add(T_ONLINE, M_PRACTICE, "Practice battles", onOff(cfg.practice),
             "Battles with friends in the Union Room count as practice: nothing is saved before, during or after them. Off: the game saves first, as at a Pok\xC3\xA9mon Center.");
+        {
+            const AccountState as = Accounts_State();
+            const std::string v = as == AccountState::SignedIn ? Accounts_Name() : as == AccountState::Waiting ? "Code " + Accounts_Code()
+                : as == AccountState::Starting ? "Starting..." : as == AccountState::Failed ? Accounts_Message() : "Not signed in";
+            add(T_ONLINE, M_ACCOUNT, "Account", v,
+                as == AccountState::SignedIn ? "Signed in with Discord. Press A to sign out."
+                : as == AccountState::Waiting ? "Your browser opened: check it shows this code, then continue with Discord. Press A to cancel."
+                : "Signs in with Discord in your browser, for servers that ask for an account. Press A to start.");
+            add(T_ONLINE, M_ACCOUNTURL, "Account server", cfg.accountServer.empty() ? "Not set" : cfg.accountServer,
+                "The address of the account server, e.g. accounts.example.org. Only needed when the party server asks for an account.");
+        }
         add(T_ONLINE, M_SHOWPING, "Show ping", onOff(cfg.showPing), "Shows the time a message takes to the server and back, beside the session badge.");
         add(T_ONLINE, M_TOASTS, "Activity toasts", onOff(cfg.onlineToasts),
             "Messages when someone joins, leaves, catches a Pok\xC3\xA9mon or earns a badge. They wait until you are not busy.");
+        add(T_PROFILE, M_ACCOUNT, "Account", Accounts_State() == AccountState::SignedIn ? Accounts_Name() : "Not signed in",
+            "Your Discord account, if you signed in under Online.");
         add(T_PROFILE, M_NICK, "Nickname", onlineName(), "The name the other players see. Up to 10 letters; your trainer's name unless you change it.");
         add(T_PROFILE, M_PARTNER, "Partner", cfg.onlinePartner ? Party_SpeciesName(cfg.onlinePartner) : "None",
             "The Pok\xC3\xA9mon shown with you on your card and to the others: one from your party.");
@@ -3490,6 +3516,11 @@ int main(int argc, char** argv)
         {
             edit.charset = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?.,'-:)(";
             edit.max = 40;
+        else if (purpose == E_ACCOUNTURL)
+        {
+            edit.text = cfg.accountServer;
+            edit.charset = "abcdefghijklmnopqrstuvwxyz0123456789.-:/";
+            edit.max = 60;
         }
         else if (purpose == E_SERVER)
         {
@@ -4103,6 +4134,11 @@ int main(int argc, char** argv)
             }
             else if (edit.purpose == E_SERVER)
                 cfg.onlineServer = t;
+            else if (edit.purpose == E_ACCOUNTURL)
+            {
+                cfg.accountServer = t;
+                Accounts_SetServer(t);
+            }
             else if (t.size() == 4)
             {
                 Party_Join(cfg.onlineServer, "SSR-" + t);
@@ -4575,6 +4611,15 @@ int main(int argc, char** argv)
                 break;
             case M_SERVER:
                 startEdit(E_SERVER);
+                break;
+            case M_ACCOUNTURL:
+                startEdit(E_ACCOUNTURL);
+                break;
+            case M_ACCOUNT:
+                if (Accounts_State() == AccountState::SignedIn || Accounts_State() == AccountState::Waiting) Accounts_SignOut();
+                else if (cfg.accountServer.empty()) startEdit(E_ACCOUNTURL);
+                else Accounts_StartSignIn();
+                buildMenu();
                 break;
             case M_SHOWPING:
                 cfg.showPing = !cfg.showPing;
@@ -5522,6 +5567,28 @@ int main(int argc, char** argv)
             const int pstate = uiOpen ? PS_MENU : sectionActive("OVY_12") && !fieldActive() ? PS_BATTLE
                 : pmap == 2 || pmap == 4 || pmap == 5 ? PS_LINK : PS_FIELD;
             Party_Process(pstate, pmap);
+            {
+                static unsigned accountSeen = 0;
+                const AccountState before = Accounts_State();
+                Accounts_Process();
+                if (Accounts_Version() != accountSeen)
+                {
+                    accountSeen = Accounts_Version();
+                    buildMenu();
+                    if (before == AccountState::Starting && Accounts_State() == AccountState::Waiting)
+                        say("Sign in: check the browser shows the code " + Accounts_Code(), "icons/icon_wifi", 600);
+                    else if (Accounts_State() == AccountState::SignedIn && before == AccountState::Waiting)
+                        say("Signed in as " + Accounts_Name(), "icons/icon_wifi");
+                    else if (Accounts_State() == AccountState::Failed)
+                        say("Sign-in failed: " + Accounts_Message(), "icons/icon_wifi");
+                }
+                if (Accounts_TakeChanged())
+                {
+                    cfg.accountToken = Accounts_Token();
+                    cfg.accountName = Accounts_Name();
+                    cfg.Save(opt.config);
+                }
+            }
             // This player's battle, for the others' spectator cards and the turn timer.
             {
                 PartyBattle b;

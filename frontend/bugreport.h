@@ -147,7 +147,7 @@ inline std::string SettingsText()
     {
         const std::string key = line.substr(0, line.find('='));
         // Only keys that start like these: "id" or "ip" inside a word would hide "wide_lines".
-        static const char* hidden[] = { "online_", "friend", "player_id", "party", "server", "code", "pad_name" };
+        static const char* hidden[] = { "account_", "online_", "friend", "player_id", "party", "server", "code", "pad_name" };
         bool hide = false;
         for (const char* h : hidden) hide |= key.rfind(h, 0) == 0;
         out += hide ? key + "=(hidden)\n" : line + "\n";
