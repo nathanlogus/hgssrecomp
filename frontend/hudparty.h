@@ -566,18 +566,18 @@ inline void DrawIvEv(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, con
     }
     const float ty = 250 + 54 * 6 + 8;
     HudText(c, ui, f, rx + 50, ty, 32, "Total EVs", Muted);
-    Bar(c, ui, sp, rx + 250, ty + 5, rw - 250 - 140, totalEv / 510.0f, totalEv >= 510 ? "bars/fill_green" : "bars/fill_yellow");
+    Bar(c, ui, sp, rx + 250, ty + 5, rw - 250 - 260, totalEv / 510.0f, totalEv >= 510 ? "bars/fill_green" : "bars/fill_yellow");
     HudText(c, ui, f, rx + rw - 50, ty, 32, std::to_string(totalEv) + " / 510", Ink, 2);
     // Hidden Power and the nature, side by side.
     const float by = ty + 62;
     HudText(c, ui, f, rx + 50, by + 6, 32, "Hidden Power", Muted);
     const float pw = Pill(c, ui, f, rx + 290, by, 46, TypeName(m.hiddenType), TypeColour(m.hiddenType));
     HudText(c, ui, f, rx + 290 + pw + 20, by + 6, 32, "Power " + std::to_string(m.hiddenPower), Ink);
-    HudText(c, ui, f, rx + 740, by + 6, 32, "Nature", Muted);
+    HudText(c, ui, f, rx + 50, by + 62, 32, "Nature", Muted);
     std::string effect = Party_Text(34, m.nature);
     if (up == down) effect += ": no change";
     else effect += ": " + std::string(names[up]) + " up, " + names[down] + " down";
-    HudText(c, ui, f, rx + 860, by + 6, 32, effect, Ink);
+    HudText(c, ui, f, rx + 290, by + 62, 32, effect, Ink);
 }
 
 inline void DrawSummary(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, const SummaryScreen& s, const MonIconFn& icon,
