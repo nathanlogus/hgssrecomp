@@ -61,16 +61,16 @@ class RelayServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.start(RELAY_REQUIRE_ACCOUNT=1, ACCOUNT_SECRET=SECRET)
         r, _ = await self.connect(frame('H', bytes([4])))  # no token
         self.assertEqual((await self.joined(r))[0], 'F')
-        r, _ = await self.connect(frame('a', b'v1.junk.junk'), frame('H', bytes([4])))
+        r, _ = await self.connect(frame('w', b'v1.junk.junk'), frame('H', bytes([4])))
         self.assertEqual((await self.joined(r))[0], 'F')
         good = tokens.make(SECRET, '1', 'Ash').encode()
-        r, _ = await self.connect(frame('a', good), frame('H', bytes([4])))
+        r, _ = await self.connect(frame('w', good), frame('H', bytes([4])))
         self.assertEqual((await self.joined(r))[0], 'I')
 
     async def test_token_optional_is_accepted_and_bad_one_refused(self):
         await self.start(ACCOUNT_SECRET=SECRET)
         good = tokens.make(SECRET, '1', 'Ash').encode()
-        r, _ = await self.connect(frame('a', good), frame('H', bytes([2])))
+        r, _ = await self.connect(frame('w', good), frame('H', bytes([2])))
         self.assertEqual((await self.joined(r))[0], 'I')
 
     async def test_session_limit(self):

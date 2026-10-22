@@ -16,7 +16,7 @@ optionally a required account token. Settings come from environment variables:
   ACCOUNT_URL         optional: ask the account server too, so a ban takes effect at once
   RELAY_LAG_MS        added delay for testing, default 0
 
-A signed-in game sends the token first, as the message 'a' + token; one that does not goes
+A signed-in game sends the token first, as the message 'w' + token; one that does not goes
 straight to J or H as before. The relay accepts both unless RELAY_REQUIRE_ACCOUNT is set.
 """
 import asyncio
@@ -113,7 +113,7 @@ class Service(party_server.Relay):
             head = await asyncio.wait_for(reader.readexactly(2), 15)
             n = struct.unpack('<H', head)[0]
             body = await asyncio.wait_for(reader.readexactly(n), 15)
-            if body[:1] == b'a':
+            if body[:1] == b'w':
                 if not self.accepted(body[1:].decode('ascii', 'replace')):
                     writer.write(FULL)
                     return

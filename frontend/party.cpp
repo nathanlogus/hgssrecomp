@@ -1133,7 +1133,7 @@ void DialStep()
     Dial = 2;
     // A signed-in player shows the account server's token first (to server/relay_service.py; the
     // plain relay, which hosting on this computer starts, does not know the message).
-    if (!Accounts_Token().empty() && !Party_IsLocalServer(Server)) Send('a', std::vector<u8>(Accounts_Token().begin(), Accounts_Token().end()));
+    if (!Accounts_Token().empty() && !Party_IsLocalServer(Server)) Send('w', std::vector<u8>(Accounts_Token().begin(), Accounts_Token().end()));
     if (Hosting) Send('H', { (u8)HostMax });
     else Send('J', std::vector<u8>(JoinCode.begin(), JoinCode.end()));
 }
