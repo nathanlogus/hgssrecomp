@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Online: sign in with Discord from the Online tab (it opens your browser and shows a short code to check), for servers that ask for an account. Your account name shows in the Profile tab. Servers that do not ask work as before.
 - New screens, tidier: items and Pokémon sit in the middle of their circles and cards and
   look the same size, the text beside them is centred against them, the L and R buttons
   keep their shape next to A and B, bold and plain text on one line share a baseline, and

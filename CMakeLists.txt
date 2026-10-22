@@ -48,6 +48,7 @@ set(SSRECOMP_SOURCES
     frontend/main.cpp
     frontend/platform.cpp
     frontend/party.cpp
+    frontend/accounts.cpp
     runtime/recomp_rt.cpp
     runtime/recomp_mem.cpp
     "${SSR_GENERATED_DIR}/apps_table.cpp"
@@ -93,7 +94,7 @@ else()
     find_package(ZLIB REQUIRED)
     target_link_libraries(ssrecomp PRIVATE core PNG::PNG ZLIB::ZLIB Threads::Threads)
     if(WIN32)
-        target_link_libraries(ssrecomp PRIVATE ws2_32)
+        target_link_libraries(ssrecomp PRIVATE ws2_32 winhttp)
     endif()
 
     # A clean copy to play and test from: `ninja -C build bin` (or `cmake --install build
