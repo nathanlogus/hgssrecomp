@@ -2889,7 +2889,7 @@ int main(int argc, char** argv)
     }
     // The title screen's video (intro.h), if the player has put one in assets/animations.
     IntroVideo intro;
-    if (intro.Load(ReadFile(g_userDir + "animations/intro.mpg"))) fprintf(stderr, "[hud] title video\n");
+    if (intro.Load(ReadFile(g_userDir + "animations/intro_trailer.mpg"))) fprintf(stderr, "[hud] title video\n");
     // Other players' trainers near this one (online), moved smoothly towards where they
     // were last heard and drawn into the widescreen world as the far map's people are.
     struct RemoteTrainer
