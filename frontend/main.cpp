@@ -17,6 +17,7 @@
 #include <chrono>
 #include <thread>
 #include "sampler.h"
+#include "bugreport.h"
 #include <vector>
 #include <tuple>
 #include <deque>
@@ -46,6 +47,7 @@
 #include "RTC.h"
 #include "Savestate.h"
 #include "host.h"
+#include "bugreport.h"
 #include "layout.h"
 #include "ui.h"
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -462,6 +464,7 @@ struct Options
     bool fullscreen = false;
     bool swapped = false;
     bool logSections = false;
+    bool bugReportTest = false;          // test aid: write one bug report after a few frames and quit
     bool noWide = false;                 // turn the widescreen 3D renderer off
     bool benchCompose = false;           // headless: compose the merged picture every frame, to time it
     bool autoFocus = true;
@@ -491,6 +494,7 @@ static void Usage()
         "  --no-save            never write the save file\n"
         "  --layout <name>      merged | hybrid | side | vertical | top | bottom (default merged)\n"
         "  --config <file>      settings file (default: johto-online.cfg beside the save)\n"
+        "  --bug-report-test    write one bug report (reports/ beside the save) and quit\n"
         "  --scale <n>          window scale (default 3)\n"
         "  --fullscreen         start in fullscreen (F11 toggles)\n"
         "  --headless           no window or audio; run as fast as possible\n"
@@ -557,6 +561,7 @@ static bool ParseArgs(int argc, char** argv, Options& o)
         else if (a == "--swap") o.swapped = true;
         else if (a == "--log-sections") o.logSections = true;
         else if (a == "--no-wide") o.noWide = true;
+        else if (a == "--bug-report-test") o.bugReportTest = true;
         else if (a == "--bench-compose") o.benchCompose = true;
         else if (a == "--no-auto-focus") o.autoFocus = false;
         else if (a == "--state-save") o.stateSave = next();
@@ -1347,6 +1352,7 @@ int main(int argc, char** argv)
         return 2;
     }
     if (opt.save.empty()) opt.save = opt.rom + ".sav";
+    BugReport::Start(); // (after the messages were sent to game.log or log.txt, if they are)
 
     std::vector<uint8_t> rom = ReadFile(opt.rom);
     if (rom.empty())
@@ -1444,6 +1450,12 @@ int main(int argc, char** argv)
     if (!opt.headless || configGiven) cfg.Load(opt.config);
     g_keyBinds = &cfg.keyBinds;
     cfg.acc.Apply();
+    // Bug reports (bugreport.h): copy the messages from here on, and write a report if we crash.
+    BugReport::Dir = dir;
+    BugReport::Config = opt.config;
+    BugReport::Version = SSR_VERSION;
+    BugReport::Secrets = { cfg.onlineName, cfg.onlineServer, cfg.playerId, opt.party, opt.partyCode };
+    BugReport::InstallCrashHandler();
     // Online: who this player is (the trainer's name unless another was chosen), and a
     // party to join from the command line (the server is remembered for the menu).
     auto trainerName = [&]() {
@@ -1574,7 +1586,10 @@ int main(int argc, char** argv)
             // In every log: bug reports about the picture need to know this.
             SDL_RendererInfo info;
             if (SDL_GetRendererInfo(renderer, &info) == 0)
+                {
                 fprintf(stderr, "SDL renderer %s, video driver %s\n", info.name, SDL_GetCurrentVideoDriver());
+                BugReport::Renderer = std::string(info.name) + ", " + SDL_GetCurrentVideoDriver();
+            }
         }
         for (int i = 0; i < 2; i++)
             tex[i] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 192);
@@ -2991,7 +3006,7 @@ int main(int argc, char** argv)
         M_REMAP, // M_REMAP + i: the controller button for RemapKeys[i]
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
-        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK,
+        M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK, M_BUGREPORT,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
         // Comfort and accessibility (access.h), the sound tab and the keyboard.
         MA_FILTER, MA_STRENGTH, MA_CONTRAST, MA_FLASH, MA_MOTION, MA_TEXTSIZE, MA_FOEPCT, MA_BEEP, MA_VOLMUSIC, MA_VOLSFX, MA_VOLCRY,
@@ -3276,6 +3291,7 @@ int main(int argc, char** argv)
         add(T_GAME, M_AUTOSAVEGAME, "Also save the game", onOff(cfg.autosaveGame),
             "Also saves the game itself in Pok\xC3\xA9mon Centers and after a badge. The game stops for a few seconds while it writes.")->disabled = !cfg.autosave;
         add(T_GAME, M_STARTSCREEN, "Start screen", onOff(cfg.startScreen), "Shows the start screen (play, online, settings) when the game starts.");
+        add(T_GAME, M_BUGREPORT, "Report a bug", "", "Saves the latest messages, your settings and a picture of the game to a folder (reports) to attach to a bug report. No save, ROM or chat.");
         add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
         add(T_GAME, M_QUIT, "Quit", "", "Closes the game. The in-game save is kept; play since your last save is not.")->danger = true;
 
@@ -3724,6 +3740,7 @@ int main(int argc, char** argv)
                     else if (k == SDLK_TAB) layout = LayoutNext(layout);
                     else if (k == SDLK_F1) focus.manualFlip = !focus.manualFlip;
                     else if (k == SDLK_F2) focus.mode = (focus.mode + 1) % 3;
+                    else if (k == SDLK_F9) BugReport::Request(1);
                     else if (k == SDLK_F5) say(WriteSnapshot(*nds, quickState, frame) ? "State saved" : "The state could not be saved", "icons/icon_save");
                     else if (k == SDLK_F8)
                     {
@@ -4640,6 +4657,11 @@ int main(int argc, char** argv)
                 nds->Start();
                 rc_reset();
                 say("Game reset", "icons/icon_refresh");
+                menu.open = false;
+                swallowMenuButtons = true;
+                break;
+            case M_BUGREPORT:
+                BugReport::Request();
                 menu.open = false;
                 swallowMenuButtons = true;
                 break;
@@ -7661,8 +7683,11 @@ int main(int argc, char** argv)
             overlayUsed = true;
         }
 
-        bool wantShot = !opt.shotDir.empty() &&
-            (opt.shotAt.count(frame) || g_sceneShots.count(frame) || (opt.shotEvery && frame % opt.shotEvery == 0));
+        const bool brShot = BugReport::ShotNow() || (opt.bugReportTest && frame == 10);
+        std::string brFolder;
+        if (brShot) brFolder = BugReport::MakeFolder();
+        bool wantShot = brShot || (!opt.shotDir.empty() &&
+            (opt.shotAt.count(frame) || g_sceneShots.count(frame) || (opt.shotEvery && frame % opt.shotEvery == 0)));
         if (wantShot && opt.shotLayers)
         {
             // BG0 red, BG1 green, BG2 blue, BG3 yellow, backdrop black, 3D magenta, sprites white.
@@ -7724,21 +7749,46 @@ int main(int argc, char** argv)
         {
             char name[64];
             snprintf(name, sizeof(name), "/frame_%06u.png", frame);
-            if (opt.composeW > 0 && opt.composeH > 0)
+            int cw = opt.composeW, ch = opt.composeH;
+            if (brShot && (cw <= 0 || ch <= 0)) cw = 1280, ch = 720;
+            const std::string shotPath = brShot ? brFolder + "/screenshot.png" : opt.shotDir + name;
+            if (cw > 0 && ch > 0)
             {
-                if (merged) { takeWideImage(); MergedCompose(scene, screenImages, opt.composeW, opt.composeH, shot, cfg.smooth, &wideImage); }
-                else Compose(layout, opt.composeW, opt.composeH, top, bot, shot);
+                if (merged) { takeWideImage(); MergedCompose(scene, screenImages, cw, ch, shot, cfg.smooth, &wideImage); }
+                else Compose(layout, cw, ch, top, bot, shot);
                 BlendCanvas(canvas, shot);
-                if (AccessFilter::Active(cfg.acc)) accFilter.Apply(cfg.acc, shot.data(), opt.composeW, opt.composeH);
-                WritePNG(opt.shotDir + name, shot.data(), opt.composeW, opt.composeH);
+                if (AccessFilter::Active(cfg.acc)) accFilter.Apply(cfg.acc, shot.data(), cw, ch);
+                WritePNG(shotPath, shot.data(), cw, ch);
             }
             else
             {
                 shot.resize(256 * 384);
                 memcpy(shot.data(), top, 256 * 192 * 4);
                 memcpy(shot.data() + 256 * 192, bot, 256 * 192 * 4);
-                WritePNG(opt.shotDir + name, shot.data(), 256, 384);
+                WritePNG(shotPath, shot.data(), 256, 384);
             }
+        }
+        if (brShot)
+        {
+            BugReport::Info bi;
+            bi.frame = frame;
+            int bx, bz;
+            if (!playerPos(bi.map, bx, bz)) bi.map = -1;
+            bi.place = bi.map >= 0 ? Party_PlaceName(bi.map) : "";
+            for (unsigned i = 0; i < rc_num_apps; i++)
+                if (rc_ran_recently(rc_apps[i].section, rc_apps[i].execAddr, 2)) { bi.app = rc_apps[i].name; break; }
+            static const char* link[] = { "off", "connecting", "online", "connection lost" };
+            bi.party = std::string(link[(int)Party_Link()]) + ", " + std::to_string(Party_Count()) + " of " +
+                std::to_string(Party_Max()) + " players, ping " + std::to_string(Party_RttMs()) + " ms" +
+                (Party_IsLocalServer(cfg.onlineServer) ? ", local server" : "");
+            const std::string summary = BugReport::Finish(brFolder, bi);
+            fprintf(stderr, "[bugreport] written to %s\n%s\n", brFolder.c_str(), summary.c_str());
+            if (!opt.headless)
+            {
+                BugReport::Present(brFolder, summary, true);
+                say("Report saved; its folder is open (summary copied)", "icons/icon_save", 300);
+            }
+            if (opt.bugReportTest) running = false;
         }
 
         perfMark(2);
@@ -7989,6 +8039,7 @@ int main(int argc, char** argv)
     Party_Leave();
     Party_StopLocalServer();
     if (!opt.headless) SDL_Quit();
+    BugReport::Stop();
     if (nds->ARM9.RecompEnable) rc_print_stats();
     if (opt.lockstep)
     {
