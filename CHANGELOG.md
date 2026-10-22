@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New screens: the message after picking up an item ("Put the Potion in the Medicine Pocket.") now shows
+  in the new message box too; the game's old box was showing for it.
 - **NUZLOCKE** in the Game tab (off unless you choose it): Nuzlocke, Hardlocke, Monolocke, Soul Link and Duallocke.
   The first wild Pokémon in each area is the only one you can catch; a catch that breaks the rules goes to the
   last PC box, renamed Graveyard, and so do Pokémon that faint (nothing is deleted). The Nuzlocke ledger shows each
