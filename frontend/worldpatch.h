@@ -357,7 +357,7 @@ inline bool Patch(std::vector<uint8_t>& rom, Options& o)
         for (int i = 0; i < 3; i++)
         {
             const int orig = 152 + 3 * i;
-            if (o.starters >= 1 && o.starters <= 3) o.resolved[i] = RegionStarters[o.starters - 1][i];
+            if (o.starters >= 1 && o.starters <= 3) o.resolved[i] = RegionStarters[o.starters][i];
             else if (o.starters == 4) o.resolved[i] = o.chosen[i];
             else o.resolved[i] = dex.Pick(seed, 3, orig, true);
         }
@@ -408,7 +408,11 @@ inline void Poke(uint8_t* mainRam, uint32_t mask, const Options& o)
     {
         uint8_t* p = mainRam + (a & mask);
         if (RomGet32(p) == 152 && RomGet32(p + 4) == 155 && RomGet32(p + 8) == 158)
+        {
             for (int i = 0; i < 3; i++) { uint32_t v = o.resolved[i]; for (int b = 0; b < 4; b++) p[4 * i + b] = (uint8_t)(v >> (8 * b)); }
+            static int said[2];
+            if (!said[a == 0x021E7398u]++)  fprintf(stderr, "[world] the balls hold %d, %d, %d (at %08X)\n", o.resolved[0], o.resolved[1], o.resolved[2], a);
+        }
     }
 }
 }

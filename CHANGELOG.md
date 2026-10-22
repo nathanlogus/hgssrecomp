@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **World options** in the Game tab (all off by default; they apply the next time the game starts, and
+  the game keeps working on its own): a **Randomizer** (wild Pokémon, trainers, starters and gifts,
+  optionally the moves and abilities of each Pokémon; of a similar strength, no legendaries early,
+  and the same six-digit seed gives the same world, so you can share it); **More Pokémon** (late-game
+  and post-League Pokémon in the rare places of earlier routes); **Starters** (Johto's, Kanto's, Hoenn's
+  or Sinnoh's three, three you choose, or by the seed); **Skip tutorials** (the catching demonstration on
+  Route 29, with the Poké Balls still given); and **Day length** (a whole day in an hour or in 20
+  minutes instead of the real clock; at once).
 - **REPORT A BUG** in the Game tab of the pause menu (or F9): saves the latest messages, the version,
   your system, your settings (without your name or server address), the party connection's state
   and a picture of the game to a `reports` folder beside your save, opens the folder and copies a
