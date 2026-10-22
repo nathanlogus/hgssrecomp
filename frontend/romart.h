@@ -275,6 +275,15 @@ public:
         return f.second >= 2 ? (int)RomGet16(Rom + f.first) : -1;
     }
 
+    // An item's data as the game keeps it (a/0/1/7, ItemData), or null if unknown.
+    const uint8_t* ItemBytes(int item, uint32_t& size) const
+    {
+        if (item <= 0 || item >= (int)itemNarc.size() / 4 || itemNarc[4 * item] >= itemData.size()) return nullptr;
+        const auto& f = itemData[itemNarc[4 * item]];
+        size = f.second;
+        return Rom + f.first;
+    }
+
     // The move a TM or HM teaches (ITEM_TM01 is 328: 92 TMs, then 8 HMs), or 0.
     int TmMove(int item) const { return item >= 328 && item < 428 && tmMoves.size() == 100 ? tmMoves[item - 328] : 0; }
 

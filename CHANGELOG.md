@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Helpers** in the Game tab, each Off until you turn it on: Exp. Share for all (every Pokémon that has not fainted shares the experience), Infinite Repel, Infinite TMs, a Level limit (Level cap at the next Gym Leader's top level, or No grind, which lifts your team to it), Fixed-speed HP bars in the new battle boxes, and an Auto-Heal Kit that heals your party with the medicine in your Bag, cheapest first.
 - **REPORT A BUG** in the Game tab of the pause menu (or F9): saves the latest messages, the version,
   your system, your settings (without your name or server address), the party connection's state
   and a picture of the game to a `reports` folder beside your save, opens the folder and copies a

@@ -16,6 +16,7 @@
 #include "hudbattle.h"
 #include "hudparty.h"
 #include "merged.h"
+#include "qol.h"
 
 namespace HudBattleUi
 {
@@ -320,6 +321,7 @@ public:
             b.caught = m.r8(h + 0x4B) == 1;
             if (b.maxHp <= 0 || b.maxHp > 999 || hp < 0 || hp > b.maxHp || b.level < 1 || b.level > 100 || b.status > 5) continue;
             b.hp = Shown(hp, (int)m.r32(h + 0x30), (int)m.r32(h + 0x34), b.maxHp, 48, lastHp[i]);
+            if (Qol::FixedHpBars) b.hp = Qol::FixedHp(i, b.hp, hp, b.maxHp);
             lastHp[i] = b.hp;
             // (The EXP bar: only a single battle's box has one; in a double battle the game does not keep it.)
             if (b.type == 0)
