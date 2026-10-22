@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- IVs and EVs: on the Pokémon summary, the Y button opens a fourth page with the six IVs and
+  EVs as bars, the total EVs, the Hidden Power it has (type and power) and what its nature
+  raises and lowers.
+- Shiny Pokémon get a gold star beside their name in the party, the summary, the PC, trades
+  and battle boxes, and a message tells you when a wild shiny appears.
+- Unread-talk bubbles (Game, on by default): a "..." over the people on the map you have not
+  talked to yet. Who you have talked to is kept in a file beside your save, not in it.
+- Waypoints: on the Town Map (or the fly map), Y marks the place under the cursor; a pin shows
+  on the round map and on the Town Map and an arrow at the edge of the picture points the way
+  (with the distance in steps) while you are outdoors. Y on the same place takes it off.
+- Bag: the right stick's button sorts the pocket you are looking at (A to Z, by kind, newest
+  first, back to how you had it). It changes the order of the items in the bag, as moving
+  them one by one would.
 - New screens, tidier: items and Pokémon sit in the middle of their circles and cards and
   look the same size, the text beside them is centred against them, the L and R buttons
   keep their shape next to A and B, bold and plain text on one line share a baseline, and

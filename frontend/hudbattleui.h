@@ -245,6 +245,7 @@ struct Box
     int dx = 0, dy = 0; // where the game's box is against where it rests (sliding in or out, bobbing)
     int species = 0, level = 0, gender = 2, status = 0, hp = 0, maxHp = 1;
     bool caught = false;
+    bool shiny = false; // BattleMon.shiny, which the game works out when the battle starts
     float exp = -1; // the EXP bar, 0-1 (the player's)
     int fadeMode = 0, fadeF = 0; // how the game's box looks faded on the screen (see Look)
     std::string name;
@@ -252,7 +253,7 @@ struct Box
     std::string Key() const
     {
         char b[96];
-        snprintf(b, sizeof b, "%d,%d,%d,%d,%d,%d,%d,%d,%.3f|", type, species, level, gender, status, hp, maxHp, caught, exp);
+        snprintf(b, sizeof b, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f|", type, species, level, gender, status, hp, maxHp, caught, shiny, exp);
         return b + name;
     }
 };
@@ -332,6 +333,7 @@ public:
             // The name and species: the Pokémon in battle (BattleContext battleMons).
             const uint32_t mon = ctx + 0x2D40 + 0xC0 * i;
             b.species = (int)m.r16(mon);
+            b.shiny = (m.r8(mon + 0x26) & 0x20) != 0;
             uint16_t nick[11];
             for (int k = 0; k < 11; k++) nick[k] = (uint16_t)m.r16(mon + 0x36 + 2 * k);
             b.name = NdsText(nick, 11);
@@ -444,6 +446,7 @@ inline void DrawBox(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f, cons
     HudText(c, ui, f, x + 28, y + 16, px, b.name, Ink);
     const float nw = HudTextWidth(ui, f, px, b.name);
     HudParty::Gender(c, ui, x + 36 + nw, y + 22, b.gender, 28);
+    if (b.shiny) HudParty::Star(c, ui, x + 36 + nw + (b.gender < 2 ? 28 + 24 : 14), y + 36, 13);
     float right = x + w - 26;
     const std::string lv = "Lv " + std::to_string(b.level);
     HudText(c, ui, f, right, y + 22, 32, lv, Ink, 2);

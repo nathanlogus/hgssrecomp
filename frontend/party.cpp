@@ -1706,6 +1706,21 @@ bool Party_ReadMon(uint32_t addr, PartyMon& mon, bool boxed)
     mon.friendship = a[0x0C];
     mon.nature = (int)(pid % 25);
     const u32 ivs = RomGet32(b + 0x10);
+    mon.pid = pid;
+    mon.shiny = (((mon.otId & 0xFFFF) ^ (mon.otId >> 16) ^ (pid >> 16) ^ (pid & 0xFFFF)) < 8);
+    // The IVs are five bits each from the lowest, the EVs a byte each at the start of the
+    // first block's last quarter (HP, Attack, Defense, Speed, Sp. Atk, Sp. Def both times).
+    int lowBits = 0, nextBits = 0;
+    for (int i = 0; i < 6; i++)
+    {
+        mon.ivs[i] = (int)(ivs >> (5 * i) & 31);
+        mon.evs[i] = a[0x10 + i];
+        lowBits |= (mon.ivs[i] & 1) << i;
+        nextBits |= (mon.ivs[i] >> 1 & 1) << i;
+    }
+    const int hpTypeIndex = lowBits * 15 / 63; // 0 Fighting ... 15 Dark, without Normal and ???
+    mon.hiddenType = hpTypeIndex + (hpTypeIndex < 8 ? 1 : 2);
+    mon.hiddenPower = nextBits * 40 / 63 + 30;
     mon.egg = ivs >> 30 & 1;
     mon.gender = b[0x18] >> 1 & 3;
     mon.form = b[0x18] >> 3;
