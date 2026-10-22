@@ -91,6 +91,7 @@
 #include "voidfill.h"
 #include "party.h"
 #include "worldblocks.h"
+#include "worldpatch.h"
 #include "recomp_rt.h"
 #include "recomp_api.h"
 #include "GPU3D_Wide.h"
@@ -614,6 +615,40 @@ static void SetClock(NDS& nds, bool fixed)
     nds.RTC.SetDateTime(y, mo, d, h, mi, sec);
 }
 
+// Day length (the World options): the game's clock runs faster than the real one, a whole
+// day in an hour (24 times) or in 20 minutes (72). The clock is a count of seconds of wall
+// time (days since 1970 and the time of day, no time zones), set from the real time passed
+// since the game started and kept from one run to the next, so it never goes back.
+static long long DaysFromCivil(long long y, long long m, long long d)
+{
+    y -= m <= 2;
+    const long long era = (y >= 0 ? y : y - 399) / 400, yoe = y - era * 400;
+    const long long doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1, doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+static void SetClockTo(NDS& nds, long long wall)
+{
+    long long z = wall / 86400 + 719468;
+    const long long secs = wall % 86400, era = (z >= 0 ? z : z - 146096) / 146097, doe = z - era * 146097;
+    const long long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365, doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const long long mp = (5 * doy + 2) / 153, d = doy - (153 * mp + 2) / 5 + 1, m = mp < 10 ? mp + 3 : mp - 9;
+    const long long y = yoe + era * 400 + (m <= 2);
+    nds.RTC.SetDateTime((int)y, (int)m, (int)d, (int)(secs / 3600), (int)(secs / 60 % 60), (int)(secs % 60));
+}
+static long long WallNow(bool fixed, uint32_t frame)
+{
+    if (const char* c = getenv("SSR_CLOCK"))
+    {
+        int y = 2026, mo = 1, d = 1, h = 12, mi = 0;
+        sscanf(c, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi);
+        return DaysFromCivil(y, mo, d) * 86400 + h * 3600 + mi * 60 + frame / 60;
+    }
+    if (fixed) return DaysFromCivil(2026, 1, 1) * 86400 + 12 * 3600 + frame / 60; // tests: noon, and the frames played
+    time_t now = time(nullptr);
+    struct tm t = *localtime(&now);
+    return DaysFromCivil(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday) * 86400 + t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec;
+}
+
 static std::unique_ptr<NDS> MakeConsole(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& sav, bool fixedClock)
 {
     NDSCart::NDSCartArgs cartArgs;
@@ -1091,6 +1126,10 @@ struct Settings
     bool startScreen = true; // the frontend's own start screen before the game
     bool autosave = true;    // resume points (autosave.h): kept in the background, never a freeze
     bool autosaveGame = false; // also the game's own save at calm moments (it stops the game while it writes)
+    // The World options (worldpatch.h): data changes made when the game starts, so a change
+    // here applies at the next start (except the day length).
+    WorldPatch::Options world;
+    long long dayEpoch = 0;   // day length: the game's clock when it was last set, so it goes on from there
 
     void Load(const std::string& path)
     {
@@ -1124,6 +1163,8 @@ struct Settings
             else if (k == "start_screen") startScreen = v == "1";
             else if (k == "autosave") autosave = v == "1";
             else if (k == "autosave_game") autosaveGame = v == "1";
+            else if (k.rfind("world_", 0) == 0) world.Set(k.substr(6), v);
+            else if (k == "day_epoch") dayEpoch = atoll(v.c_str());
             else if (k == "pad_map")
             {
                 std::istringstream ss(v);
@@ -1182,6 +1223,19 @@ struct Settings
         f << "start_screen=" << (startScreen ? 1 : 0) << "\n";
         f << "autosave=" << (autosave ? 1 : 0) << "\n";
         f << "autosave_game=" << (autosaveGame ? 1 : 0) << "\n";
+        f << "world_rand=" << (world.randomize ? 1 : 0) << "\n";
+        f << "world_seed=" << world.seed << "\n";
+        f << "world_wild=" << (world.wild ? 1 : 0) << "\n";
+        f << "world_trainers=" << (world.trainers ? 1 : 0) << "\n";
+        f << "world_gifts=" << (world.gifts ? 1 : 0) << "\n";
+        f << "world_moves=" << (world.moves ? 1 : 0) << "\n";
+        f << "world_abilities=" << (world.abilities ? 1 : 0) << "\n";
+        f << "world_more=" << (world.more ? 1 : 0) << "\n";
+        f << "world_starters=" << world.starters << "\n";
+        for (int i = 0; i < 3; i++) f << "world_s" << i + 1 << "=" << world.chosen[i] << "\n";
+        f << "world_skip=" << (world.skipTutorials ? 1 : 0) << "\n";
+        f << "world_day=" << world.dayLength << "\n";
+        f << "day_epoch=" << dayEpoch << "\n";
         f << "pad_map=";
         for (int i = 0; i < 8; i++) f << padMap[i] << (i < 7 ? " " : "\n");
         f << "fps60=" << (fps60 ? 1 : 0) << "\n";
@@ -1360,6 +1414,31 @@ int main(int argc, char** argv)
     // The Wi-Fi Plaza as a map of the overworld (plazamap.h): data only, before the
     // consoles (both of --lockstep's) are made.
     const bool plazaMap = PlazaMap::Patch(rom);
+    // The World options (worldpatch.h), read from the settings file before the rest of it is:
+    // they change the game's data, so they apply as the game starts. SSR_WORLD="rand=1,seed=7,..."
+    // sets them for a test.
+    WorldPatch::Options world;
+    {
+        std::string cp = opt.config;
+        if (cp.empty())
+        {
+            const size_t sl = opt.save.find_last_of("/\\");
+            cp = (sl == std::string::npos ? std::string(".") : opt.save.substr(0, sl)) + "/johto-online.cfg";
+        }
+        if (!opt.headless || !opt.config.empty())
+        {
+            Settings early;
+            early.Load(cp);
+            world = early.world;
+        }
+        if (const char* e = getenv("SSR_WORLD")) world.Parse(e);
+    }
+    WorldPatch::Patch(rom, world);
+    if (const char* dump = getenv("SSR_WORLD_DUMP")) // for tests: the changed ROM image, to look at its tables
+    {
+        std::ofstream out(dump, std::ios::binary);
+        out.write((const char*)rom.data(), (std::streamsize)rom.size());
+    }
 
     std::vector<uint8_t> sav = ReadFile(opt.save);
     fprintf(stderr, "ROM %s: %zu bytes; save %s: %zu bytes\n", opt.rom.c_str(), rom.size(), opt.save.c_str(), sav.size());
@@ -1413,6 +1492,8 @@ int main(int argc, char** argv)
     }
 
     uint32_t frame = 0;
+    int dayMode = 0; // the day length in use (cfg.world.dayLength is what the menu has chosen)
+    long long dayV0 = 0, dayReal0 = 0;
     if (!opt.stateLoad.empty())
     {
         for (NDS* n : { ref.get(), nds.get() })
@@ -1444,6 +1525,7 @@ int main(int argc, char** argv)
 
     Settings cfg;
     if (!opt.headless || configGiven) cfg.Load(opt.config);
+    if (getenv("SSR_WORLD")) cfg.world = world; // a test sets the World options this way
     // Online: who this player is (the trainer's name unless another was chosen), and a
     // party to join from the command line (the server is remembered for the menu).
     auto trainerName = [&]() {
@@ -2986,6 +3068,7 @@ int main(int argc, char** argv)
         M_REMAP_RESET = M_REMAP + 8,
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
         M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK,
+        M_W_RAND, M_W_SEED, M_W_WILD, M_W_TRAINERS, M_W_GIFTS, M_W_MOVES, M_W_ABILITIES, M_W_MORE, M_W_STARTERS, M_W_S1, M_W_S2, M_W_S3, M_W_SKIP, M_W_DAY,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
     };
     // The pause menu's tabs.
@@ -3241,6 +3324,43 @@ int main(int argc, char** argv)
         add(T_GAME, M_AUTOSAVEGAME, "Also save the game", onOff(cfg.autosaveGame),
             "Also saves the game itself in Pok\xC3\xA9mon Centers and after a badge. The game stops for a few seconds while it writes.")->disabled = !cfg.autosave;
         add(T_GAME, M_STARTSCREEN, "Start screen", onOff(cfg.startScreen), "Shows the start screen (play, online, settings) when the game starts.");
+        // World: data changes that apply as the game starts (worldpatch.h); the day length at once.
+        {
+            const WorldPatch::Options& w = cfg.world;
+            const bool same = w.randomize == world.randomize && w.seed == world.seed && w.wild == world.wild && w.trainers == world.trainers &&
+                w.gifts == world.gifts && w.moves == world.moves && w.abilities == world.abilities && w.more == world.more &&
+                w.starters == world.starters && w.skipTutorials == world.skipTutorials &&
+                (w.starters != 4 || (w.chosen[0] == world.chosen[0] && w.chosen[1] == world.chosen[1] && w.chosen[2] == world.chosen[2]));
+            const std::string later = same ? "" : "  (next start)";
+            char seedText[16];
+            snprintf(seedText, sizeof(seedText), "%06u", w.seed);
+            static const char* startersNames[] = { "Johto", "Kanto", "Hoenn", "Sinnoh", "Chosen", "By the seed" };
+            static const char* dayNames[] = { "Real clock", "1 hour a day", "20 minutes a day" };
+            add(T_GAME, M_W_RAND, "World: Randomizer", onOff(w.randomize) + later,
+                "Mixes up the Pok\xC3\xA9mon of the world, of a similar strength. Applies as the game starts; a game already begun keeps what it has met.");
+            if (w.randomize)
+            {
+                add(T_GAME, M_W_SEED, "   Seed", seedText,
+                    "The same seed gives the same world. Left and right change it, A picks a new one. Tell friends the number to share it.");
+                add(T_GAME, M_W_WILD, "   Wild Pok\xC3\xA9mon", onOff(w.wild), "Grass, caves, water and fishing.");
+                add(T_GAME, M_W_TRAINERS, "   Trainers", onOff(w.trainers), "The Pok\xC3\xA9mon of every trainer, rivals and Gym Leaders too.");
+                add(T_GAME, M_W_GIFTS, "   Gifts and starters", onOff(w.gifts), "The starters, eggs and Pok\xC3\xA9mon you are given. Legendaries stay as they are.");
+                add(T_GAME, M_W_MOVES, "   Moves", onOff(w.moves), "The moves each Pok\xC3\xA9mon learns as it levels up, of a similar power.");
+                add(T_GAME, M_W_ABILITIES, "   Abilities", onOff(w.abilities), "The abilities of each kind of Pok\xC3\xA9mon.");
+            }
+            add(T_GAME, M_W_MORE, "World: More Pok\xC3\xA9mon", onOff(w.more) + later,
+                "Late-game and post-League Pok\xC3\xA9mon, in their first forms, in the rare places of earlier routes and waters, at the level of the route.");
+            add(T_GAME, M_W_STARTERS, "World: Starters", std::string(startersNames[w.starters]) + later,
+                "The three Pok\xC3\xA9 Balls in Prof. Elm's lab: Johto's, Kanto's, Hoenn's, Sinnoh's, three you choose, or by the seed.");
+            if (w.starters == 4)
+                for (int i = 0; i < 3; i++)
+                    add(T_GAME, M_W_S1 + i, "   Ball " + std::to_string(i + 1), Party_SpeciesName(w.chosen[i]),
+                        "Left and right change the Pok\xC3\xA9mon by one, A by ten.");
+            add(T_GAME, M_W_SKIP, "World: Skip tutorials", onOff(w.skipTutorials) + later,
+                "Leaves out the catching demonstration on Route 29; you still get the Pok\xC3\xA9 Balls.");
+            add(T_GAME, M_W_DAY, "World: Day length", dayNames[w.dayLength],
+                "How long a day lasts in the game, which sets the time of day. Real clock, or a whole day in an hour or in 20 minutes. At once.");
+        }
         add(T_GAME, M_RESET, "Reset game", "", "Starts the game again from its title screen. Anything not saved is lost.")->danger = true;
         add(T_GAME, M_QUIT, "Quit", "", "Closes the game. The in-game save is kept; play since your last save is not.")->danger = true;
 
@@ -4477,6 +4597,32 @@ int main(int argc, char** argv)
             case M_AUTOSAVEGAME:
                 cfg.autosaveGame = !cfg.autosaveGame;
                 break;
+            case M_W_RAND: cfg.world.randomize = !cfg.world.randomize; break;
+            case M_W_SEED:
+                if (dir == 0)
+                {
+                    std::random_device rd;
+                    cfg.world.seed = rd() % 1000000u;
+                }
+                else cfg.world.seed = (cfg.world.seed + 1000000u + (dir < 0 ? -1 : 1)) % 1000000u;
+                break;
+            case M_W_WILD: cfg.world.wild = !cfg.world.wild; break;
+            case M_W_TRAINERS: cfg.world.trainers = !cfg.world.trainers; break;
+            case M_W_GIFTS: cfg.world.gifts = !cfg.world.gifts; break;
+            case M_W_MOVES: cfg.world.moves = !cfg.world.moves; break;
+            case M_W_ABILITIES: cfg.world.abilities = !cfg.world.abilities; break;
+            case M_W_MORE: cfg.world.more = !cfg.world.more; break;
+            case M_W_STARTERS: cfg.world.starters = (cfg.world.starters + (dir < 0 ? 5 : 1)) % 6; break;
+            case M_W_S1: case M_W_S2: case M_W_S3:
+            {
+                int& sp = cfg.world.chosen[hit - M_W_S1];
+                sp = (sp - 1 + (dir < 0 ? -1 : dir > 0 ? 1 : 10) + 493) % 493 + 1;
+                break;
+            }
+            case M_W_SKIP: cfg.world.skipTutorials = !cfg.world.skipTutorials; break;
+            case M_W_DAY:
+                cfg.world.dayLength = (cfg.world.dayLength + (dir < 0 ? 2 : 1)) % 3;
+                break;
             case M_REMAP_RESET:
                 for (int& b : cfg.padMap) b = -1;
                 say("The usual buttons are back", "icons/icon_gamepad");
@@ -5268,8 +5414,25 @@ int main(int argc, char** argv)
             silentBoot = true;
             speed = 8; // the logos before the opening movie take seconds and cannot be skipped
         }
+        // Day length: the clock runs faster than the real one (SetClockTo). The game's clock
+        // is set twice a second, from the time passed since the mode was chosen; the value is
+        // kept in the settings, so the next run goes on from where this one stopped.
+        if (cfg.world.dayLength != dayMode)
+        {
+            dayMode = cfg.world.dayLength;
+            dayReal0 = WallNow(opt.headless, frame);
+            dayV0 = dayMode ? (cfg.dayEpoch ? cfg.dayEpoch : dayReal0) : 0;
+        }
+        if (dayMode && frame % 30 == 0)
+        {
+            const long long v = dayV0 + (WallNow(opt.headless, frame) - dayReal0) * (dayMode == 1 ? 24 : 72);
+            cfg.dayEpoch = v;
+            SetClockTo(*nds, v);
+            if (ref) SetClockTo(*ref, v);
+        }
         if (ref)
         {
+            WorldPatch::Poke(ref->MainRAM, ref->MainRAMMask, world);
             TraceLog.clear();
             TracePos = 0;
             TraceFrame = frame;
@@ -5291,6 +5454,7 @@ int main(int argc, char** argv)
             for (int i = 0; i < speed; i++)
             {
                 rc_frame++;
+                WorldPatch::Poke(nds->MainRAM, nds->MainRAMMask, world);
                 nds->RunFrame();
                 int avail = nds->SPU.GetOutputSize();
                 if (avail > (int)audioBuf.size() / 2) avail = (int)audioBuf.size() / 2;
