@@ -561,12 +561,10 @@ private:
         if (to)
         {
             PartyMon chk;
-            fprintf(stderr, "[nuzlocke] to the Graveyard box: %s
-", Party_ReadMon(to, chk, true) ? (Party_SpeciesName(chk.species) + " Lv " + std::to_string(chk.level)).c_str() : "unreadable");
+            fprintf(stderr, "[nuzlocke] to the Graveyard box: %s\n", Party_ReadMon(to, chk, true) ? (Party_SpeciesName(chk.species) + " Lv " + std::to_string(chk.level)).c_str() : "unreadable");
         }
         else
-            fprintf(stderr, "[nuzlocke] no room in the Graveyard box (or no PC found): released
-");
+            fprintf(stderr, "[nuzlocke] no room in the Graveyard box (or no PC found): released\n");
         return to != 0;
     }
     bool IsDead(uint32_t pid) const

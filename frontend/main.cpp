@@ -3261,12 +3261,12 @@ int main(int argc, char** argv)
         add(T_GAME, M_NUZRULE, "Nuzlocke", Nuz::RuleName(nuz.rule), Nuz::RuleAbout(nuz.rule));
         if (nuz.rule == Nuz::Monolocke || nuz.rule == Nuz::Duallocke)
         {
-            add(T_GAME, M_NUZTYPE, nuz.rule == Nuz::Duallocke ? "First type" : "Type", HudParty::TypeName(nuz.type[0]), "The type every PokÃ©mon of the run must have.");
+            add(T_GAME, M_NUZTYPE, nuz.rule == Nuz::Duallocke ? "First type" : "Type", HudParty::TypeName(nuz.type[0]), "The type every Pokémon of the run must have.");
             if (nuz.rule == Nuz::Duallocke)
                 add(T_GAME, M_NUZTYPE2, "Second type", HudParty::TypeName(nuz.type[1]), "The other type allowed.");
         }
         if (nuz.On())
-            add(T_GAME, M_NUZBOOK, "Nuzlocke ledger", "", "The first PokÃ©mon met in each area, and the Graveyard.");
+            add(T_GAME, M_NUZBOOK, "Nuzlocke ledger", "", "The first Pokémon met in each area, and the Graveyard.");
         add(T_GAME, M_AUTOSAVE, "Autosave", onOff(cfg.autosave),
             "Keeps your place every few minutes and when you quit, in the background, for Continue. The game never stops for it.");
         add(T_GAME, M_AUTOSAVEGAME, "Also save the game", onOff(cfg.autosaveGame),
@@ -4429,7 +4429,7 @@ int main(int argc, char** argv)
                 nuz.rule = (nuz.rule + (dir < 0 ? Nuz::RuleCount - 1 : 1)) % Nuz::RuleCount;
                 if ((nuz.rule == Nuz::Monolocke || nuz.rule == Nuz::Duallocke) && nuz.type[0] < 0)
                 {
-                    // The first PokÃ©mon's type, to start from.
+                    // The first Pokémon's type, to start from.
                     const std::vector<int> mine = Party_MySpecies();
                     int t[2] = { 0, 0 };
                     if (!mine.empty()) Party_SpeciesTypes(mine[0], t);

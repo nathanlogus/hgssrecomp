@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **NUZLOCKE** in the Game tab (off unless you choose it): Nuzlocke, Hardlocke, Monolocke, Soul Link and Duallocke.
+  The first wild Pokémon in each area is the only one you can catch; a catch that breaks the rules goes to the
+  last PC box, renamed Graveyard, and so do Pokémon that faint (nothing is deleted). The Nuzlocke ledger shows each
+  area's first encounter, the Graveyard and your lives. Hardlocke also blocks the Bag in battle (with the buttons).
+  Soul Link plays as a plain Nuzlocke for now: the partner's deaths are not shared yet.
 - **REPORT A BUG** in the Game tab of the pause menu (or F9): saves the latest messages, the version,
   your system, your settings (without your name or server address), the party connection's state
   and a picture of the game to a `reports` folder beside your save, opens the folder and copies a
