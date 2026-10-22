@@ -1,0 +1,4 @@
+# Caddy gets and renews the certificate by itself. Put your domain here.
+accounts.example.org {
+	reverse_proxy 127.0.0.1:7380
+}
