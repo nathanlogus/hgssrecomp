@@ -35,6 +35,10 @@ Messages, both ways: u16 length (little-endian), then a kind letter and its cont
     G id               invite that friend to this party
     Z player kind      a friend request to a player here (1 ask, 2 yes, 3 no)
     O ... | W emote | T battle   where the trainer is (and their look), emotes, a battle's state: passed on
+    v version          this player's game version, text like 1.2.3 (sent after joining): passed on
+    a 0|1              the host locks the party (1: no new players) or opens it again
+    k player           the host removes a player
+    c kind text        chat: kind 0 typed text, 1 a quick line (the text is its number), up to 60 bytes
     B beacon | b | C parent commtype | A child aid | R child | D data | L   (the game's link)
   from the server:
     I player | F (full) | K code (the party's code, after H or J)
@@ -44,6 +48,8 @@ Messages, both ways: u16 length (little-endian), then a kind letter and its cont
     U player id | Z player kind | O/W/T player ...
     y (id count max codelen code)...   the friends online who have this player as a friend too
     g id codelen code name             an invite from that friend to their party
+    v player version | a 0|1 (locked) | x (you were removed by the host) | c player kind text
+    F [reason]         the party could not be joined (older servers send none)
     B player beacon | b player | C child commtype | A aid | R | D player data | X child | P
 """
 import argparse
@@ -67,6 +73,8 @@ class Player:
         self.status = None    # the S message's contents
         self.uid = None       # the player's id (U), if sent
         self.friends = set()  # their friends' ids (Y)
+        self.version = None   # their game version (v)
+        self.removed = False  # the host has removed them
 
 
 class Party:
@@ -75,6 +83,7 @@ class Party:
         self.slots = [None] * MAX_PLAYERS
         self.max = max_players
         self.host = None      # slot of the host, if hosted
+        self.locked = False   # the host has closed it to new players
 
 
 class Relay:
@@ -214,6 +223,25 @@ class Relay:
                 code = p.party.name.encode()[:40]
                 name = p.hello[3:] if p.hello else b''
                 self.send(q, 'g', p.uid.encode() + bytes([len(code)]) + code + name)
+        elif kind == 'v' and body:
+            p.version = body[:20]
+            for q in self.others(p):
+                self.send(q, 'v', bytes([p.slot]) + p.version)
+        elif kind == 'a' and body and p.party.host == p.slot:
+            p.party.locked = bool(body[0])
+            for q in p.party.slots:
+                if q:
+                    self.send(q, 'a', bytes([int(p.party.locked)]))
+        elif kind == 'k' and body and p.party.host == p.slot and body[0] < MAX_PLAYERS:
+            q = p.party.slots[body[0]]
+            if q and q is not p:
+                self.send(q, 'x')
+                # Closed once the notice is out; serve() then tidies up as for any leaver.
+                q.removed = True  # (shortcut: they may join again unless the host locks the party)
+                asyncio.get_running_loop().call_later(0.2 + self.lag, q.writer.close)
+        elif kind == 'c' and len(body) >= 2:
+            for q in self.others(p):
+                self.send(q, 'c', bytes([p.slot]) + body[:61])
         elif kind == 'E' and len(body) >= 3:
             for q in self.others(p):
                 self.send(q, 'E', bytes([p.slot]) + body[:3])
@@ -249,6 +277,10 @@ class Relay:
                     return None
                 party = self.parties[name] = Party(name)
         used = sum(1 for q in party.slots if q)
+        if party.locked and kind == 'J':
+            why = b'That session is locked: its host is not taking new players'
+            writer.write(struct.pack('<H', 1 + len(why)) + b'F' + why)
+            return None
         if used >= party.max:
             writer.write(b'\x01\x00F')
             return None
@@ -257,6 +289,8 @@ class Relay:
         writer.write(b'\x02\x00I' + bytes([slot]))
         self.send(p, 'K', party.name.encode())
         self.send(p, 'M', bytes([party.max]))
+        if party.locked:
+            self.send(p, 'a', bytes([1]))
         for q in self.others(p):
             if q.beacon is not None:
                 self.send(p, 'B', bytes([q.slot]) + q.beacon)
@@ -266,6 +300,8 @@ class Relay:
                 self.send(p, 'S', bytes([q.slot]) + q.status)
             if q.uid is not None:
                 self.send(p, 'U', bytes([q.slot]) + q.uid.encode())
+            if q.version is not None:
+                self.send(p, 'v', bytes([q.slot]) + q.version)
             self.send(q, 'j', bytes([slot]))
         print(f'player {slot + 1} joined party {party.name!r}', flush=True)
         return p
