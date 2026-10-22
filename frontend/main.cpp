@@ -50,6 +50,8 @@
 #include "ui.h"
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "hud.h"
+#include "keybinds.h"
+#include "wheel.h"
 #include "hudmenu.h"
 #include "hudtoast.h"
 #include "hudscreens.h"
@@ -390,6 +392,7 @@ static std::vector<uint8_t> ReadUiFile(const std::string& name) { return ReadFil
 // The player's own songs (songs.h): assets/songs, beside the HUD's folder.
 static std::vector<uint8_t> ReadSongFile(const std::string& name) { return ReadFile(g_userDir + "songs/" + name); }
 namespace melonDS { extern u16 ssr_SpuHearMute; } // SPU.cpp: channels left out of what is heard
+namespace melonDS { extern u16 ssr_SpuGain[16]; extern u16 ssr_SpuGainMask; } // SPU.cpp: how much of each channel is heard
 static void FindUiDir()
 {
 #ifdef __ANDROID__
@@ -825,23 +828,13 @@ static void Compose(const Layout& layout, int w, int h, const u32* top, const u3
     }
 }
 
+// The keys of the Controls tab's keyboard layout (keybinds.h): the Settings' own.
+static const KeyBinds* g_keyBinds = nullptr;
 static uint32_t KeyboardKeys()
 {
-    const Uint8* st = SDL_GetKeyboardState(nullptr);
-    uint32_t k = 0;
-    if (st[SDL_SCANCODE_X]) k |= 1 << KEY_A;
-    if (st[SDL_SCANCODE_Z]) k |= 1 << KEY_B;
-    if (st[SDL_SCANCODE_S]) k |= 1 << KEY_X;
-    if (st[SDL_SCANCODE_A]) k |= 1 << KEY_Y;
-    if (st[SDL_SCANCODE_Q]) k |= 1 << KEY_L;
-    if (st[SDL_SCANCODE_W]) k |= 1 << KEY_R;
-    if (st[SDL_SCANCODE_RETURN]) k |= 1 << KEY_START;
-    if (st[SDL_SCANCODE_RSHIFT] || st[SDL_SCANCODE_BACKSPACE]) k |= 1 << KEY_SELECT;
-    if (st[SDL_SCANCODE_UP]) k |= 1 << KEY_UP;
-    if (st[SDL_SCANCODE_DOWN]) k |= 1 << KEY_DOWN;
-    if (st[SDL_SCANCODE_LEFT]) k |= 1 << KEY_LEFT;
-    if (st[SDL_SCANCODE_RIGHT]) k |= 1 << KEY_RIGHT;
-    return k;
+    static const int bit[KeyBinds::N] = { KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_START, KEY_SELECT, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT };
+    static const KeyBinds classic;
+    return (g_keyBinds ? g_keyBinds : &classic)->Held(SDL_GetKeyboardState(nullptr), bit);
 }
 
 // The controllers in use: all of them at once, as which one is first is not to be relied on
@@ -1091,6 +1084,8 @@ struct Settings
     bool startScreen = true; // the frontend's own start screen before the game
     bool autosave = true;    // resume points (autosave.h): kept in the background, never a freeze
     bool autosaveGame = false; // also the game's own save at calm moments (it stops the game while it writes)
+    AccessCfg acc;             // comfort and accessibility options (access.h)
+    KeyBinds keyBinds;         // keyboard keys for the DS buttons (keybinds.h)
 
     void Load(const std::string& path)
     {
@@ -1124,6 +1119,7 @@ struct Settings
             else if (k == "start_screen") startScreen = v == "1";
             else if (k == "autosave") autosave = v == "1";
             else if (k == "autosave_game") autosaveGame = v == "1";
+            else if (acc.Load(k, v) || keyBinds.Load(k, v)) {}
             else if (k == "pad_map")
             {
                 std::istringstream ss(v);
@@ -1202,6 +1198,8 @@ struct Settings
         f << "blur=" << blur << "\n";
         f << "far_map=" << (farMap ? 1 : 0) << "\n";
         f << "window_height=" << windowH << "\n";
+        acc.Save(f);
+        keyBinds.Save(f);
     }
 };
 
@@ -1444,6 +1442,8 @@ int main(int argc, char** argv)
 
     Settings cfg;
     if (!opt.headless || configGiven) cfg.Load(opt.config);
+    g_keyBinds = &cfg.keyBinds;
+    cfg.acc.Apply();
     // Online: who this player is (the trainer's name unless another was chosen), and a
     // party to join from the command line (the server is remembered for the menu).
     auto trainerName = [&]() {
@@ -2212,7 +2212,7 @@ int main(int argc, char** argv)
                 static unsigned slideFrame = 0;
                 if (now != slideFrame)
                 {
-                    slide += std::clamp((showing ? 1.0f : 0.0f) - slide, -1.0f / 14, 1.0f / 14);
+                    slide += std::clamp((showing ? 1.0f : 0.0f) - slide, g_reduceMotion ? -1.0f : -1.0f / 14, g_reduceMotion ? 1.0f : 1.0f / 14);
                     slideFrame = now;
                 }
                 const float ease = slide * slide * (3 - 2 * slide);
@@ -2488,6 +2488,8 @@ int main(int argc, char** argv)
     std::vector<uint32_t> mergedImage;
     SDL_Texture* mergedTex = nullptr;
     GpuCompositor* gpuCompose = nullptr;
+    AccessFilter accFilter;          // colour vision, contrast and flashes on the finished picture (access.h)
+    SDL_Texture* accTex = nullptr;
     BattleWide battleWide;
     // The battle's HP boxes, message box and level-up stats redrawn (hudbattleui.h), while
     // the wide battle picture is built without the game's boxes (battleUiWide).
@@ -2775,6 +2777,10 @@ int main(int argc, char** argv)
     FlushView flushViews[4];
     FlushView shownView; // for the picture on the screen
     bool emoteWheel = false;
+    ShortcutWheel wheel;      // hold Select (wheel.h)
+    bool emotePick = false;   // after "Emotes" on the wheel: the next D-pad direction sends one
+    uint32_t emotePickAt = 0;
+    int wheelTap = 0;         // frames left of a short press of Select, passed on to the game
     melonDS::Wide.Extra = [&](std::vector<u32>& commands) {
         if (cfg.farMap) worldBlocks.Build(*nds, commands);
         worldBlocks.EmitPlaza(*nds, commands);
@@ -2987,12 +2993,17 @@ int main(int argc, char** argv)
         M_HOST, M_JOIN, M_HOSTMAX, M_SESSION, M_LEAVE, M_SERVER, M_SHOWPING, M_TOASTS, M_NICK, M_COLOUR, M_STARTSCREEN, M_PARTNER,
         M_FRIENDS, M_ACCEPT, M_DECLINE, M_REDRAWN, M_OWHUD, M_FPSMAX, M_MUSIC, M_AUTOHOST, M_AUTOSAVEGAME, M_TEXTFONT, M_AUTOSAVE, M_MENUSOUNDS, M_AUTORUN, M_VSYNC, M_LOOK,
         M_FRIEND, // M_FRIEND + i: player i (Session tab) or friend i (Friends tab)
+        // Comfort and accessibility (access.h), the sound tab and the keyboard.
+        MA_FILTER, MA_STRENGTH, MA_CONTRAST, MA_FLASH, MA_MOTION, MA_TEXTSIZE, MA_FOEPCT, MA_BEEP, MA_VOLMUSIC, MA_VOLSFX, MA_VOLCRY,
+        MA_POTATO, MA_LIMIT, MA_WHEEL, MA_KEYLAYOUT,
+        MA_KEY, // MA_KEY + i: the keyboard key of KeyBinds::Names[i]
+        MA_KEY_END = MA_KEY + KeyBinds::N,
     };
     // The pause menu's tabs.
-    enum { T_RESUME, T_GAME, T_DISPLAY, T_CONTROLS, T_ONLINE, T_PROFILE, T_STATES };
+    enum { T_RESUME, T_GAME, T_DISPLAY, T_CONTROLS, T_ONLINE, T_PROFILE, T_STATES, T_ACCESS, T_SOUND, T_KEYS };
     menu.tabs = { { "RESUME", "menu/menu_resume" }, { "GAME", "menu/menu_party" }, { "DISPLAY", "menu/menu_options" },
         { "CONTROLS", "menu/menu_controls" }, { "ONLINE", "menu/menu_online" }, { "PROFILE", "menu/menu_profile" },
-        { "STATES", "menu/menu_states" } };
+        { "STATES", "menu/menu_states" }, { "ACCESS", "menu/menu_help" }, { "SOUND", "menu/menu_pokegear" }, { "KEYS", "menu/menu_controls" } };
     menu.tab = T_DISPLAY;
     // The game's X menu inside the pause menu (hudworld.h XMenuDrive): opened from the overworld
     // with + or X, its first page lists the game's own entries; choosing one drives the game's
@@ -3185,6 +3196,7 @@ int main(int argc, char** argv)
     static const std::string CodeLetters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no O/0 or I/1
     // The DS button waiting for a controller button in the Controls tab (-1 none), and since when.
     int remapping = -1;
+    int keyCapture = -1; // the DS button waiting for a keyboard key in the Keys tab (-1 none)
     uint32_t remapSince = 0;
     bool fastLock = false;
     // World detail choices: the most lines the widescreen 3D is drawn at (192 is the DS's own).
@@ -3194,6 +3206,29 @@ int main(int argc, char** argv)
         int i = 0;
         while (i + 1 < detailCount && detailLines[i + 1] <= cfg.wideLines) i++;
         return i;
+    };
+    // Low-power mode: a set of settings for slow computers; what they were is kept to put back.
+    auto setPotato = [&](bool on) {
+        AccessCfg& a = cfg.acc;
+        if (on == a.potato) return;
+        if (on)
+        {
+            std::ostringstream o;
+            o << cfg.wide << ' ' << cfg.blur << ' ' << cfg.farMap << ' ' << cfg.fps60 << ' ' << cfg.nightFx << ' ' << cfg.voidFill << ' ' << a.limit;
+            a.potatoPrev = o.str();
+            cfg.wide = false, cfg.blur = 0, cfg.farMap = false, cfg.fps60 = false, cfg.nightFx = false, cfg.voidFill = false;
+            a.limit = 1;
+        }
+        else
+        {
+            std::istringstream i(a.potatoPrev);
+            int w = 1, b = 0, f = 1, p = 1, n = 1, v = 1, l = 0;
+            i >> w >> b >> f >> p >> n >> v >> l;
+            cfg.wide = w, cfg.blur = std::clamp(b, 0, 2), cfg.farMap = f, cfg.fps60 = p, cfg.nightFx = n, cfg.voidFill = v;
+            a.limit = l ? 1 : 0;
+        }
+        a.potato = on;
+        nds->GPU.GPU3D.InterpolationEnabled = cfg.fps60;
     };
     auto buildMenu = [&]() {
         auto onOff = [](bool v) { return std::string(v ? "On" : "Off"); };
@@ -3319,6 +3354,42 @@ int main(int argc, char** argv)
 
         add(T_STATES, M_SAVESTATE, "Save state", "", "Saves this exact moment to come back to with Load state (F5).");
         add(T_STATES, M_LOADSTATE, "Load state", "", "Goes back to the moment saved with Save state (F8).");
+
+        // Comfort and accessibility.
+        {
+            AccessCfg& a = cfg.acc;
+            static const char* filters[] = { "Off", "Protanopia", "Deuteranopia", "Tritanopia", "Monochrome" };
+            add(T_ACCESS, MA_FILTER, "Colour vision", filters[a.colour],
+                "Changes the colours of the whole picture for colour blindness: red-weak, green-weak or blue-weak vision, or black and white.");
+            MenuItem* st = add(T_ACCESS, MA_STRENGTH, "Filter strength", std::to_string(a.strength) + "%", "How strongly the colour filter is applied.");
+            st->bar = a.strength / 100.0f;
+            st->disabled = a.colour == 0;
+            add(T_ACCESS, MA_CONTRAST, "High contrast", onOff(a.contrast), "Darker darks and lighter lights, so shapes and text stand out more.");
+            add(T_ACCESS, MA_FLASH, "Limit flashes", onOff(a.flashLimit),
+                "Spreads a sudden flash or change of brightness over several pictures, so the screen cannot flicker quickly.");
+            add(T_ACCESS, MA_MOTION, "Less motion", onOff(a.lessMotion), "Menus and messages appear at once instead of sliding in, and the fireflies at night are left out.");
+            static const char* sizes[] = { "Normal", "Large", "Larger" };
+            add(T_ACCESS, MA_TEXTSIZE, "Text size", sizes[a.textSize], "How big the letters are in the menus and messages drawn by this program.");
+            add(T_ACCESS, MA_FOEPCT, "Foe HP percentage", onOff(a.foePercent), "In a battle, shows how much HP the other side's Pok\xC3\xA9mon has left as a percentage.");
+            add(T_ACCESS, MA_BEEP, "Low health beep", a.beep ? std::to_string(a.beep) + "%" : "Off",
+                "The warning beep in a battle when your Pok\xC3\xA9mon is low on HP: off, or how loud.")->bar = a.beep / 100.0f;
+            add(T_SOUND, MA_VOLMUSIC, "Music", std::to_string(a.volMusic) + "%", "How loud the music is.")->bar = a.volMusic / 100.0f;
+            add(T_SOUND, MA_VOLSFX, "Sound effects", std::to_string(a.volSfx) + "%", "How loud the game's sound effects are: steps, hits, doors and menu sounds.")->bar = a.volSfx / 100.0f;
+            add(T_SOUND, MA_VOLCRY, "Cries", std::to_string(a.volCry) + "%", "How loud the Pok\xC3\xA9mon's cries are.")->bar = a.volCry / 100.0f;
+            add(T_GAME, MA_POTATO, "Low-power mode", onOff(a.potato),
+                "For slow computers: no widescreen world, blur, far map, night effects or in-between pictures. Turning it off brings back what you had.");
+            add(T_GAME, MA_LIMIT, "Pictures", a.limit ? "Every other frame" : "Every frame",
+                "Every other frame draws the picture half as often: the game still runs at full speed, and slow computers have less to do.");
+            add(T_CONTROLS, MA_WHEEL, "Shortcut wheel", onOff(a.wheel), "Hold SELECT (Back) for a ring of shortcuts: choose with the left stick, let go to go there. A quick press is still SELECT.");
+            add(T_KEYS, MA_KEYLAYOUT, "Keyboard layout", KeyBinds::LayoutName(cfg.keyBinds.layout),
+                "Classic: the arrows with X, Z, S, A, Q and W. WASD: for the left hand. Any keyboard: keys that are in the same place on QWERTY, QWERTZ and AZERTY keyboards.");
+            for (int i = 0; i < KeyBinds::N; i++)
+            {
+                MenuItem* it = add(T_KEYS, MA_KEY + i, KeyBinds::Names[i], keyCapture == i ? "Press a key..." : cfg.keyBinds.Names2(i),
+                    std::string("The keyboard key for the DS's ") + KeyBinds::Names[i] + ". Press the accept key to choose another one.");
+                (void)it;
+            }
+        }
     };
     buildMenu();
     auto buildSession = [&]() {
@@ -3606,6 +3677,15 @@ int main(int argc, char** argv)
                     else if (ev.type == SDL_FINGERMOTION) touchPad.Move(ev.tfinger.fingerId, fx, fy);
                     else touchPad.Up(ev.tfinger.fingerId);
                 }
+                else if (ev.type == SDL_KEYDOWN && !ev.key.repeat && keyCapture >= 0)
+                {
+                    // The key for a DS button (Escape leaves it as it was).
+                    if (ev.key.keysym.scancode != SDL_SCANCODE_ESCAPE) cfg.keyBinds.Rebind(keyCapture, ev.key.keysym.scancode);
+                    uiSound(ev.key.keysym.scancode != SDL_SCANCODE_ESCAPE ? GameSfx::Confirm : GameSfx::Cancel);
+                    keyCapture = -1;
+                    swallowMenuButtons = true;
+                    buildMenu();
+                }
                 else if (ev.type == SDL_KEYDOWN && !ev.key.repeat)
                 {
                     SDL_Keycode k = ev.key.keysym.sym;
@@ -3618,7 +3698,17 @@ int main(int argc, char** argv)
                     }
                     else if (uiOpen)
                     {
-                        if (k == SDLK_UP) nav.up = true;
+                        // The keys bound to the DS buttons work in the menus too (WASD, the player's own).
+                        const int bound = typing ? -1 : cfg.keyBinds.Find(ev.key.keysym.scancode);
+                        if (bound == KeyBinds::A) nav.accept = true;
+                        else if (bound == KeyBinds::B) nav.back = true;
+                        else if (bound == KeyBinds::L) nav.tabPrev = true;
+                        else if (bound == KeyBinds::R) nav.tabNext = true;
+                        else if (bound == KeyBinds::Up) nav.up = true;
+                        else if (bound == KeyBinds::Down) nav.down = true;
+                        else if (bound == KeyBinds::Left) nav.left = true;
+                        else if (bound == KeyBinds::Right) nav.right = true;
+                        else if (k == SDLK_UP) nav.up = true;
                         else if (k == SDLK_DOWN) nav.down = true;
                         else if (k == SDLK_LEFT) nav.left = true;
                         else if (k == SDLK_RIGHT) nav.right = true;
@@ -4259,6 +4349,7 @@ int main(int argc, char** argv)
                 uiSound(GameSfx::Confirm);
                 hit = -1;
             }
+            if (hit >= MA_KEY && hit < MA_KEY_END && dir == 0) keyCapture = hit - MA_KEY;
             if (hit >= M_REMAP && hit < M_REMAP + RemapCount && dir == 0)
             {
                 remapping = hit - M_REMAP;
@@ -4477,6 +4568,53 @@ int main(int argc, char** argv)
             case M_AUTOSAVEGAME:
                 cfg.autosaveGame = !cfg.autosaveGame;
                 break;
+            case MA_FILTER:
+                cfg.acc.colour = (cfg.acc.colour + (dir < 0 ? 4 : 1)) % 5;
+                break;
+            case MA_STRENGTH:
+                cfg.acc.strength = std::clamp(cfg.acc.strength + (dir < 0 ? -10 : 10), 0, 100);
+                break;
+            case MA_CONTRAST:
+                cfg.acc.contrast = !cfg.acc.contrast;
+                break;
+            case MA_FLASH:
+                cfg.acc.flashLimit = !cfg.acc.flashLimit;
+                break;
+            case MA_MOTION:
+                cfg.acc.lessMotion = !cfg.acc.lessMotion;
+                cfg.acc.Apply();
+                break;
+            case MA_TEXTSIZE:
+                cfg.acc.textSize = (cfg.acc.textSize + (dir < 0 ? AccessCfg::TextSizes - 1 : 1)) % AccessCfg::TextSizes;
+                cfg.acc.Apply();
+                break;
+            case MA_FOEPCT:
+                cfg.acc.foePercent = !cfg.acc.foePercent;
+                break;
+            case MA_BEEP:
+                cfg.acc.beep = std::clamp(cfg.acc.beep + (dir < 0 ? -25 : 25), 0, 100);
+                break;
+            case MA_VOLMUSIC:
+                cfg.acc.volMusic = std::clamp(cfg.acc.volMusic + (dir < 0 ? -10 : 10), 0, 100);
+                break;
+            case MA_VOLSFX:
+                cfg.acc.volSfx = std::clamp(cfg.acc.volSfx + (dir < 0 ? -10 : 10), 0, 100);
+                break;
+            case MA_VOLCRY:
+                cfg.acc.volCry = std::clamp(cfg.acc.volCry + (dir < 0 ? -10 : 10), 0, 100);
+                break;
+            case MA_POTATO:
+                setPotato(!cfg.acc.potato);
+                break;
+            case MA_LIMIT:
+                cfg.acc.limit = 1 - cfg.acc.limit;
+                break;
+            case MA_WHEEL:
+                cfg.acc.wheel = 1 - cfg.acc.wheel;
+                break;
+            case MA_KEYLAYOUT:
+                cfg.keyBinds.Preset((cfg.keyBinds.layout + (dir < 0 ? KeyBinds::Layouts - 2 : 1)) % (KeyBinds::Layouts - 1));
+                break;
             case M_REMAP_RESET:
                 for (int& b : cfg.padMap) b = -1;
                 say("The usual buttons are back", "icons/icon_gamepad");
@@ -4551,6 +4689,68 @@ int main(int argc, char** argv)
                 keys &= ~dpad;
             }
             wheelPrev = emoteWheel ? dpad : 0;
+        }
+        // The shortcut wheel (wheel.h): hold Select on the overworld, point with the left
+        // stick, let go. A short press of Select is passed on to the game once it is let go.
+        {
+            // (The controller's Select only: the keyboard's stays the game's Select.)
+            const bool selDown = (PadKeys(ps, cfg.byLabel, cfg.padMap) & (1u << KEY_SELECT)) != 0;
+            const bool kbSelect = !menu.open && (KeyboardKeys() & (1u << KEY_SELECT));
+            const bool free = cfg.acc.wheel && !uiOpen && layout.mode == LayoutMode::Merged && !onPlaza && fieldIdle() && !gameSave.Busy() && !xDrive.Busy();
+            if (emotePick && (!free || frame - emotePickAt > 300)) emotePick = false;
+            if (free)
+            {
+                std::vector<int> actions;
+                if (selDown) actions = HudWorld::UnlockedActions({ nds->MainRAM, nds->MainRAMMask + 1 });
+                auto has = [&](int a) { return std::find(actions.begin(), actions.end(), a) != actions.end(); };
+                wheel.usable[ShortcutWheel::Map] = has(11);
+                wheel.usable[ShortcutWheel::Lines] = (bool)ShortcutWheel::QuickLinesHook();
+                wheel.usable[ShortcutWheel::Emotes] = Party_Link() == PartyLink::Online;
+                wheel.usable[ShortcutWheel::Friends] = true;
+                wheel.usable[ShortcutWheel::Bag] = has(2);
+                wheel.usable[ShortcutWheel::Party] = has(1);
+                wheel.usable[ShortcutWheel::Menu] = true;
+                keys &= ~(1u << KEY_SELECT);
+                const int r = wheel.Update(selDown, ps.lx, ps.ly);
+                if (wheel.open) keys = 0;
+                if (r == ShortcutWheel::Tap) wheelTap = 3;
+                else if (r == ShortcutWheel::Map) xDrive.Start(11, frame), uiSound(GameSfx::Confirm);
+                else if (r == ShortcutWheel::Lines) ShortcutWheel::QuickLinesHook()();
+                else if (r == ShortcutWheel::Emotes) emotePick = true, emotePickAt = frame;
+                else if (r == ShortcutWheel::Friends)
+                {
+                    friendsMenu.tab = !requests.empty() ? 2 : Party_Link() == PartyLink::Off && !friends.empty() ? 1 : 0;
+                    friendsMenu.selected = 0;
+                    if (Party_Link() == PartyLink::Off && !cfg.onlineServer.empty()) Party_Host(cfg.onlineServer, cfg.hostMax);
+                    screen = SCR_FRIENDS;
+                    uiSound(GameSfx::Confirm);
+                }
+                else if (r == ShortcutWheel::Bag) xDrive.Start(2, frame), uiSound(GameSfx::Confirm);
+                else if (r == ShortcutWheel::Party) xDrive.Start(1, frame), uiSound(GameSfx::Confirm);
+                else if (r == ShortcutWheel::Menu) toggleMenu = true;
+            }
+            else wheel.Update(false, 0, 0);
+            if (wheelTap > 0)
+            {
+                keys |= 1u << KEY_SELECT;
+                wheelTap--;
+            }
+            if (free && kbSelect) keys |= 1u << KEY_SELECT;
+            // After Emotes: the D-pad picks one, B puts the wheel away.
+            if (emotePick)
+            {
+                static uint32_t pickPrev = 0;
+                const uint32_t dpad = keys & ((1u << KEY_UP) | (1u << KEY_LEFT) | (1u << KEY_RIGHT) | (1u << KEY_DOWN));
+                const uint32_t down = dpad & ~pickPrev;
+                emoteWheel = true;
+                if (down & (1u << KEY_UP)) Party_SendEmote(0), emotePick = false;
+                else if (down & (1u << KEY_LEFT)) Party_SendEmote(1), emotePick = false;
+                else if (down & (1u << KEY_RIGHT)) Party_SendEmote(2), emotePick = false;
+                else if (down & (1u << KEY_DOWN)) Party_SendEmote(3), emotePick = false;
+                else if (keys & (1u << KEY_B)) emotePick = false;
+                keys &= ~(dpad | (1u << KEY_B));
+                pickPrev = dpad;
+            }
         }
         // X on the overworld opens the pause menu (with the game's X menu entries) instead of
         // the game's menu, in the single-screen view; the game's X menu, driven by the pause
@@ -4981,7 +5181,7 @@ int main(int argc, char** argv)
                         if (!composingBetween)
                         {
                             fireflies.clear();
-                            worldBlocks.Fireflies(*nds, frame / 60.0f, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, fireflies);
+                            if (!g_reduceMotion) worldBlocks.Fireflies(*nds, frame / 60.0f, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, fireflies);
                             lamps.clear();
                             worldBlocks.Lights(*nds, melonDS::Wide.ViewWidth, melonDS::Wide.Zoom, lamps);
                             nightFx.Build(wideImage.pixels, wideImage.w, wideImage.h, strength, fireflies, lamps);
@@ -5281,6 +5481,30 @@ int main(int argc, char** argv)
             TracePrevCPSR = nds->ARM9.CPSR;
         }
 
+        {
+            // Separate volumes: music 1-10, 13 and 15; effects 11 and 12; cries 14 (shared with effects).
+            const AccessCfg& a = cfg.acc;
+            uint16_t mask = 0;
+            const bool inBattle = appRunning("Battle");
+            for (int i = 0; i < 16; i++)
+            {
+                float g = 1.0f;
+                if ((SongPlayer::MusicChannels >> i & 1) || i == 15) g = a.volMusic / 100.0f;
+                else if (i == 11 || i == 12)
+                {
+                    g = a.volSfx / 100.0f;
+                    // The low health beep is a square wave (the DS's PSG channels, format 3) on 11 and
+                    // 12: the other effects there are recorded sounds.
+                    if (inBattle && (nds->SPU.Read32(0x04000400 + 16 * i) >> 29 & 3) == 3) g *= a.beep / 100.0f;
+                }
+                else if (i == 14) g = a.volSfx / 100.0f * a.volCry / 100.0f;
+                melonDS::ssr_SpuGain[i] = (uint16_t)std::lround(g * 256);
+                if (melonDS::ssr_SpuGain[i] < 256) mask |= 1u << i;
+            }
+            melonDS::ssr_SpuGainMask = mask;
+            songs.userGain = a.volMusic / 100.0f;
+            sfx.userGain = a.volSfx / 100.0f;
+        }
         perfMark(0);
         int got = 0;
         {
@@ -6109,6 +6333,11 @@ int main(int argc, char** argv)
             pillY = saveIndicator.Draw(canvas, ui, sprites, font, pillRight, pillY, gameSave.Busy() ? "Saving..." : "", frame * 1000 / 60);
             overlayUsed = true;
         }
+        if (cfg.acc.foePercent && spritesOk && myBattle.foeSpecies > 0)
+        {
+            pillY = DrawCornerPill(canvas, ui, sprites, font, pillRight, pillY, "Foe HP " + std::to_string(myBattle.foeHp) + "%");
+            overlayUsed = true;
+        }
         if (speed > 1 && spritesOk)
         {
             DrawCornerPill(canvas, ui, sprites, font, pillRight, pillY, ">> Fast forward");
@@ -6157,6 +6386,11 @@ int main(int argc, char** argv)
             const int tx = controls ? (outW - tw) / 2 : 0, ty = controls ? outH * 13 / 100 : 0;
             canvas.Fill(tx, ty, tw, 13 * sc, 0xC0000000);
             canvas.Text(tx + 4 * sc, ty + 3 * sc, toast, sc, 0xFFFFFFFF);
+            overlayUsed = true;
+        }
+        if (wheel.open && spritesOk)
+        {
+            wheel.Draw(canvas, ui, sprites, font, ui.W / ui.s / 2, 540);
             overlayUsed = true;
         }
         ui.Set(canvas.w, canvas.h);
@@ -6478,6 +6712,8 @@ int main(int argc, char** argv)
             const MenuItem* sel = menu.Selected();
             if (remapping >= 0)
                 hints = { { {}, "Press the button to use" } };
+            else if (keyCapture >= 0)
+                hints = { { {}, "Press the key to use (Esc to keep the old one)" } };
             else if (sel && sel->id >= M_REMAP && sel->id < M_REMAP + RemapCount)
             {
                 hints.push_back({ { accept }, "Remap" });
@@ -6491,7 +6727,7 @@ int main(int argc, char** argv)
             // The menu drawn again only when something on it changes (drawing its panels takes
             // a good part of a frame): otherwise the last drawing is put back.
             std::string key = std::to_string(menu.tab) + "|" + std::to_string(menu.selected) + "|" + std::to_string(canvas.w) + "x" +
-                std::to_string(canvas.h) + "|" + std::to_string(remapping) + "|" + std::to_string(Party_DexCount()) + "|" +
+                std::to_string(canvas.h) + "|" + std::to_string(remapping) + "|" + std::to_string(keyCapture) + "|" + std::to_string(g_textBoost) + "|" + std::to_string(Party_DexCount()) + "|" +
                 std::to_string(Party_MyBadges()) + "|" + std::to_string(sessionStats.linkBattles) + "|" + std::to_string(sessionStats.trades);
             for (const MenuItem& it : menu.items)
                 key += "|" + it.label + "=" + it.value + it.glyph + (it.disabled ? "!" : "") + std::to_string((int)(it.bar * 1000));
@@ -7493,6 +7729,7 @@ int main(int argc, char** argv)
                 if (merged) { takeWideImage(); MergedCompose(scene, screenImages, opt.composeW, opt.composeH, shot, cfg.smooth, &wideImage); }
                 else Compose(layout, opt.composeW, opt.composeH, top, bot, shot);
                 BlendCanvas(canvas, shot);
+                if (AccessFilter::Active(cfg.acc)) accFilter.Apply(cfg.acc, shot.data(), opt.composeW, opt.composeH);
                 WritePNG(opt.shotDir + name, shot.data(), opt.composeW, opt.composeH);
             }
             else
@@ -7593,6 +7830,26 @@ int main(int argc, char** argv)
                 showCanvas(tagCanvas, tagTex);
                 owHud.Present(renderer, outW, outH);
                 if (overlayUsed) showCanvas(canvas, overlayTex);
+                if (AccessFilter::Active(cfg.acc))
+                {
+                    // The filters work on the finished picture, as the screenshots of the tests
+                    // do: it is read back, filtered and drawn again.
+                    static std::vector<uint32_t> filtered;
+                    filtered.resize((size_t)outW * outH);
+                    if (SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, filtered.data(), outW * 4) == 0)
+                    {
+                        accFilter.Apply(cfg.acc, filtered.data(), outW, outH);
+                        int tw = 0, th = 0;
+                        if (accTex) SDL_QueryTexture(accTex, nullptr, nullptr, &tw, &th);
+                        if (!accTex || tw != outW || th != outH)
+                        {
+                            if (accTex) SDL_DestroyTexture(accTex);
+                            accTex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, outW, outH);
+                        }
+                        SDL_UpdateTexture(accTex, nullptr, filtered.data(), outW * 4);
+                        SDL_RenderCopy(renderer, accTex, nullptr, nullptr);
+                    }
+                }
                 // In a window, screenshots are read back from the renderer: exactly what is shown.
                 // (The pictures between the game's frames as _01, _02 and so on.)
                 static int between = 0;
@@ -7618,10 +7875,12 @@ int main(int argc, char** argv)
                 }
                 SDL_RenderPresent(renderer);
             };
-            drawFrame(false);
+            // (Low-power mode: Pictures: Every other frame.)
+            const bool skipPicture = cfg.acc.limit && (frame & 1) && !wantShot;
+            if (!skipPicture) drawFrame(false);
             perfMark(4);
             // Frames shown in the last whole second, for the FPS counter.
-            presented++;
+            if (!skipPicture) presented++;
             const uint32_t ms = SDL_GetTicks();
             if (ms - fpsSince >= 1000)
             {
@@ -7638,7 +7897,7 @@ int main(int argc, char** argv)
             // however long that takes (saving one leaves no time for any).
             static const int forceShots = getenv("SSR_BETWEEN_SHOTS") ? atoi(getenv("SSR_BETWEEN_SHOTS")) : 0;
             int forced = wantShot ? forceShots : 0;
-            if (cfg.fpsUnlimited && merged && melonDS::Wide.Owner && (now < nextTick || forced))
+            if (cfg.fpsUnlimited && merged && melonDS::Wide.Owner && !skipPicture && (now < nextTick || forced))
             {
                 // Frame rate Unlimited: until the game's next frame is due, the world is drawn
                 // again at later moments between this picture and the next and shown, as often

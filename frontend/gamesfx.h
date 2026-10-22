@@ -62,13 +62,15 @@ public:
         return pcm[s];
     }
 
+    float userGain = 1.0f; // Settings: Sound effects volume
+
     // Adds what plays to `frames` stereo frames at 48 kHz.
     void Mix(int16_t* out, int frames)
     {
         if (cur < 0) return;
         const std::vector<int16_t>& p = pcm[cur];
         for (int i = 0; i < frames * 2 && pos < p.size(); i++, pos++)
-            out[i] = (int16_t)std::clamp(out[i] + p[pos], -32768, 32767);
+            out[i] = (int16_t)std::clamp(out[i] + (int)(p[pos] * userGain), -32768, 32767);
         if (pos >= p.size()) cur = -1;
     }
 

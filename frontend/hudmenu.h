@@ -170,7 +170,9 @@ inline void DrawPauseMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
     for (int t = 0; t < nt; t++)
     {
         const bool sel = t == m.tab;
-        const float d = sel ? 112 : 88, cx = colX + colW / 2;
+        // (Smaller when there are more than will fit.)
+        const float shrink = std::min(1.0f, pitch / 114);
+        const float d = (sel ? 112 : 88) * shrink, cx = colX + colW / 2;
         const float itemH = pitch + (sel ? 24 : 0);
         const float dy = y + (itemH - d - 40) / 2;
         HudSprite(c, ui, sp, m.tabs[t].icon + (sel ? "_selected" : ""), cx - d / 2, dy, d, d);
@@ -180,7 +182,7 @@ inline void DrawPauseMenu(Canvas& c, const Ui& ui, Sprites& sp, const RomFont& f
             const float lw = HudTextWidth(ui, f, 32, m.tabs[t].name) + 28;
             HudPanel(c, ui, sp, "panels/button_yellow", cx - lw / 2, ly, lw, 36);
         }
-        HudText(c, ui, f, cx, ly + 2, 32, m.tabs[t].name, sel ? Ink : Muted, 1);
+        if (sel || shrink >= 1) HudText(c, ui, f, cx, ly + 2, 32, m.tabs[t].name, sel ? Ink : Muted, 1);
         y += itemH;
     }
 

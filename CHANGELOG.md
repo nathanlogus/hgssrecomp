@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Comfort and accessibility: an ACCESS tab with colour vision filters (protanopia, deuteranopia,
+  tritanopia, monochrome, with a strength), high contrast, a limit on sudden flashes, less
+  motion, bigger text, the foe's HP as a percentage in battles and a volume for the low
+  health beep; a SOUND tab with separate volumes for music, sound effects and cries; a KEYS
+  tab with keyboard layouts (Classic, WASD, Any keyboard) and your own keys for each button
+  (they work in the menus too); a low-power mode and a picture limit for slow computers; and
+  a shortcut wheel (hold Select on a controller, point with the left stick, let go).
 - New screens, tidier: items and Pokémon sit in the middle of their circles and cards and
   look the same size, the text beside them is centred against them, the L and R buttons
   keep their shape next to A and B, bold and plain text on one line share a baseline, and

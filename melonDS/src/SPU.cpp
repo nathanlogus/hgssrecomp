@@ -854,6 +854,10 @@ void SPUCaptureUnit::Run(u32 cycles, s32 sample)
 // game's own music while the frontend plays a song in its place. A global, not a member, so
 // that SPU.h (which the recompiled code includes) stays as it is.
 u16 ssr_SpuHearMute = 0;
+// ssrecomp: how much of each channel is heard (0-256, 256 all), for separate volumes for the
+// music, the sound effects and the cries. ssr_SpuGainMask has a bit for each channel below 256.
+u16 ssr_SpuGain[16] = { 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256 };
+u16 ssr_SpuGainMask = 0;
 
 void SPU::Mix(u32 spucycles)
 {
@@ -875,12 +879,18 @@ void SPU::Mix(u32 spucycles)
         if (!(Cnt & (1<<12))) Channels[1].PanOutput(ch1, left, right);
         if (!(Cnt & (1<<13))) Channels[3].PanOutput(ch3, left, right);
 
-        if (ssr_SpuHearMute)
+        // (What is taken out of the heard mix: all of a muted channel, else the part that its gain leaves out.)
+        const u16 hide = ssr_SpuHearMute | ssr_SpuGainMask;
+        auto hidden = [&](int i, SPUChannel& c, s32 v) {
+            const s32 part = (ssr_SpuHearMute >> i & 1) ? 256 : 256 - ssr_SpuGain[i];
+            c.PanOutput(part == 256 ? v : (s32)(((s64)v * part) >> 8), mutedLeft, mutedRight);
+        };
+        if (hide)
         {
-            if (ssr_SpuHearMute & 1) Channels[0].PanOutput(ch0, mutedLeft, mutedRight);
-            if (ssr_SpuHearMute & 4) Channels[2].PanOutput(ch2, mutedLeft, mutedRight);
-            if ((ssr_SpuHearMute & 2) && !(Cnt & (1<<12))) Channels[1].PanOutput(ch1, mutedLeft, mutedRight);
-            if ((ssr_SpuHearMute & 8) && !(Cnt & (1<<13))) Channels[3].PanOutput(ch3, mutedLeft, mutedRight);
+            if (hide & 1) hidden(0, Channels[0], ch0);
+            if (hide & 4) hidden(2, Channels[2], ch2);
+            if ((hide & 2) && !(Cnt & (1<<12))) hidden(1, Channels[1], ch1);
+            if ((hide & 8) && !(Cnt & (1<<13))) hidden(3, Channels[3], ch3);
         }
 
         for (int i = 4; i < 16; i++)
@@ -889,7 +899,7 @@ void SPU::Mix(u32 spucycles)
 
             s32 channel = chan->DoRun(spucycles);
             chan->PanOutput(channel, left, right);
-            if (ssr_SpuHearMute & (1 << i)) chan->PanOutput(channel, mutedLeft, mutedRight);
+            if (hide & (1 << i)) hidden(i, *chan, channel);
         }
 
         // sound capture

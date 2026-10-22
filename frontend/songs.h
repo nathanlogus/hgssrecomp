@@ -86,6 +86,8 @@ public:
     // The game's channels to leave out of what is heard.
     uint16_t Mute() const { return cur && !cur->fadingOut && !paused ? MusicChannels | (effectsOn ? 0 : SharedChannel) : 0; }
 
+    float userGain = 1.0f; // Settings: Music volume
+
     // Adds the song to `frames` stereo frames at 48 kHz.
     void Mix(int16_t* out, int frames)
     {
@@ -107,7 +109,7 @@ public:
             for (int c = 0; c < 2; c++)
             {
                 const float v = s.buf[a * 2 + c] * (1 - t) + s.buf[(a + 1) * 2 + c] * t;
-                const int mixed = out[i * 2 + c] + (int)(v * 32767 * s.gain * s.level);
+                const int mixed = out[i * 2 + c] + (int)(v * 32767 * s.gain * s.level * userGain);
                 out[i * 2 + c] = (int16_t)std::clamp(mixed, -32768, 32767);
             }
             s.pos += step;
